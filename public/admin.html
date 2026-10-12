@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel Administrativo | Videomappingtech Stage AI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans selection:bg-cyan-500 selection:text-white pb-12">
+
+  <!-- Topbar -->
+  <header class="border-b border-slate-800 bg-slate-900/90 sticky top-0 z-40 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-4 h-4 rounded-full bg-cyan-500 animate-pulse"></div>
+      <div>
+        <h1 class="font-bold text-lg bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 bg-clip-text text-transparent">
+          Videomappingtech • Admin Console
+        </h1>
+        <p class="text-[11px] text-slate-400">Gestão de Eventos, Branding e Tradução Simultânea</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="/landing.html" target="_blank"
+        class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3.5 py-1.5 rounded-lg text-slate-300 transition flex items-center gap-1.5">
+        <span>🌐</span> Ver Site Comercial
+      </a>
+      <button onclick="openNewEventModal()"
+        class="text-xs bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-4 py-2 rounded-lg shadow-lg transition active:scale-95 flex items-center gap-1.5">
+        <span>+</span> Novo Evento
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto p-6 flex flex-col gap-8">
+
+    <!-- Navegação de Abas -->
+    <div class="flex border-b border-slate-800 gap-6">
+      <button onclick="switchTab('events')" id="tabBtnEvents" class="pb-3 text-sm font-semibold border-b-2 border-cyan-500 text-cyan-400 transition">
+        Eventos & Salas Ativas
+      </button>
+      <button onclick="switchTab('leads')" id="tabBtnLeads" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
+        <span>Propostas & Contratações</span>
+        <span id="leadsBadge" class="bg-cyan-500/20 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full">0</span>
+      </button>
+    </div>
+
+    <!-- ABA 1: GERENCIAMENTO DE EVENTOS -->
+    <section id="sectionEvents" class="flex flex-col gap-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-white">Eventos Configurados</h2>
+          <p class="text-xs text-slate-400">Configure marcas, canais de palestras silenciosas, idiomas e telões para cada auditório ou palco</p>
+        </div>
+      </div>
+
+      <!-- Grid de Salas/Eventos -->
+      <div id="eventsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="p-8 text-center text-slate-500 italic col-span-full">Carregando eventos...</div>
+      </div>
+    </section>
+
+    <!-- ABA 2: PROPOSTAS E LEADS -->
+    <section id="sectionLeads" class="hidden flex flex-col gap-6">
+      <div>
+        <h2 class="text-xl font-bold text-white">Solicitações de Contratação</h2>
+        <p class="text-xs text-slate-400">Contatos de clientes recebidos através do site institucional da Videomappingtech</p>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950 text-slate-400 uppercase border-b border-slate-800">
+              <tr>
+                <th class="p-3.5">Data</th>
+                <th class="p-3.5">Nome / Contato</th>
+                <th class="p-3.5">Empresa</th>
+                <th class="p-3.5">Tipo de Evento</th>
+                <th class="p-3.5">Horas Estimadas</th>
+                <th class="p-3.5">Mensagem</th>
+              </tr>
+            </thead>
+            <tbody id="leadsTableBody" class="divide-y divide-slate-800/60">
+              <tr><td colspan="6" class="p-4 text-center text-slate-500">Nenhuma solicitação ainda.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL: CRIAR / EDITAR EVENTO -->
+  <div id="eventModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-800 max-w-2xl w-full rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto flex flex-col gap-5">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 id="modalTitle" class="text-lg font-bold text-white">Configurar Novo Evento</h3>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-white text-xl font-bold">×</button>
+      </div>
+
+      <form id="eventForm" onsubmit="handleSaveEvent(event)" class="flex flex-col gap-4 text-xs">
+        
+        <!-- 1. Identificação Básica -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-400 uppercase tracking-wider mb-1">ID da Sala (Slug na URL):</label>
+            <input type="text" id="formRoomId" placeholder="ex: palco-principal" required
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 font-mono focus:border-cyan-500 focus:outline-none">
+            <span class="text-[10px] text-slate-500">Ex: link será /?room=palco-principal</span>
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-400 uppercase tracking-wider mb-1">Nome do Evento / Sessão:</label>
+            <input type="text" id="formName" placeholder="ex: Summit Internacional 2026" required
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+          </div>
+        </div>
+
+        <!-- 2. Identidade Visual & Branding -->
+        <div class="border-t border-slate-800 pt-3">
+          <p class="font-bold text-slate-200 uppercase tracking-wider text-[11px] mb-2 text-cyan-400">🎨 Identidade Visual & Branding</p>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="block font-semibold text-slate-400 mb-1">Logo URL (topo do app):</label>
+              <input type="url" id="formLogoUrl" placeholder="https://exemplo.com/logo.png"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-400 mb-1">Banner URL (arte do evento):</label>
+              <input type="url" id="formBannerUrl" placeholder="https://exemplo.com/banner.jpg"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-400 mb-1">Cor Primária:</label>
+              <div class="flex items-center gap-2">
+                <input type="color" id="formPrimaryColor" value="#06b6d4" class="h-9 w-12 bg-transparent cursor-pointer rounded border border-slate-700">
+                <input type="text" id="formPrimaryColorText" value="#06b6d4" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 font-mono">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Recursos & Modos de Operação -->
+        <div class="border-t border-slate-800 pt-3">
+          <p class="font-bold text-slate-200 uppercase tracking-wider text-[11px] mb-2 text-cyan-400">⚡ Modos de Operação</p>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <label class="flex items-center gap-2 p-2.5 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
+              <input type="checkbox" id="formAllowOriginal" checked class="accent-cyan-500">
+              <span>🎙️ Palestra Silenciosa (Áudio Original Direto)</span>
+            </label>
+            <label class="flex items-center gap-2 p-2.5 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
+              <input type="checkbox" id="formAllowTranslation" checked class="accent-cyan-500">
+              <span>🌐 Tradução Simultânea por IA</span>
+            </label>
+            <label class="flex items-center gap-2 p-2.5 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
+              <input type="checkbox" id="formAllowSubtitles" checked class="accent-cyan-500">
+              <span>📝 Legendas em Tempo Real</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 4. Idiomas -->
+        <div class="border-t border-slate-800 pt-3">
+          <p class="font-bold text-slate-200 uppercase tracking-wider text-[11px] mb-2 text-cyan-400">🗣️ Idiomas da Sessão</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+            <div>
+              <label class="block font-semibold text-slate-400 mb-1">Idioma de Entrada (Falado no Palco):</label>
+              <select id="formSourceLang" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200">
+                <option value="pt-BR">🇧🇷 Português (Brasil)</option>
+                <option value="en-US">🇺🇸 Inglês (EUA)</option>
+                <option value="es-ES">🇪🇸 Espanhol</option>
+                <option value="fr-FR">🇫🇷 Francês</option>
+                <option value="de-DE">🇩🇪 Alemão</option>
+                <option value="it-IT">🇮🇹 Italiano</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-400 mb-1">Idiomas de Tradução Disponíveis aos Ouvintes:</label>
+              <div class="grid grid-cols-3 gap-1.5 p-2 bg-slate-950 rounded-lg border border-slate-800">
+                <label class="flex items-center gap-1.5"><input type="checkbox" name="targetLang" value="en" checked class="accent-cyan-500"> 🇺🇸 Inglês</label>
+                <label class="flex items-center gap-1.5"><input type="checkbox" name="targetLang" value="es" checked class="accent-cyan-500"> 🇪🇸 Espanhol</label>
+                <label class="flex items-center gap-1.5"><input type="checkbox" name="targetLang" value="pt-BR" class="accent-cyan-500"> 🇧🇷 Português</label>
+                <label class="flex items-center gap-1.5"><input type="checkbox" name="targetLang" value="fr" class="accent-cyan-500"> 🇫🇷 Francês</label>
+                <label class="flex items-center gap-1.5"><input type="checkbox" name="targetLang" value="de" class="accent-cyan-500"> 🇩🇪 Alemão</label>
+                <label class="flex items-center gap-1.5"><input type="checkbox" name="targetLang" value="it" class="accent-cyan-500"> 🇮🇹 Italiano</label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 border-t border-slate-800 pt-3">
+          <button type="button" onclick="closeModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">
+            Cancelar
+          </button>
+          <button type="submit" class="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg">
+            Salvar Evento
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL DE QR CODE -->
+  <div id="qrModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-800 max-w-sm w-full rounded-2xl p-6 text-center flex flex-col items-center gap-4">
+      <h3 id="qrModalTitle" class="text-base font-bold text-white">QR Code de Acesso dos Participantes</h3>
+      <div id="qrBox" class="p-4 bg-white rounded-xl"></div>
+      <p id="qrUrlText" class="text-xs font-mono text-cyan-400 break-all"></p>
+      <button onclick="closeQrModal()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold text-slate-200">
+        Fechar
+      </button>
+    </div>
+  </div>
+
+  <script>
+    let roomsList = [];
+
+    async function loadRooms() {
+      try {
+        const res = await fetch('/api/rooms');
+        const data = await res.json();
+        roomsList = data.rooms || [];
+        renderRooms();
+      } catch (e) {
+        console.error('Erro ao carregar salas:', e);
+      }
+    }
+
+    async function loadLeads() {
+      try {
+        const res = await fetch('/api/leads');
+        const data = await res.json();
+        const leads = data.leads || [];
+        document.getElementById('leadsBadge').innerText = leads.length;
+        renderLeads(leads);
+      } catch (e) {}
+    }
+
+    function renderRooms() {
+      const grid = document.getElementById('eventsGrid');
+      if (roomsList.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center gap-3">
+            <span class="text-4xl">🎪</span>
+            <p class="text-sm font-semibold text-slate-300">Nenhum evento criado ainda</p>
+            <p class="text-xs text-slate-500 max-w-sm">Crie seu primeiro evento para gerar links de palestra silenciosa, telão e tradução.</p>
+            <button onclick="openNewEventModal()" class="mt-2 text-xs bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-4 py-2 rounded-lg">
+              + Criar Primeiro Evento
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = roomsList.map(room => {
+        const origin = window.location.origin;
+        const listenerUrl = `${origin}/?room=${room.id}`;
+        const hostUrl = `${origin}/host.html?room=${room.id}`;
+        const screenUrl = `${origin}/screen.html?room=${room.id}`;
+
+        return `
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between gap-4 relative overflow-hidden">
+            ${room.banner_url ? `<div class="h-16 -mx-5 -mt-5 bg-cover bg-center mb-1" style="background-image: url('${room.banner_url}');"></div>` : ''}
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded-full">
+                  ID: ${room.id}
+                </span>
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500" title="Ativo"></span>
+              </div>
+              <h3 class="font-bold text-base text-white truncate">${room.name}</h3>
+              <p class="text-xs text-slate-400 mt-1">Palco: <strong>${room.source_language || 'pt-BR'}</strong> → Tradução: <strong>${(room.target_languages || []).join(', ').toUpperCase()}</strong></p>
+            </div>
+
+            <!-- Links de Acesso Rápido -->
+            <div class="bg-slate-950/80 rounded-xl p-3 border border-slate-800/80 flex flex-col gap-2 text-xs">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400 flex items-center gap-1.5">📱 Participante:</span>
+                <div class="flex gap-1.5">
+                  <button onclick="showQRCode('${listenerUrl}', '${room.name}')" class="text-slate-300 hover:text-white bg-slate-800 px-2 py-0.5 rounded" title="Ver QR Code">QR</button>
+                  <button onclick="copyLink('${listenerUrl}')" class="text-cyan-400 hover:text-cyan-300 bg-slate-800 px-2 py-0.5 rounded">Copiar</button>
+                  <a href="${listenerUrl}" target="_blank" class="text-slate-400 hover:text-white bg-slate-800 px-2 py-0.5 rounded">Abrir</a>
+                </div>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400 flex items-center gap-1.5">🎙️ Transmissor:</span>
+                <a href="${hostUrl}" target="_blank" class="text-slate-300 hover:text-white bg-slate-800 px-2 py-0.5 rounded">Painel Som</a>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400 flex items-center gap-1.5">📺 Telão / Palco:</span>
+                <a href="${screenUrl}" target="_blank" class="text-slate-300 hover:text-white bg-slate-800 px-2 py-0.5 rounded">Abrir Telão</a>
+              </div>
+            </div>
+
+            <!-- Ações -->
+            <div class="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+              <a href="/api/rooms/${room.id}/export?format=srt" class="text-slate-400 hover:text-cyan-300 flex items-center gap-1">
+                📥 Baixar SRT
+              </a>
+              <button onclick="deleteRoom('${room.id}')" class="text-rose-400 hover:text-rose-300">
+                Excluir
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderLeads(leads) {
+      const tbody = document.getElementById('leadsTableBody');
+      if (leads.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">Nenhuma proposta recebida até o momento.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = leads.map(l => `
+        <tr class="hover:bg-slate-850">
+          <td class="p-3.5 text-slate-400">${new Date(l.created_at).toLocaleDateString()}</td>
+          <td class="p-3.5 font-bold text-white">${l.name}<br><span class="font-normal text-slate-400">${l.email} • ${l.phone || ''}</span></td>
+          <td class="p-3.5">${l.company || '-'}</td>
+          <td class="p-3.5"><span class="bg-slate-800 px-2 py-0.5 rounded">${l.event_type || 'Geral'}</span></td>
+          <td class="p-3.5">${l.estimated_hours || 4} horas</td>
+          <td class="p-3.5 text-slate-400 max-w-xs truncate">${l.message || '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    function switchTab(tab) {
+      if (tab === 'events') {
+        document.getElementById('sectionEvents').classList.remove('hidden');
+        document.getElementById('sectionLeads').classList.add('hidden');
+        document.getElementById('tabBtnEvents').className = 'pb-3 text-sm font-semibold border-b-2 border-cyan-500 text-cyan-400 transition';
+        document.getElementById('tabBtnLeads').className = 'pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2';
+      } else {
+        document.getElementById('sectionEvents').classList.add('hidden');
+        document.getElementById('sectionLeads').classList.remove('hidden');
+        document.getElementById('tabBtnEvents').className = 'pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition';
+        document.getElementById('tabBtnLeads').className = 'pb-3 text-sm font-semibold border-b-2 border-cyan-500 text-cyan-400 transition flex items-center gap-2';
+      }
+    }
+
+    function openNewEventModal() {
+      document.getElementById('eventForm').reset();
+      document.getElementById('formRoomId').value = 'palco-' + Math.random().toString(36).substring(2, 7);
+      document.getElementById('eventModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('eventModal').classList.add('hidden');
+    }
+
+    async function handleSaveEvent(e) {
+      e.preventDefault();
+      const targetLangs = Array.from(document.querySelectorAll('input[name="targetLang"]:checked')).map(el => el.value);
+
+      const payload = {
+        id: document.getElementById('formRoomId').value.trim(),
+        name: document.getElementById('formName').value.trim(),
+        bannerUrl: document.getElementById('formBannerUrl').value.trim(),
+        logoUrl: document.getElementById('formLogoUrl').value.trim(),
+        primaryColor: document.getElementById('formPrimaryColor').value,
+        allowOriginalAudio: document.getElementById('formAllowOriginal').checked,
+        allowTranslation: document.getElementById('formAllowTranslation').checked,
+        allowSubtitles: document.getElementById('formAllowSubtitles').checked,
+        sourceLanguage: document.getElementById('formSourceLang').value,
+        targetLanguages: targetLangs
+      };
+
+      try {
+        const res = await fetch('/api/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          closeModal();
+          loadRooms();
+        }
+      } catch (err) {
+        alert('Erro ao salvar sala: ' + err.message);
+      }
+    }
+
+    async function deleteRoom(id) {
+      if (!confirm(`Deseja realmente excluir a sala "${id}"?`)) return;
+      try {
+        await fetch(`/api/rooms/${id}`, { method: 'DELETE' });
+        loadRooms();
+      } catch (e) {}
+    }
+
+    function showQRCode(url, name) {
+      document.getElementById('qrModalTitle').innerText = name;
+      document.getElementById('qrUrlText').innerText = url;
+      const box = document.getElementById('qrBox');
+      box.innerHTML = '';
+      new QRCode(box, {
+        text: url,
+        width: 200,
+        height: 200,
+        colorDark : "#000000",
+        colorLight : "#ffffff"
+      });
+      document.getElementById('qrModal').classList.remove('hidden');
+    }
+
+    function closeQrModal() {
+      document.getElementById('qrModal').classList.add('hidden');
+    }
+
+    function copyLink(url) {
+      navigator.clipboard.writeText(url).then(() => alert('Link copiado!'));
+    }
+
+    // Sincronizar cor
+    document.getElementById('formPrimaryColor').addEventListener('input', (e) => {
+      document.getElementById('formPrimaryColorText').value = e.target.value;
+    });
+
+    loadRooms();
+    loadLeads();
+  </script>
+</body>
+</html>

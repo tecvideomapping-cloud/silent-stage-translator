@@ -3,25 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Transmissor de Palco & Tradução | Painel do Host</title>
+  <title>Transmissor de Palco & Mesa de Som | Videomappingtech Host</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- QRCode.js para gerar QR Codes dinâmicos na tela -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-cyan-500 selection:text-white">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-cyan-500 selection:text-white pb-12">
 
   <!-- Header -->
-  <header class="border-b border-slate-800 bg-slate-900/90 px-6 py-4 flex items-center justify-between">
+  <header class="border-b border-slate-800 bg-slate-900/90 px-6 py-4 flex items-center justify-between sticky top-0 z-30">
     <div class="flex items-center gap-3">
       <div class="w-3.5 h-3.5 rounded-full bg-cyan-500 animate-pulse"></div>
-      <h1 class="font-bold text-lg tracking-wide bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-        Videomappingtech • Host Transmitter
-      </h1>
+      <div>
+        <h1 class="font-bold text-lg bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+          Videomappingtech • Host Transmitter
+        </h1>
+        <p id="eventSubtitle" class="text-xs text-slate-400">Carregando informações da sessão...</p>
+      </div>
     </div>
-    <div class="flex items-center gap-4">
-      <a href="/screen.html?room=demo" target="_blank"
+    <div class="flex items-center gap-3">
+      <a href="/admin.html" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-slate-300 transition">
+        ⚙️ Painel Admin
+      </a>
+      <a id="openScreenBtn" href="/screen.html?room=palco1" target="_blank"
         class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-slate-300 flex items-center gap-1.5 transition">
-        <span>📺</span> Abrir Telão de Palco
+        <span>📺</span> Telão
       </a>
       <span id="connStatus" class="text-xs bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 px-3 py-1 rounded-full font-medium">
         ● Online
@@ -34,18 +39,34 @@
     <!-- Coluna Esquerda: Controle de Transmissão e Áudio -->
     <div class="lg:col-span-2 flex flex-col gap-6">
       
-      <!-- Card de Transmissão -->
-      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl">
-        <div class="flex items-center justify-between mb-4">
+      <!-- Card de Transmissão & Dispositivo de Entrada de Áudio -->
+      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
+        <div class="flex items-center justify-between">
           <div>
-            <h2 class="text-base font-bold text-white">Entrada de Áudio da Mesa / Microfone</h2>
-            <p class="text-xs text-slate-400">Transmite o áudio original direto para o fone dos participantes (Palestra Silenciosa) e alimenta a IA</p>
+            <h2 class="text-base font-bold text-white">Transmissão da Mesa de Som / Palco</h2>
+            <p class="text-xs text-slate-400">O som selecionado vai direto para o fone dos ouvintes (Palestra Silenciosa) e alimenta a IA</p>
           </div>
           <button id="broadcastBtn" onclick="toggleBroadcast()"
             class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-2">
             <span id="btnIcon">🎙️</span>
             <span id="btnText">Iniciar Transmissão</span>
           </button>
+        </div>
+
+        <!-- SELETOR DE DISPOSITIVO DE ENTRADA DE ÁUDIO -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col gap-2">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <span>🎛️</span> Dispositivo de Entrada (Mesa de Som / Interface USB / Mic):
+            </label>
+            <button onclick="refreshAudioDevices()" class="text-[11px] text-cyan-400 hover:underline">
+              Atualizar Lista
+            </button>
+          </div>
+          <select id="audioDeviceSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+            <option value="">Carregando dispositivos de áudio...</option>
+          </select>
+          <span class="text-[10px] text-slate-500">Conecte sua interface Behringer, Focusrite, mesa digital ou microfone USB e selecione acima.</span>
         </div>
 
         <!-- VU Meter de Volume -->
@@ -59,8 +80,8 @@
           </div>
         </div>
 
-        <!-- Configurações de Idioma -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-5 pt-5 border-t border-slate-800">
+        <!-- Configurações de Sala e Idioma -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-800">
           <div>
             <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Idioma Falado no Palco:</label>
             <select id="sourceLang" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500">
@@ -72,21 +93,21 @@
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">ID da Sala do Evento:</label>
-            <input type="text" id="roomIdInput" value="demo"
+            <input type="text" id="roomIdInput" value="palco1"
               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
               onchange="updateRoom(this.value)">
           </div>
         </div>
       </section>
 
-      <!-- Glossário de IA (Diferencial Crítico para Eventos) -->
+      <!-- Glossário de IA -->
       <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl">
         <div class="flex items-center justify-between mb-3">
           <div>
             <h2 class="text-base font-bold text-white flex items-center gap-2">
               <span>📖</span> Glossário & Jargões do Evento
             </h2>
-            <p class="text-xs text-slate-400">Insira siglas, nomes de palestrantes e termos técnicos para que a IA traduza com 100% de precisão.</p>
+            <p class="text-xs text-slate-400">Insira siglas, nomes de palestrantes e termos técnicos para tradução exata.</p>
           </div>
           <button onclick="saveGlossary()" class="text-xs bg-cyan-600 hover:bg-cyan-500 text-white font-semibold px-4 py-2 rounded-lg transition">
             Salvar no Servidor
@@ -96,14 +117,13 @@
         <div class="flex gap-2 mb-3">
           <input type="text" id="termInput" placeholder="Ex: Videomappingtech"
             class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
-          <input type="text" id="defInput" placeholder="Ex: Nome da Empresa / Não traduzir"
+          <input type="text" id="defInput" placeholder="Ex: Não traduzir / Marca"
             class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
           <button onclick="addGlossaryItem()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-lg text-xs font-medium">
             + Adicionar
           </button>
         </div>
 
-        <!-- Lista de Termos -->
         <div id="glossaryList" class="flex flex-wrap gap-2 min-h-[40px] p-2 bg-slate-950 rounded-lg border border-slate-800">
           <span class="text-xs bg-slate-900 border border-slate-800 text-slate-300 px-2.5 py-1 rounded-md flex items-center gap-1.5">
             <strong>Videomappingtech:</strong> Marca / Não traduzir
@@ -146,7 +166,10 @@
   </main>
 
   <script>
-    let roomId = document.getElementById('roomIdInput').value;
+    const urlParams = new URLSearchParams(window.location.search);
+    let roomId = urlParams.get('room') || 'palco1';
+    document.getElementById('roomIdInput').value = roomId;
+
     let isBroadcasting = false;
     let audioStream = null;
     let audioContext = null;
@@ -154,9 +177,53 @@
     let socket = null;
     let glossaryMap = { 'Videomappingtech': 'Marca' };
 
+    async function loadRoomDetails() {
+      try {
+        const res = await fetch(`/api/rooms/${roomId}`);
+        if (res.ok) {
+          const room = await res.json();
+          document.getElementById('eventSubtitle').innerText = `${room.name} • Idioma: ${room.source_language}`;
+          if (room.source_language) {
+            document.getElementById('sourceLang').value = room.source_language;
+          }
+          if (room.glossary) {
+            glossaryMap = { ...glossaryMap, ...room.glossary };
+            renderGlossary();
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Listar dispositivos de entrada de áudio (mesas USB, microfones)
+    async function refreshAudioDevices() {
+      const select = document.getElementById('audioDeviceSelect');
+      try {
+        // Solicita permissão para que as labels apareçam
+        await navigator.mediaDevices.getUserMedia({ audio: true }).then(s => s.getTracks().forEach(t => t.stop()));
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(d => d.kind === 'audioinput');
+
+        select.innerHTML = '';
+        if (audioInputs.length === 0) {
+          select.innerHTML = '<option value="">Nenhum dispositivo encontrado</option>';
+          return;
+        }
+
+        audioInputs.forEach((device, index) => {
+          const opt = document.createElement('option');
+          opt.value = device.deviceId;
+          opt.text = device.label || `Microfone / Entrada ${index + 1}`;
+          select.appendChild(opt);
+        });
+      } catch (err) {
+        select.innerHTML = '<option value="">Permissão negada para listar entradas</option>';
+      }
+    }
+
     function renderQRCode() {
       const shareUrl = `${window.location.origin}/?room=${roomId}`;
       document.getElementById('shareUrlText').innerText = shareUrl;
+      document.getElementById('openScreenBtn').href = `/screen.html?room=${roomId}`;
       const qrEl = document.getElementById('qrcode');
       qrEl.innerHTML = '';
       new QRCode(qrEl, {
@@ -164,14 +231,14 @@
         width: 170,
         height: 170,
         colorDark : "#000000",
-        colorLight : "#ffffff",
-        correctLevel : QRCode.CorrectLevel.M
+        colorLight : "#ffffff"
       });
     }
 
     function updateRoom(newId) {
       roomId = newId.trim();
       renderQRCode();
+      loadRoomDetails();
       if (socket) {
         socket.close();
         connectHostWS();
@@ -217,15 +284,18 @@
     async function toggleBroadcast() {
       if (!isBroadcasting) {
         try {
-          // Captura microfone ou entrada de linha em 16kHz Mono
-          audioStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              channelCount: 1,
-              sampleRate: 16000,
-              echoCancellation: true,
-              noiseSuppression: false
-            }
-          });
+          const selectedDeviceId = document.getElementById('audioDeviceSelect').value;
+          const audioConstraints = {
+            channelCount: 1,
+            sampleRate: 16000,
+            echoCancellation: false,
+            noiseSuppression: false
+          };
+          if (selectedDeviceId) {
+            audioConstraints.deviceId = { exact: selectedDeviceId };
+          }
+
+          audioStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
 
           audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
           const source = audioContext.createMediaStreamSource(audioStream);
@@ -233,7 +303,6 @@
           analyser.fftSize = 256;
           source.connect(analyser);
 
-          // Monitor VU Meter
           const dataArray = new Uint8Array(analyser.frequencyBinCount);
           function updateVU() {
             if (!isBroadcasting) return;
@@ -248,7 +317,6 @@
           }
           requestAnimationFrame(updateVU);
 
-          // Processador de áudio em chunks PCM 16-bit 16kHz
           scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
           source.connect(scriptProcessor);
           scriptProcessor.connect(audioContext.destination);
@@ -257,14 +325,12 @@
             if (!isBroadcasting || !socket || socket.readyState !== WebSocket.OPEN) return;
             const inputData = e.inputBuffer.getChannelData(0);
             
-            // Conversão de Float32 (-1.0 a 1.0) para Int16 PCM
             const pcm16 = new Int16Array(inputData.length);
             for (let i = 0; i < inputData.length; i++) {
               const s = Math.max(-1, Math.min(1, inputData[i]));
               pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
 
-            // Transmissão binária imediata para o servidor
             socket.send(pcm16.buffer);
           };
 
@@ -273,10 +339,9 @@
           document.getElementById('btnIcon').innerText = '⏹️';
           document.getElementById('btnText').innerText = 'Parar Transmissão';
         } catch (err) {
-          alert('Erro ao acessar microfone/entrada de som: ' + err.message);
+          alert('Erro ao capturar o dispositivo de áudio: ' + err.message);
         }
       } else {
-        // Parar transmissão
         isBroadcasting = false;
         if (audioStream) audioStream.getTracks().forEach(t => t.stop());
         if (audioContext) audioContext.close();
@@ -320,7 +385,7 @@
         await fetch(`/api/rooms/${roomId}/glossary`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ hostKey: 'demo', glossary: glossaryMap })
+          body: JSON.stringify({ hostKey: 'admin', glossary: glossaryMap })
         });
         alert('Glossário atualizado no servidor com sucesso!');
       } catch (e) {
@@ -330,6 +395,8 @@
 
     renderQRCode();
     renderGlossary();
+    refreshAudioDevices();
+    loadRoomDetails();
     connectHostWS();
   </script>
 </body>
