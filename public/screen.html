@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telão de Legendas ao Vivo | Videomappingtech Stage Screen</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body.theme-black { background-color: #000000; color: #ffffff; }
+    body.theme-chroma { background-color: #00ff00; color: #ffffff; text-shadow: 2px 2px 8px #000000; }
+    body.theme-dark { background-color: #090d16; color: #e2e8f0; }
+
+    .subtitle-line {
+      animation: fadeIn 0.3s ease-out forwards;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body class="theme-black min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none">
+
+  <!-- Barra de Configurações (Oculta automaticamente em apresentação) -->
+  <header id="controlsHeader" class="flex items-center justify-between opacity-40 hover:opacity-100 transition-opacity duration-300 bg-slate-900/60 backdrop-blur p-3 rounded-xl border border-slate-800">
+    <div class="flex items-center gap-3">
+      <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">Videomappingtech Screen</span>
+      <span id="roomTag" class="text-xs bg-slate-800 px-2.5 py-1 rounded-md text-slate-300 font-mono">Sala: demo</span>
+      <span id="liveDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <label class="text-xs text-slate-300">Fundo:</label>
+      <select onchange="changeTheme(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
+        <option value="theme-black">Preto (LED/Projetor)</option>
+        <option value="theme-chroma">Verde Chroma Key (vMix/OBS)</option>
+        <option value="theme-dark">Azul Escuro</option>
+      </select>
+
+      <div class="flex items-center gap-1">
+        <button onclick="adjustFontSize(-4)" class="bg-slate-800 hover:bg-slate-700 text-xs px-2.5 py-1 rounded text-slate-200 font-bold">A-</button>
+        <button onclick="adjustFontSize(4)" class="bg-slate-800 hover:bg-slate-700 text-xs px-2.5 py-1 rounded text-slate-200 font-bold">A+</button>
+      </div>
+
+      <button onclick="toggleFullScreen()" class="bg-cyan-600 hover:bg-cyan-500 text-white text-xs px-3 py-1 rounded font-semibold transition">
+        ⛶ Tela Cheia
+      </button>
+    </div>
+  </header>
+
+  <!-- Área Central de Legendas -->
+  <main class="flex-1 flex flex-col justify-center items-center text-center px-6">
+    <div id="subtitlesContainer" class="w-full max-w-5xl flex flex-col gap-4 text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-normal">
+      <p class="text-slate-600 text-2xl font-normal italic">Aguardando início do áudio no palco...</p>
+    </div>
+  </main>
+
+  <!-- Rodapé discreto -->
+  <footer class="text-center py-2 opacity-30 text-xs">
+    <span>Legendas geradas em tempo real com IA • Videomappingtech</span>
+  </footer>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomId = urlParams.get('room') || 'demo';
+    document.getElementById('roomTag').innerText = `Sala: ${roomId}`;
+
+    let socket = null;
+    let fontSize = 52;
+
+    function connectScreenWS() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}?roomId=${roomId}&role=screen`;
+      socket = new WebSocket(wsUrl);
+
+      socket.onopen = () => {
+        document.getElementById('liveDot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'subtitle' || data.type === 'subtitle_translated') {
+            displaySubtitle(data.text, data.isFinal);
+          }
+        } catch (e) {}
+      };
+
+      socket.onclose = () => {
+        document.getElementById('liveDot').className = 'w-2.5 h-2.5 rounded-full bg-red-500';
+        setTimeout(connectScreenWS, 2500);
+      };
+    }
+
+    function displaySubtitle(text, isFinal) {
+      const container = document.getElementById('subtitlesContainer');
+      
+      // Limpa mensagem inicial
+      if (container.querySelector('.text-slate-600')) {
+        container.innerHTML = '';
+      }
+
+      // Mantém no máximo 2 blocos para visualização limpa de telão
+      const existing = container.querySelectorAll('.subtitle-line');
+      if (existing.length >= 2) {
+        existing[0].remove();
+      }
+
+      const p = document.createElement('p');
+      p.className = `subtitle-line ${isFinal ? 'text-white' : 'text-cyan-400 opacity-90'}`;
+      p.style.fontSize = fontSize + 'px';
+      p.innerText = text;
+      container.appendChild(p);
+    }
+
+    function changeTheme(themeName) {
+      document.body.className = `${themeName} min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none`;
+    }
+
+    function adjustFontSize(delta) {
+      fontSize = Math.max(28, Math.min(96, fontSize + delta));
+      document.querySelectorAll('.subtitle-line').forEach(el => {
+        el.style.fontSize = fontSize + 'px';
+      });
+    }
+
+    function toggleFullScreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+      }
+    }
+
+    connectScreenWS();
+  </script>
+</body>
+</html>

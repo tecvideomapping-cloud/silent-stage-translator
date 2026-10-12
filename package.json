@@ -1,0 +1,27 @@
+{
+  "name": "videomappingtech-silent-translator",
+  "version": "1.0.0",
+  "description": "Plataforma de Palestras Silenciosas e Tradução Simultânea com IA em Tempo Real",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "keywords": [
+    "silent-theater",
+    "ai-translation",
+    "realtime-audio",
+    "subtitles",
+    "railway"
+  ],
+  "author": "videomappingtech",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "ioredis": "^5.4.1",
+    "pg": "^8.13.0",
+    "ws": "^8.18.0"
+  }
+}
