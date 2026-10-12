@@ -304,6 +304,64 @@ wss.on('connection', (ws, req) => {
       if (msg.type === 'switch_channel') {
         ws.channel = msg.channel;
         ws.send(JSON.stringify({ type: 'channel_switched', channel: ws.channel }));
+      } else if (msg.type === 'audio_meta') {
+        // Encaminha metadata de áudio (ex: sampleRate) para todos os ouvintes
+        for (const client of roomClients) {
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(msg));
+          }
+        }
+      } else if (msg.type === 'speech_transcript') {
+        // Transcrição gerada pelo host (Web Speech API ou ASR client-side)
+        const { text, isFinal, sourceLang } = msg;
+        const subPayload = JSON.stringify({
+          type: 'subtitle',
+          text,
+          isFinal,
+          sourceLang: sourceLang || 'pt-BR',
+          timestamp: Date.now()
+        });
+
+        for (const client of roomClients) {
+          if (client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.channel === 'original' || client.channel === 'text')) {
+            client.send(subPayload);
+          }
+        }
+
+        if (isFinal) {
+          getRoom(roomId).then(async (room) => {
+            const targetLangs = room?.target_languages || ['en', 'es'];
+            const glossary = room?.glossary || {};
+            const translations = await aiPipeline.translateText(text, targetLangs, glossary);
+            await saveTranscript(roomId, text, translations);
+
+            for (const [lang, translatedText] of Object.entries(translations)) {
+              const transPayload = JSON.stringify({
+                type: 'subtitle_translated',
+                lang,
+                text: translatedText,
+                sourceText: text,
+                timestamp: Date.now()
+              });
+
+              for (const client of roomClients) {
+                if (client.readyState === WebSocket.OPEN && (client.channel === lang || client.role === 'screen')) {
+                  client.send(transPayload);
+                }
+              }
+
+              aiPipeline.synthesizeSpeech(translatedText, lang).then(ttsAudioBuffer => {
+                if (ttsAudioBuffer) {
+                  for (const client of roomClients) {
+                    if (client.readyState === WebSocket.OPEN && client.channel === lang) {
+                      client.send(ttsAudioBuffer, { binary: true });
+                    }
+                  }
+                }
+              });
+            }
+          });
+        }
       } else if (msg.type === 'ping') {
         ws.send(JSON.stringify({ type: 'pong' }));
       }

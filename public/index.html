@@ -266,7 +266,10 @@
 
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'subtitle' || data.type === 'subtitle_translated') {
+          if (data.type === 'audio_meta') {
+            window.hostSampleRate = data.sampleRate;
+            console.log('SampleRate do transmissor recebido:', data.sampleRate);
+          } else if (data.type === 'subtitle' || data.type === 'subtitle_translated') {
             renderSubtitle(data.text, data.isFinal);
           }
         } catch (e) {}
@@ -282,7 +285,7 @@
     function ensureAudioContext() {
       if (!audioContext) {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        audioContext = new AudioCtx({ sampleRate: 16000 });
+        audioContext = new AudioCtx();
         gainNode = audioContext.createGain();
         gainNode.connect(audioContext.destination);
         nextAudioTime = audioContext.currentTime;
@@ -319,13 +322,16 @@
     }
 
     function playRawPCM(arrayBuffer) {
+      if (!audioContext) return;
       const int16View = new Int16Array(arrayBuffer);
       const float32Data = new Float32Array(int16View.length);
       for (let i = 0; i < int16View.length; i++) {
         float32Data[i] = int16View[i] / 32768;
       }
 
-      const audioBuffer = audioContext.createBuffer(1, float32Data.length, 16000);
+      // Usa o sampleRate real emitido pelo transmissor (ex: 44100 ou 48000)
+      const sRate = window.hostSampleRate || audioContext.sampleRate || 48000;
+      const audioBuffer = audioContext.createBuffer(1, float32Data.length, sRate);
       audioBuffer.getChannelData(0).set(float32Data);
 
       const source = audioContext.createBufferSource();
@@ -333,8 +339,9 @@
       source.connect(gainNode);
 
       const now = audioContext.currentTime;
-      if (nextAudioTime < now) {
-        nextAudioTime = now + 0.05;
+      // Elimina atraso cumulativo: se estiver no passado ou mais de 250ms à frente, sincroniza com o momento atual
+      if (nextAudioTime < now || nextAudioTime > now + 0.25) {
+        nextAudioTime = now;
       }
       source.start(nextAudioTime);
       nextAudioTime += audioBuffer.duration;
