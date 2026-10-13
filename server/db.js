@@ -1,13 +1,29 @@
 const { Pool } = require('pg');
+const { hashPassword } = require('./auth');
 
 let pool = null;
 const memoryStore = {
+  users: new Map(),
+  clients: new Map(),
   rooms: new Map(),
   transcripts: [],
   leads: []
 };
 
-function initDb() {
+async function initDb() {
+  // Inicializa usuário admin em memória
+  const defaultAdminPass = hashPassword('Videomapping2026!');
+  const defaultAdmin = {
+    id: 1,
+    email: 'admin@videomappingtech.com',
+    password_hash: defaultAdminPass.hash,
+    password_salt: defaultAdminPass.salt,
+    name: 'Administrador Videomappingtech',
+    role: 'superadmin',
+    created_at: new Date()
+  };
+  memoryStore.users.set(defaultAdmin.email, defaultAdmin);
+
   if (!process.env.DATABASE_URL) {
     console.log('[DB] DATABASE_URL não configurada. Operando em modo In-Memory.');
     return null;
@@ -19,11 +35,36 @@ function initDb() {
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
     });
 
-    pool.query(`
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        password_salt VARCHAR(255) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        role VARCHAR(50) DEFAULT 'admin',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS clients (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        company VARCHAR(255) NOT NULL,
+        email VARCHAR(255),
+        phone VARCHAR(50),
+        cnpj_cpf VARCHAR(50),
+        total_hours INT DEFAULT 10,
+        used_hours NUMERIC(6,2) DEFAULT 0,
+        status VARCHAR(20) DEFAULT 'active',
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS rooms (
         id VARCHAR(64) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         host_key VARCHAR(128) NOT NULL,
+        client_id INT REFERENCES clients(id) ON DELETE SET NULL,
         source_language VARCHAR(10) DEFAULT 'pt-BR',
         target_languages TEXT[] DEFAULT ARRAY['en', 'es'],
         glossary JSONB DEFAULT '{}'::jsonb,
@@ -38,6 +79,7 @@ function initDb() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
 
+      ALTER TABLE rooms ADD COLUMN IF NOT EXISTS client_id INT REFERENCES clients(id) ON DELETE SET NULL;
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS banner_url TEXT DEFAULT '';
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS logo_url TEXT DEFAULT '';
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS primary_color VARCHAR(30) DEFAULT '#06b6d4';
@@ -65,32 +107,178 @@ function initDb() {
         message TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
-    `).then(() => {
-      console.log('[DB] Tabelas e campos PostgreSQL sincronizados com sucesso.');
-    }).catch(err => {
-      console.error('[DB] Erro ao sincronizar PostgreSQL:', err.message);
-    });
+    `);
 
+    // Cria o primeiro admin padrão no Postgres se não houver usuários cadastrados
+    const userCheck = await pool.query('SELECT count(*) FROM users');
+    if (parseInt(userCheck.rows[0].count) === 0) {
+      await pool.query(
+        `INSERT INTO users (email, password_hash, password_salt, name, role)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [defaultAdmin.email, defaultAdmin.password_hash, defaultAdmin.password_salt, defaultAdmin.name, defaultAdmin.role]
+      );
+      console.log('[DB] Usuário administrador padrão criado com sucesso: admin@videomappingtech.com');
+    }
+
+    console.log('[DB] Tabelas PostgreSQL inicializadas.');
     return pool;
   } catch (err) {
-    console.error('[DB] Falha ao conectar ao PostgreSQL:', err.message);
+    console.error('[DB] Erro ao inicializar tabelas PostgreSQL:', err.message);
     return null;
   }
 }
 
+// ----------------------------------------------------
+// USUÁRIOS & AUTENTICAÇÃO
+// ----------------------------------------------------
+async function getUserByEmail(email) {
+  if (pool) {
+    try {
+      const res = await pool.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase().trim()]);
+      if (res.rows.length > 0) return res.rows[0];
+    } catch (e) {
+      console.error('[DB] Erro ao buscar usuário por email:', e.message);
+    }
+  }
+  return memoryStore.users.get(email.toLowerCase().trim()) || null;
+}
+
+async function createUser({ email, password, name, role = 'admin' }) {
+  const { hash, salt } = hashPassword(password);
+  const user = {
+    email: email.toLowerCase().trim(),
+    password_hash: hash,
+    password_salt: salt,
+    name,
+    role,
+    created_at: new Date()
+  };
+
+  if (pool) {
+    try {
+      const res = await pool.query(
+        `INSERT INTO users (email, password_hash, password_salt, name, role)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id, email, name, role, created_at`,
+        [user.email, user.password_hash, user.password_salt, user.name, user.role]
+      );
+      return res.rows[0];
+    } catch (e) {
+      console.error('[DB] Erro ao criar usuário:', e.message);
+      throw e;
+    }
+  }
+  user.id = memoryStore.users.size + 1;
+  memoryStore.users.set(user.email, user);
+  const { password_hash, password_salt, ...safeUser } = user;
+  return safeUser;
+}
+
+async function updateUserPassword(email, newPassword) {
+  const { hash, salt } = hashPassword(newPassword);
+  if (pool) {
+    try {
+      await pool.query(
+        'UPDATE users SET password_hash = $1, password_salt = $2 WHERE email = $3',
+        [hash, salt, email.toLowerCase().trim()]
+      );
+      return true;
+    } catch (e) {
+      console.error('[DB] Erro ao atualizar senha:', e.message);
+      return false;
+    }
+  }
+  const u = memoryStore.users.get(email.toLowerCase().trim());
+  if (u) {
+    u.password_hash = hash;
+    u.password_salt = salt;
+    return true;
+  }
+  return false;
+}
+
+// ----------------------------------------------------
+// CLIENTES (EMPRESAS CONTRATANTES)
+// ----------------------------------------------------
+async function saveClient(client) {
+  if (pool) {
+    try {
+      if (client.id) {
+        const res = await pool.query(
+          `UPDATE clients SET
+            name = $1, company = $2, email = $3, phone = $4, cnpj_cpf = $5,
+            total_hours = $6, used_hours = $7, status = $8, notes = $9
+           WHERE id = $10 RETURNING *`,
+          [
+            client.name, client.company, client.email, client.phone, client.cnpj_cpf,
+            client.total_hours || 10, client.used_hours || 0, client.status || 'active', client.notes, client.id
+          ]
+        );
+        return res.rows[0];
+      } else {
+        const res = await pool.query(
+          `INSERT INTO clients (name, company, email, phone, cnpj_cpf, total_hours, used_hours, status, notes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+          [
+            client.name, client.company, client.email, client.phone, client.cnpj_cpf,
+            client.total_hours || 10, client.used_hours || 0, client.status || 'active', client.notes
+          ]
+        );
+        return res.rows[0];
+      }
+    } catch (e) {
+      console.error('[DB] Erro ao salvar cliente:', e.message);
+      throw e;
+    }
+  }
+
+  const id = client.id || (memoryStore.clients.size + 1);
+  const saved = { ...client, id, created_at: client.created_at || new Date() };
+  memoryStore.clients.set(id, saved);
+  return saved;
+}
+
+async function listClients() {
+  if (pool) {
+    try {
+      const res = await pool.query('SELECT * FROM clients ORDER BY created_at DESC');
+      return res.rows;
+    } catch (e) {
+      console.error('[DB] Erro ao listar clientes:', e.message);
+    }
+  }
+  return Array.from(memoryStore.clients.values());
+}
+
+async function deleteClient(id) {
+  if (pool) {
+    try {
+      await pool.query('DELETE FROM clients WHERE id = $1', [id]);
+      return true;
+    } catch (e) {
+      console.error('[DB] Erro ao excluir cliente:', e.message);
+    }
+  }
+  memoryStore.clients.delete(parseInt(id));
+  return true;
+}
+
+// ----------------------------------------------------
+// SALAS & EVENTOS
+// ----------------------------------------------------
 async function saveRoom(room) {
   memoryStore.rooms.set(room.id, room);
   if (pool) {
     try {
       await pool.query(
         `INSERT INTO rooms (
-          id, name, host_key, source_language, target_languages, glossary,
+          id, name, host_key, client_id, source_language, target_languages, glossary,
           banner_url, logo_url, primary_color, sponsors,
           allow_original_audio, allow_translation, allow_subtitles, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         ON CONFLICT (id) DO UPDATE SET
           name = EXCLUDED.name,
+          client_id = EXCLUDED.client_id,
           source_language = EXCLUDED.source_language,
           target_languages = EXCLUDED.target_languages,
           glossary = EXCLUDED.glossary,
@@ -106,6 +294,7 @@ async function saveRoom(room) {
           room.id,
           room.name,
           room.host_key,
+          room.client_id || null,
           room.source_language || 'pt-BR',
           room.target_languages || ['en', 'es'],
           JSON.stringify(room.glossary || {}),
@@ -148,7 +337,12 @@ async function getRoom(roomId) {
 async function listRooms() {
   if (pool) {
     try {
-      const res = await pool.query('SELECT * FROM rooms ORDER BY created_at DESC LIMIT 100');
+      const res = await pool.query(`
+        SELECT r.*, c.name as client_name, c.company as client_company
+        FROM rooms r
+        LEFT JOIN clients c ON r.client_id = c.id
+        ORDER BY r.created_at DESC LIMIT 100
+      `);
       return res.rows;
     } catch (e) {
       console.error('[DB] Erro ao listar salas:', e.message);
@@ -232,6 +426,12 @@ async function listLeads() {
 
 module.exports = {
   initDb,
+  getUserByEmail,
+  createUser,
+  updateUserPassword,
+  saveClient,
+  listClients,
+  deleteClient,
   saveRoom,
   getRoom,
   listRooms,

@@ -9,25 +9,30 @@
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans selection:bg-cyan-500 selection:text-white pb-12">
 
-  <!-- Topbar -->
-  <header class="border-b border-slate-800 bg-slate-900/90 sticky top-0 z-40 px-6 py-4 flex items-center justify-between">
+  <!-- Topbar com Sessão do Usuário e Logout -->
+  <header class="border-b border-slate-800 bg-slate-900/90 sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between">
     <div class="flex items-center gap-3">
       <div class="w-4 h-4 rounded-full bg-cyan-500 animate-pulse"></div>
       <div>
         <h1 class="font-bold text-lg bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 bg-clip-text text-transparent">
           Videomappingtech • Admin Console
         </h1>
-        <p class="text-[11px] text-slate-400">Gestão de Eventos, Branding e Tradução Simultânea</p>
+        <p class="text-[11px] text-slate-400">Gestão de Clientes, Eventos e Palestras Silenciosas</p>
       </div>
     </div>
-    <div class="flex items-center gap-3">
-      <a href="/landing.html" target="_blank"
-        class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3.5 py-1.5 rounded-lg text-slate-300 transition flex items-center gap-1.5">
-        <span>🌐</span> Ver Site Comercial
-      </a>
-      <button onclick="openNewEventModal()"
-        class="text-xs bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-4 py-2 rounded-lg shadow-lg transition active:scale-95 flex items-center gap-1.5">
-        <span>+</span> Novo Evento
+    
+    <div class="flex items-center gap-4">
+      <div class="text-right hidden sm:block">
+        <p id="userNameDisplay" class="text-xs font-bold text-slate-200">Administrador</p>
+        <p id="userEmailDisplay" class="text-[10px] text-slate-400">admin@videomappingtech.com</p>
+      </div>
+
+      <button onclick="openChangePasswordModal()" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-slate-300 transition">
+        🔑 Senha
+      </button>
+
+      <button onclick="handleLogout()" class="text-xs bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 font-semibold px-3 py-1.5 rounded-lg transition">
+        Sair
       </button>
     </div>
   </header>
@@ -37,10 +42,14 @@
     <!-- Navegação de Abas -->
     <div class="flex border-b border-slate-800 gap-6">
       <button onclick="switchTab('events')" id="tabBtnEvents" class="pb-3 text-sm font-semibold border-b-2 border-cyan-500 text-cyan-400 transition">
-        Eventos & Salas Ativas
+        🎪 Eventos & Salas
+      </button>
+      <button onclick="switchTab('clients')" id="tabBtnClients" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
+        <span>🏢 Clientes & Horas Contratadas</span>
+        <span id="clientsBadge" class="bg-cyan-500/20 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full">0</span>
       </button>
       <button onclick="switchTab('leads')" id="tabBtnLeads" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
-        <span>Propostas & Contratações</span>
+        <span>📩 Propostas & Orçamentos</span>
         <span id="leadsBadge" class="bg-cyan-500/20 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full">0</span>
       </button>
     </div>
@@ -49,25 +58,63 @@
     <section id="sectionEvents" class="flex flex-col gap-6">
       <div class="flex items-center justify-between">
         <div>
-          <h2 class="text-xl font-bold text-white">Eventos Configurados</h2>
-          <p class="text-xs text-slate-400">Configure marcas, canais de palestras silenciosas, idiomas e telões para cada auditório ou palco</p>
+          <h2 class="text-xl font-bold text-white">Salas & Eventos Ativos</h2>
+          <p class="text-xs text-slate-400">Configure marcas, palestras silenciosas, idiomas e telões para cada auditório</p>
         </div>
+        <button onclick="openNewEventModal()"
+          class="text-xs bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-4 py-2.5 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-1.5">
+          <span>+</span> Novo Evento
+        </button>
       </div>
 
-      <!-- Grid de Salas/Eventos -->
       <div id="eventsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div class="p-8 text-center text-slate-500 italic col-span-full">Carregando eventos...</div>
       </div>
     </section>
 
-    <!-- ABA 2: PROPOSTAS E LEADS -->
-    <section id="sectionLeads" class="hidden flex flex-col gap-6">
-      <div>
-        <h2 class="text-xl font-bold text-white">Solicitações de Contratação</h2>
-        <p class="text-xs text-slate-400">Contatos de clientes recebidos através do site institucional da Videomappingtech</p>
+    <!-- ABA 2: CLIENTES / EMPRESAS -->
+    <section id="sectionClients" class="hidden flex flex-col gap-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-white">Clientes & Contratantes</h2>
+          <p class="text-xs text-slate-400">Gerenciamento de empresas, dados cadastrais e saldo de horas contratadas</p>
+        </div>
+        <button onclick="openNewClientModal()"
+          class="text-xs bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-4 py-2.5 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-1.5">
+          <span>+</span> Cadastrar Cliente
+        </button>
       </div>
 
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950 text-slate-400 uppercase border-b border-slate-800">
+              <tr>
+                <th class="p-3.5">Empresa / Razão Social</th>
+                <th class="p-3.5">Contato</th>
+                <th class="p-3.5">CNPJ / CPF</th>
+                <th class="p-3.5">Horas Contratadas</th>
+                <th class="p-3.5">Horas Usadas</th>
+                <th class="p-3.5">Saldo</th>
+                <th class="p-3.5 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="clientsTableBody" class="divide-y divide-slate-800/60">
+              <tr><td colspan="7" class="p-4 text-center text-slate-500">Nenhum cliente cadastrado.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ABA 3: PROPOSTAS E LEADS -->
+    <section id="sectionLeads" class="hidden flex flex-col gap-6">
+      <div>
+        <h2 class="text-xl font-bold text-white">Solicitações de Orçamento</h2>
+        <p class="text-xs text-slate-400">Contatos de clientes recebidos através do site institucional</p>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs text-slate-300">
             <thead class="bg-slate-950 text-slate-400 uppercase border-b border-slate-800">
@@ -90,42 +137,47 @@
 
   </main>
 
-  <!-- MODAL: CRIAR / EDITAR EVENTO -->
+  <!-- MODAL: NOVO EVENTO -->
   <div id="eventModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="bg-slate-900 border border-slate-800 max-w-2xl w-full rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto flex flex-col gap-5">
       <div class="flex items-center justify-between border-b border-slate-800 pb-3">
         <h3 id="modalTitle" class="text-lg font-bold text-white">Configurar Novo Evento</h3>
-        <button onclick="closeModal()" class="text-slate-400 hover:text-white text-xl font-bold">×</button>
+        <button onclick="closeModal('eventModal')" class="text-slate-400 hover:text-white text-xl font-bold">×</button>
       </div>
 
       <form id="eventForm" onsubmit="handleSaveEvent(event)" class="flex flex-col gap-4 text-xs">
         
-        <!-- 1. Identificação Básica -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <!-- Identificação & Cliente -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label class="block font-semibold text-slate-400 uppercase tracking-wider mb-1">ID da Sala (Slug na URL):</label>
-            <input type="text" id="formRoomId" placeholder="ex: palco-principal" required
+            <label class="block font-semibold text-slate-400 mb-1">ID da Sala (Slug URL):</label>
+            <input type="text" id="formRoomId" placeholder="ex: palco-inovacao" required
               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 font-mono focus:border-cyan-500 focus:outline-none">
-            <span class="text-[10px] text-slate-500">Ex: link será /?room=palco-principal</span>
           </div>
           <div>
-            <label class="block font-semibold text-slate-400 uppercase tracking-wider mb-1">Nome do Evento / Sessão:</label>
-            <input type="text" id="formName" placeholder="ex: Summit Internacional 2026" required
+            <label class="block font-semibold text-slate-400 mb-1">Nome do Evento:</label>
+            <input type="text" id="formName" placeholder="ex: Summit Internacional" required
               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-400 mb-1">Cliente Vinculado:</label>
+            <select id="formClientId" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+              <option value="">Nenhum (Evento Avulso)</option>
+            </select>
           </div>
         </div>
 
-        <!-- 2. Identidade Visual & Branding -->
+        <!-- Identidade Visual & Branding -->
         <div class="border-t border-slate-800 pt-3">
-          <p class="font-bold text-slate-200 uppercase tracking-wider text-[11px] mb-2 text-cyan-400">🎨 Identidade Visual & Branding</p>
+          <p class="font-bold text-slate-200 uppercase tracking-wider text-[11px] mb-2 text-cyan-400">🎨 Identidade Visual do Evento</p>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label class="block font-semibold text-slate-400 mb-1">Logo URL (topo do app):</label>
+              <label class="block font-semibold text-slate-400 mb-1">Logo URL:</label>
               <input type="url" id="formLogoUrl" placeholder="https://exemplo.com/logo.png"
                 class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
             </div>
             <div>
-              <label class="block font-semibold text-slate-400 mb-1">Banner URL (arte do evento):</label>
+              <label class="block font-semibold text-slate-400 mb-1">Banner URL (Capa):</label>
               <input type="url" id="formBannerUrl" placeholder="https://exemplo.com/banner.jpg"
                 class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
             </div>
@@ -139,42 +191,41 @@
           </div>
         </div>
 
-        <!-- 3. Recursos & Modos de Operação -->
+        <!-- Modos de Operação -->
         <div class="border-t border-slate-800 pt-3">
           <p class="font-bold text-slate-200 uppercase tracking-wider text-[11px] mb-2 text-cyan-400">⚡ Modos de Operação</p>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <label class="flex items-center gap-2 p-2.5 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
               <input type="checkbox" id="formAllowOriginal" checked class="accent-cyan-500">
-              <span>🎙️ Palestra Silenciosa (Áudio Original Direto)</span>
+              <span>🎙️ Palestra Silenciosa</span>
             </label>
             <label class="flex items-center gap-2 p-2.5 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
               <input type="checkbox" id="formAllowTranslation" checked class="accent-cyan-500">
-              <span>🌐 Tradução Simultânea por IA</span>
+              <span>🌐 Tradução Simultânea</span>
             </label>
             <label class="flex items-center gap-2 p-2.5 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
               <input type="checkbox" id="formAllowSubtitles" checked class="accent-cyan-500">
-              <span>📝 Legendas em Tempo Real</span>
+              <span>📝 Legendas em Tela</span>
             </label>
           </div>
         </div>
 
-        <!-- 4. Idiomas -->
+        <!-- Idiomas -->
         <div class="border-t border-slate-800 pt-3">
-          <p class="font-bold text-slate-200 uppercase tracking-wider text-[11px] mb-2 text-cyan-400">🗣️ Idiomas da Sessão</p>
+          <p class="font-bold text-slate-200 uppercase tracking-wider text-[11px] mb-2 text-cyan-400">🗣️ Idiomas</p>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
             <div>
-              <label class="block font-semibold text-slate-400 mb-1">Idioma de Entrada (Falado no Palco):</label>
+              <label class="block font-semibold text-slate-400 mb-1">Idioma de Entrada (Palco):</label>
               <select id="formSourceLang" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200">
                 <option value="pt-BR">🇧🇷 Português (Brasil)</option>
                 <option value="en-US">🇺🇸 Inglês (EUA)</option>
                 <option value="es-ES">🇪🇸 Espanhol</option>
                 <option value="fr-FR">🇫🇷 Francês</option>
                 <option value="de-DE">🇩🇪 Alemão</option>
-                <option value="it-IT">🇮🇹 Italiano</option>
               </select>
             </div>
             <div>
-              <label class="block font-semibold text-slate-400 mb-1">Idiomas de Tradução Disponíveis aos Ouvintes:</label>
+              <label class="block font-semibold text-slate-400 mb-1">Idiomas de Tradução Liberados:</label>
               <div class="grid grid-cols-3 gap-1.5 p-2 bg-slate-950 rounded-lg border border-slate-800">
                 <label class="flex items-center gap-1.5"><input type="checkbox" name="targetLang" value="en" checked class="accent-cyan-500"> 🇺🇸 Inglês</label>
                 <label class="flex items-center gap-1.5"><input type="checkbox" name="targetLang" value="es" checked class="accent-cyan-500"> 🇪🇸 Espanhol</label>
@@ -188,7 +239,7 @@
         </div>
 
         <div class="flex items-center justify-end gap-3 border-t border-slate-800 pt-3">
-          <button type="button" onclick="closeModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">
+          <button type="button" onclick="closeModal('eventModal')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">
             Cancelar
           </button>
           <button type="submit" class="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg">
@@ -199,35 +250,157 @@
     </div>
   </div>
 
+  <!-- MODAL: CADASTRAR CLIENTE -->
+  <div id="clientModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-800 max-w-lg w-full rounded-2xl p-6 shadow-2xl flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white">Cadastrar Novo Cliente</h3>
+        <button onclick="closeModal('clientModal')" class="text-slate-400 hover:text-white text-xl font-bold">×</button>
+      </div>
+
+      <form onsubmit="handleSaveClient(event)" class="flex flex-col gap-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Razão Social / Empresa:</label>
+          <input type="text" id="clientCompany" required placeholder="ex: Banco Inter S.A."
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">Nome do Responsável:</label>
+            <input type="text" id="clientName" required placeholder="ex: Rodrigo Costa"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">CNPJ / CPF:</label>
+            <input type="text" id="clientCnpj" placeholder="00.000.000/0001-00"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">E-mail:</label>
+            <input type="email" id="clientEmail" placeholder="contato@empresa.com"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">Telefone / WhatsApp:</label>
+            <input type="text" id="clientPhone" placeholder="(11) 99999-9999"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Pacote de Horas Contratadas:</label>
+          <input type="number" id="clientHours" value="10" min="1" max="1000"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+        </div>
+
+        <div class="flex items-center justify-end gap-3 border-t border-slate-800 pt-3 mt-2">
+          <button type="button" onclick="closeModal('clientModal')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">
+            Cancelar
+          </button>
+          <button type="submit" class="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg">
+            Salvar Cliente
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ALTERAR SENHA -->
+  <div id="passwordModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-800 max-w-sm w-full rounded-2xl p-6 shadow-2xl flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <h3 class="text-sm font-bold text-white">Alterar Senha do Administrador</h3>
+        <button onclick="closeModal('passwordModal')" class="text-slate-400 hover:text-white font-bold">×</button>
+      </div>
+
+      <form onsubmit="handleChangePassword(event)" class="flex flex-col gap-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Nova Senha:</label>
+          <input type="password" id="newPassInput" required minlength="6" placeholder="Mínimo 6 caracteres"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+        </div>
+
+        <button type="submit" class="mt-2 w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg">
+          Atualizar Senha
+        </button>
+      </form>
+    </div>
+  </div>
+
   <!-- MODAL DE QR CODE -->
   <div id="qrModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="bg-slate-900 border border-slate-800 max-w-sm w-full rounded-2xl p-6 text-center flex flex-col items-center gap-4">
       <h3 id="qrModalTitle" class="text-base font-bold text-white">QR Code de Acesso dos Participantes</h3>
       <div id="qrBox" class="p-4 bg-white rounded-xl"></div>
       <p id="qrUrlText" class="text-xs font-mono text-cyan-400 break-all"></p>
-      <button onclick="closeQrModal()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold text-slate-200">
+      <button onclick="closeModal('qrModal')" class="w-full py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold text-slate-200">
         Fechar
       </button>
     </div>
   </div>
 
   <script>
+    // 1. CHECAGEM ESTRITA DE AUTENTICAÇÃO
+    const authToken = localStorage.getItem('vmt_admin_token');
+    if (!authToken) {
+      window.location.href = '/login.html';
+    }
+
+    // Headers autenticados
+    const authHeaders = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`
+    };
+
     let roomsList = [];
+    let clientsList = [];
+
+    async function checkAuthSession() {
+      try {
+        const res = await fetch('/api/auth/me', { headers: authHeaders });
+        if (!res.ok) {
+          localStorage.removeItem('vmt_admin_token');
+          window.location.href = '/login.html';
+          return;
+        }
+        const data = await res.json();
+        document.getElementById('userNameDisplay').innerText = data.user.name;
+        document.getElementById('userEmailDisplay').innerText = data.user.email;
+      } catch (e) {
+        window.location.href = '/login.html';
+      }
+    }
 
     async function loadRooms() {
       try {
-        const res = await fetch('/api/rooms');
+        const res = await fetch('/api/rooms', { headers: authHeaders });
+        if (res.status === 401) return handleLogout();
         const data = await res.json();
         roomsList = data.rooms || [];
         renderRooms();
-      } catch (e) {
-        console.error('Erro ao carregar salas:', e);
-      }
+      } catch (e) {}
+    }
+
+    async function loadClients() {
+      try {
+        const res = await fetch('/api/clients', { headers: authHeaders });
+        if (res.status === 401) return handleLogout();
+        const data = await res.json();
+        clientsList = data.clients || [];
+        document.getElementById('clientsBadge').innerText = clientsList.length;
+        renderClients();
+        populateClientSelect();
+      } catch (e) {}
     }
 
     async function loadLeads() {
       try {
-        const res = await fetch('/api/leads');
+        const res = await fetch('/api/leads', { headers: authHeaders });
+        if (res.status === 401) return handleLogout();
         const data = await res.json();
         const leads = data.leads || [];
         document.getElementById('leadsBadge').innerText = leads.length;
@@ -268,32 +441,31 @@
                 <span class="w-2.5 h-2.5 rounded-full bg-emerald-500" title="Ativo"></span>
               </div>
               <h3 class="font-bold text-base text-white truncate">${room.name}</h3>
+              ${room.client_company ? `<p class="text-xs text-cyan-400">Cliente: ${room.client_company}</p>` : ''}
               <p class="text-xs text-slate-400 mt-1">Palco: <strong>${room.source_language || 'pt-BR'}</strong> → Tradução: <strong>${(room.target_languages || []).join(', ').toUpperCase()}</strong></p>
             </div>
 
-            <!-- Links de Acesso Rápido -->
             <div class="bg-slate-950/80 rounded-xl p-3 border border-slate-800/80 flex flex-col gap-2 text-xs">
               <div class="flex items-center justify-between">
-                <span class="text-slate-400 flex items-center gap-1.5">📱 Participante:</span>
+                <span class="text-slate-400">📱 Ouvinte:</span>
                 <div class="flex gap-1.5">
-                  <button onclick="showQRCode('${listenerUrl}', '${room.name}')" class="text-slate-300 hover:text-white bg-slate-800 px-2 py-0.5 rounded" title="Ver QR Code">QR</button>
+                  <button onclick="showQRCode('${listenerUrl}', '${room.name}')" class="text-slate-300 hover:text-white bg-slate-800 px-2 py-0.5 rounded">QR</button>
                   <button onclick="copyLink('${listenerUrl}')" class="text-cyan-400 hover:text-cyan-300 bg-slate-800 px-2 py-0.5 rounded">Copiar</button>
                   <a href="${listenerUrl}" target="_blank" class="text-slate-400 hover:text-white bg-slate-800 px-2 py-0.5 rounded">Abrir</a>
                 </div>
               </div>
               <div class="flex items-center justify-between">
-                <span class="text-slate-400 flex items-center gap-1.5">🎙️ Transmissor:</span>
+                <span class="text-slate-400">🎙️ Transmissor:</span>
                 <a href="${hostUrl}" target="_blank" class="text-slate-300 hover:text-white bg-slate-800 px-2 py-0.5 rounded">Painel Som</a>
               </div>
               <div class="flex items-center justify-between">
-                <span class="text-slate-400 flex items-center gap-1.5">📺 Telão / Palco:</span>
+                <span class="text-slate-400">📺 Telão / Palco:</span>
                 <a href="${screenUrl}" target="_blank" class="text-slate-300 hover:text-white bg-slate-800 px-2 py-0.5 rounded">Abrir Telão</a>
               </div>
             </div>
 
-            <!-- Ações -->
             <div class="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
-              <a href="/api/rooms/${room.id}/export?format=srt" class="text-slate-400 hover:text-cyan-300 flex items-center gap-1">
+              <a href="/api/rooms/${room.id}/export?format=srt" class="text-slate-400 hover:text-cyan-300">
                 📥 Baixar SRT
               </a>
               <button onclick="deleteRoom('${room.id}')" class="text-rose-400 hover:text-rose-300">
@@ -305,10 +477,45 @@
       }).join('');
     }
 
+    function renderClients() {
+      const tbody = document.getElementById('clientsTableBody');
+      if (clientsList.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">Nenhum cliente cadastrado. Clique em "+ Cadastrar Cliente".</td></tr>';
+        return;
+      }
+      tbody.innerHTML = clientsList.map(c => {
+        const balance = (c.total_hours || 0) - (c.used_hours || 0);
+        return `
+          <tr class="hover:bg-slate-850">
+            <td class="p-3.5 font-bold text-white">${c.company}<br><span class="font-normal text-slate-400">${c.name}</span></td>
+            <td class="p-3.5">${c.email || '-'}<br><span class="text-slate-400">${c.phone || ''}</span></td>
+            <td class="p-3.5 font-mono">${c.cnpj_cpf || '-'}</td>
+            <td class="p-3.5 font-semibold text-slate-200">${c.total_hours}h</td>
+            <td class="p-3.5 text-slate-400">${c.used_hours}h</td>
+            <td class="p-3.5 font-bold ${balance > 0 ? 'text-emerald-400' : 'text-rose-400'}">${balance.toFixed(1)}h</td>
+            <td class="p-3.5 text-right">
+              <button onclick="deleteClient(${c.id})" class="text-rose-400 hover:text-rose-300">Excluir</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function populateClientSelect() {
+      const select = document.getElementById('formClientId');
+      select.innerHTML = '<option value="">Nenhum (Evento Avulso)</option>';
+      clientsList.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.innerText = `${c.company} (${c.name})`;
+        select.appendChild(opt);
+      });
+    }
+
     function renderLeads(leads) {
       const tbody = document.getElementById('leadsTableBody');
       if (leads.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">Nenhuma proposta recebida até o momento.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">Nenhuma solicitação até o momento.</td></tr>';
         return;
       }
       tbody.innerHTML = leads.map(l => `
@@ -324,17 +531,17 @@
     }
 
     function switchTab(tab) {
-      if (tab === 'events') {
-        document.getElementById('sectionEvents').classList.remove('hidden');
-        document.getElementById('sectionLeads').classList.add('hidden');
-        document.getElementById('tabBtnEvents').className = 'pb-3 text-sm font-semibold border-b-2 border-cyan-500 text-cyan-400 transition';
-        document.getElementById('tabBtnLeads').className = 'pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2';
-      } else {
-        document.getElementById('sectionEvents').classList.add('hidden');
-        document.getElementById('sectionLeads').classList.remove('hidden');
-        document.getElementById('tabBtnEvents').className = 'pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition';
-        document.getElementById('tabBtnLeads').className = 'pb-3 text-sm font-semibold border-b-2 border-cyan-500 text-cyan-400 transition flex items-center gap-2';
-      }
+      ['events', 'clients', 'leads'].forEach(t => {
+        const sec = document.getElementById('section' + t.charAt(0).toUpperCase() + t.slice(1));
+        const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+        if (t === tab) {
+          sec.classList.remove('hidden');
+          btn.className = 'pb-3 text-sm font-semibold border-b-2 border-cyan-500 text-cyan-400 transition flex items-center gap-2';
+        } else {
+          sec.classList.add('hidden');
+          btn.className = 'pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2';
+        }
+      });
     }
 
     function openNewEventModal() {
@@ -343,8 +550,16 @@
       document.getElementById('eventModal').classList.remove('hidden');
     }
 
-    function closeModal() {
-      document.getElementById('eventModal').classList.add('hidden');
+    function openNewClientModal() {
+      document.getElementById('clientModal').classList.remove('hidden');
+    }
+
+    function openChangePasswordModal() {
+      document.getElementById('passwordModal').classList.remove('hidden');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.add('hidden');
     }
 
     async function handleSaveEvent(e) {
@@ -354,6 +569,7 @@
       const payload = {
         id: document.getElementById('formRoomId').value.trim(),
         name: document.getElementById('formName').value.trim(),
+        clientId: document.getElementById('formClientId').value || null,
         bannerUrl: document.getElementById('formBannerUrl').value.trim(),
         logoUrl: document.getElementById('formLogoUrl').value.trim(),
         primaryColor: document.getElementById('formPrimaryColor').value,
@@ -367,23 +583,75 @@
       try {
         const res = await fetch('/api/rooms', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify(payload)
         });
         if (res.ok) {
-          closeModal();
+          closeModal('eventModal');
           loadRooms();
         }
       } catch (err) {
-        alert('Erro ao salvar sala: ' + err.message);
+        alert('Erro ao salvar evento: ' + err.message);
       }
+    }
+
+    async function handleSaveClient(e) {
+      e.preventDefault();
+      const payload = {
+        company: document.getElementById('clientCompany').value.trim(),
+        name: document.getElementById('clientName').value.trim(),
+        cnpj_cpf: document.getElementById('clientCnpj').value.trim(),
+        email: document.getElementById('clientEmail').value.trim(),
+        phone: document.getElementById('clientPhone').value.trim(),
+        total_hours: parseInt(document.getElementById('clientHours').value) || 10
+      };
+
+      try {
+        const res = await fetch('/api/clients', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          closeModal('clientModal');
+          loadClients();
+        }
+      } catch (err) {
+        alert('Erro ao salvar cliente: ' + err.message);
+      }
+    }
+
+    async function handleChangePassword(e) {
+      e.preventDefault();
+      const newPassword = document.getElementById('newPassInput').value;
+      try {
+        const res = await fetch('/api/auth/password', {
+          method: 'PUT',
+          headers: authHeaders,
+          body: JSON.stringify({ newPassword })
+        });
+        if (res.ok) {
+          alert('Senha atualizada com sucesso!');
+          closeModal('passwordModal');
+        } else {
+          alert('Erro ao atualizar senha.');
+        }
+      } catch (e) {}
     }
 
     async function deleteRoom(id) {
       if (!confirm(`Deseja realmente excluir a sala "${id}"?`)) return;
       try {
-        await fetch(`/api/rooms/${id}`, { method: 'DELETE' });
+        await fetch(`/api/rooms/${id}`, { method: 'DELETE', headers: authHeaders });
         loadRooms();
+      } catch (e) {}
+    }
+
+    async function deleteClient(id) {
+      if (!confirm(`Deseja excluir este cliente?`)) return;
+      try {
+        await fetch(`/api/clients/${id}`, { method: 'DELETE', headers: authHeaders });
+        loadClients();
       } catch (e) {}
     }
 
@@ -402,20 +670,25 @@
       document.getElementById('qrModal').classList.remove('hidden');
     }
 
-    function closeQrModal() {
-      document.getElementById('qrModal').classList.add('hidden');
-    }
-
     function copyLink(url) {
       navigator.clipboard.writeText(url).then(() => alert('Link copiado!'));
     }
 
-    // Sincronizar cor
+    function handleLogout() {
+      fetch('/api/auth/logout', { method: 'POST', headers: authHeaders }).finally(() => {
+        localStorage.removeItem('vmt_admin_token');
+        localStorage.removeItem('vmt_user');
+        window.location.href = '/login.html';
+      });
+    }
+
     document.getElementById('formPrimaryColor').addEventListener('input', (e) => {
       document.getElementById('formPrimaryColorText').value = e.target.value;
     });
 
+    checkAuthSession();
     loadRooms();
+    loadClients();
     loadLeads();
   </script>
 </body>

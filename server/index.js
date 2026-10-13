@@ -4,7 +4,24 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const { WebSocketServer, WebSocket } = require('ws');
-const { initDb, saveRoom, getRoom, listRooms, deleteRoom, saveTranscript, getTranscripts, saveLead, listLeads } = require('./db');
+const {
+  initDb,
+  getUserByEmail,
+  createUser,
+  updateUserPassword,
+  saveClient,
+  listClients,
+  deleteClient,
+  saveRoom,
+  getRoom,
+  listRooms,
+  deleteRoom,
+  saveTranscript,
+  getTranscripts,
+  saveLead,
+  listLeads
+} = require('./db');
+const { verifyPassword, createSession, removeSession, requireAuth } = require('./auth');
 const { pubSub } = require('./redis');
 const { aiPipeline } = require('./ai-pipeline');
 
@@ -22,7 +39,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 initDb();
 pubSub.init();
 
-// Map de clientes conectados localmente: roomId -> Set<ws>
+// Map de clientes conectados: roomId -> Set<ws>
 const roomsClients = new Map();
 
 function getRoomClients(roomId) {
@@ -33,11 +50,103 @@ function getRoomClients(roomId) {
 }
 
 // ----------------------------------------------------
-// REST APIs (Admin, Eventos, Configuração e Leads)
+// ROTAS DE AUTENTICAÇÃO (LOGIN / SESSÃO)
 // ----------------------------------------------------
 
-// Listar todas as salas (Painel Admin)
-app.get('/api/rooms', async (req, res) => {
+// Login de Administrador
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
+    }
+
+    const user = await getUserByEmail(email);
+    if (!user) {
+      return res.status(401).json({ error: 'Credenciais inválidas.' });
+    }
+
+    const isValid = verifyPassword(password, user.password_hash, user.password_salt);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Credenciais inválidas.' });
+    }
+
+    const { token, expiresAt } = createSession(user);
+    res.json({
+      success: true,
+      token,
+      expiresAt,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Checar sessão do admin
+app.get('/api/auth/me', requireAuth, (req, res) => {
+  res.json({ user: req.user });
+});
+
+// Alterar senha
+app.put('/api/auth/password', requireAuth, async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres.' });
+    }
+
+    await updateUserPassword(req.user.email, newPassword);
+    res.json({ success: true, message: 'Senha atualizada com sucesso.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Logout
+app.post('/api/auth/logout', (req, res) => {
+  const token = req.headers.authorization?.substring(7);
+  removeSession(token);
+  res.json({ success: true });
+});
+
+// ----------------------------------------------------
+// GESTÃO DE CLIENTES / EMPRESAS (PROTEGIDO)
+// ----------------------------------------------------
+
+app.get('/api/clients', requireAuth, async (req, res) => {
+  try {
+    const clients = await listClients();
+    res.json({ clients });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/clients', requireAuth, async (req, res) => {
+  try {
+    const client = await saveClient(req.body);
+    res.json({ success: true, client });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/clients/:id', requireAuth, async (req, res) => {
+  try {
+    await deleteClient(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// GESTÃO DE SALAS / EVENTOS (PROTEGIDO)
+// ----------------------------------------------------
+
+// Listar todas as salas (Apenas Admin autenticado)
+app.get('/api/rooms', requireAuth, async (req, res) => {
   try {
     const rooms = await listRooms();
     res.json({ rooms });
@@ -46,12 +155,13 @@ app.get('/api/rooms', async (req, res) => {
   }
 });
 
-// Criar ou Atualizar Sala/Evento
-app.post('/api/rooms', async (req, res) => {
+// Criar ou Atualizar Sala/Evento (Apenas Admin autenticado)
+app.post('/api/rooms', requireAuth, async (req, res) => {
   try {
     const {
       id,
       name,
+      clientId,
       sourceLanguage,
       targetLanguages,
       glossary,
@@ -72,6 +182,7 @@ app.post('/api/rooms', async (req, res) => {
       id: roomId,
       name: name || `Evento ${roomId}`,
       host_key: hostKey,
+      client_id: clientId ? parseInt(clientId) : null,
       source_language: sourceLanguage || 'pt-BR',
       target_languages: targetLanguages || ['en', 'es'],
       glossary: glossary || {},
@@ -93,22 +204,8 @@ app.post('/api/rooms', async (req, res) => {
   }
 });
 
-// Detalhes da sala (Público para ouvintes e telões)
-app.get('/api/rooms/:id', async (req, res) => {
-  try {
-    const room = await getRoom(req.params.id);
-    if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
-    
-    // Oculta a host_key na resposta pública
-    const { host_key, ...publicData } = room;
-    res.json(publicData);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Excluir sala
-app.delete('/api/rooms/:id', async (req, res) => {
+// Excluir sala (Apenas Admin autenticado)
+app.delete('/api/rooms/:id', requireAuth, async (req, res) => {
   try {
     await deleteRoom(req.params.id);
     res.json({ success: true });
@@ -117,7 +214,34 @@ app.delete('/api/rooms/:id', async (req, res) => {
   }
 });
 
-// Atualizar glossário em tempo real
+// Ver leads recebidos (Apenas Admin autenticado)
+app.get('/api/leads', requireAuth, async (req, res) => {
+  try {
+    const leads = await listLeads();
+    res.json({ leads });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// ROTAS PÚBLICAS (OUVINTES, TELÕES E FORMULÁRIO DE CONTATO)
+// ----------------------------------------------------
+
+// Detalhes da sala (Público para ouvintes e telões)
+app.get('/api/rooms/:id', async (req, res) => {
+  try {
+    const room = await getRoom(req.params.id);
+    if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
+    
+    const { host_key, ...publicData } = room;
+    res.json(publicData);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Atualizar glossário em tempo real (Palco)
 app.put('/api/rooms/:id/glossary', async (req, res) => {
   try {
     const { hostKey, glossary } = req.body;
@@ -145,7 +269,7 @@ app.get('/api/rooms/:id/transcripts', async (req, res) => {
   }
 });
 
-// Exportar legendas (SRT, VTT, TXT)
+// Exportar legendas (SRT, TXT)
 app.get('/api/rooms/:id/export', async (req, res) => {
   try {
     const { format = 'txt', lang } = req.query;
@@ -170,7 +294,6 @@ app.get('/api/rooms/:id/export', async (req, res) => {
       return res.send(srtContent);
     }
 
-    // Formato TXT padrão
     let txtContent = `TRANSCRIÇÃO DO EVENTO: ${req.params.id}\nData: ${new Date().toLocaleString()}\n\n`;
     transcripts.forEach(t => {
       const text = (lang && t.translations?.[lang]) ? t.translations[lang] : t.source_text;
@@ -184,20 +307,11 @@ app.get('/api/rooms/:id/export', async (req, res) => {
   }
 });
 
-// Cadastro de Leads / Orçamentos pelo Site Institucional
+// Cadastro de Leads / Orçamentos pelo Site Institucional (Público)
 app.post('/api/leads', async (req, res) => {
   try {
     const lead = await saveLead(req.body);
     res.json({ success: true, lead });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/leads', async (req, res) => {
-  try {
-    const leads = await listLeads();
-    res.json({ leads });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -210,8 +324,8 @@ app.get('/api/leads', async (req, res) => {
 wss.on('connection', (ws, req) => {
   const urlParams = new URLSearchParams(req.url.replace('/?', '?'));
   const roomId = urlParams.get('roomId') || 'palco1';
-  const role = urlParams.get('role') || 'listener'; // 'host' | 'listener' | 'screen'
-  let channel = urlParams.get('channel') || 'original'; // 'original' | 'en' | 'es' | 'text'
+  const role = urlParams.get('role') || 'listener';
+  let channel = urlParams.get('channel') || 'original';
 
   ws.roomId = roomId;
   ws.role = role;
@@ -234,14 +348,14 @@ wss.on('connection', (ws, req) => {
     if (isBinary) {
       if (ws.role !== 'host') return;
 
-      // A) ROTA DO ÁUDIO ORIGINAL (PALESTRA SILENCIOSA)
+      // Broadcast direto do Áudio Original (Palestra Silenciosa)
       for (const client of roomClients) {
         if (client !== ws && client.readyState === WebSocket.OPEN && client.channel === 'original') {
           client.send(data, { binary: true });
         }
       }
 
-      // B) ROTA DA IA (STT -> TRADUÇÃO -> TTS)
+      // Processamento de IA (Deepgram / Fallback)
       getRoom(roomId).then(room => {
         const sourceLang = room?.source_language || 'pt-BR';
         const targetLangs = room?.target_languages || ['en', 'es'];
@@ -305,14 +419,12 @@ wss.on('connection', (ws, req) => {
         ws.channel = msg.channel;
         ws.send(JSON.stringify({ type: 'channel_switched', channel: ws.channel }));
       } else if (msg.type === 'audio_meta') {
-        // Encaminha metadata de áudio (ex: sampleRate) para todos os ouvintes
         for (const client of roomClients) {
           if (client !== ws && client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify(msg));
           }
         }
       } else if (msg.type === 'speech_transcript') {
-        // Transcrição gerada pelo host (Web Speech API ou ASR client-side)
         const { text, isFinal, sourceLang } = msg;
         const subPayload = JSON.stringify({
           type: 'subtitle',
@@ -349,16 +461,6 @@ wss.on('connection', (ws, req) => {
                   client.send(transPayload);
                 }
               }
-
-              aiPipeline.synthesizeSpeech(translatedText, lang).then(ttsAudioBuffer => {
-                if (ttsAudioBuffer) {
-                  for (const client of roomClients) {
-                    if (client.readyState === WebSocket.OPEN && client.channel === lang) {
-                      client.send(ttsAudioBuffer, { binary: true });
-                    }
-                  }
-                }
-              });
             }
           });
         }
