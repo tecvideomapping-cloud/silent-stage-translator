@@ -77,12 +77,16 @@
     let fontSize = 52;
 
     let currentScreenLang = urlParams.get('lang') || 'all';
+    let screenMode = 'single';
+    let allowedLangs = [currentScreenLang];
+
     if (document.getElementById('screenLangSelect')) {
       document.getElementById('screenLangSelect').value = currentScreenLang;
     }
 
     function changeScreenLang(lang) {
       currentScreenLang = lang;
+      allowedLangs = lang === 'all' ? ['original', 'en', 'es'] : [lang];
       const url = new URL(window.location);
       url.searchParams.set('lang', lang);
       window.history.replaceState({}, '', url);
@@ -101,15 +105,28 @@
         try {
           const data = JSON.parse(event.data);
           
+          if (data.type === 'screen_config') {
+            // Comando vindo do Administrador pelo painel do Host
+            screenMode = data.screenMode || 'single';
+            if (data.selectedLangs && Array.isArray(data.selectedLangs)) {
+              allowedLangs = data.selectedLangs;
+              currentScreenLang = allowedLangs[0] || 'all';
+              if (document.getElementById('screenLangSelect')) {
+                document.getElementById('screenLangSelect').value = currentScreenLang;
+              }
+            }
+            return;
+          }
+
           if (data.type === 'subtitle') {
-            // Legenda original (transcrição)
-            if (currentScreenLang === 'all' || currentScreenLang === 'original') {
-              displaySubtitle(data.text, data.isFinal);
+            // Legenda original (transcrição do palco)
+            if (currentScreenLang === 'all' || allowedLangs.includes('original') || allowedLangs.includes('all')) {
+              displaySubtitle(data.text, data.isFinal, 'original');
             }
           } else if (data.type === 'subtitle_translated') {
-            // Legenda traduzida para idioma específico
-            if (currentScreenLang === 'all' || currentScreenLang === data.lang) {
-              displaySubtitle(data.text, true);
+            // Legenda traduzida
+            if (currentScreenLang === 'all' || allowedLangs.includes(data.lang) || allowedLangs.includes('all')) {
+              displaySubtitle(data.text, true, data.lang);
             }
           }
         } catch (e) {}
@@ -123,7 +140,13 @@
 
     let screenInterimEl = null;
 
-    function displaySubtitle(text, isFinal) {
+    const langBadges = {
+      'original': { label: 'AO VIVO', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' },
+      'en': { label: 'EN 🇺🇸', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
+      'es': { label: 'ES 🇪🇸', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' }
+    };
+
+    function displaySubtitle(text, isFinal, lang = 'original') {
       const container = document.getElementById('subtitlesContainer');
       if (!container || !text) return;
       
@@ -132,31 +155,41 @@
         container.innerHTML = '';
       }
 
+      const badgeInfo = langBadges[lang] || { label: lang.toUpperCase(), color: 'bg-slate-800 text-slate-300 border-slate-700' };
+
       if (isFinal) {
         if (screenInterimEl && screenInterimEl.parentNode) {
           screenInterimEl.remove();
           screenInterimEl = null;
         }
 
-        // Mantém no máximo 2 blocos para visualização limpa de telão
+        // Mantém blocos adequados para visualização sem poluir o telão
+        const maxLines = allowedLangs.length > 1 ? 4 : 2;
         const existing = container.querySelectorAll('.subtitle-line-final');
-        if (existing.length >= 2) {
+        if (existing.length >= maxLines) {
           existing[0].remove();
         }
 
-        const p = document.createElement('p');
-        p.className = 'subtitle-line subtitle-line-final text-white drop-shadow-md';
-        p.style.fontSize = fontSize + 'px';
-        p.innerText = text;
-        container.appendChild(p);
+        const div = document.createElement('div');
+        div.className = 'subtitle-line subtitle-line-final flex items-center justify-center gap-3 drop-shadow-md';
+        
+        // Mostra badge do idioma se estiver em modo multilíngue ou bilíngue
+        const showBadge = allowedLangs.length > 1 || currentScreenLang === 'all';
+        div.innerHTML = `
+          ${showBadge ? `<span class="text-xs sm:text-sm font-mono border px-2 py-0.5 rounded-md ${badgeInfo.color} uppercase">${badgeInfo.label}</span>` : ''}
+          <span class="text-white" style="font-size: ${fontSize}px;">${text}</span>
+        `;
+        container.appendChild(div);
       } else {
         if (!screenInterimEl || !screenInterimEl.parentNode) {
-          screenInterimEl = document.createElement('p');
-          screenInterimEl.className = 'subtitle-line text-cyan-400 opacity-90 italic';
-          screenInterimEl.style.fontSize = fontSize + 'px';
+          screenInterimEl = document.createElement('div');
+          screenInterimEl.className = 'subtitle-line flex items-center justify-center gap-3 opacity-90 italic';
           container.appendChild(screenInterimEl);
         }
-        screenInterimEl.innerText = text + '...';
+        screenInterimEl.innerHTML = `
+          <span class="text-xs sm:text-sm font-mono border px-2 py-0.5 rounded-md ${badgeInfo.color} uppercase">${badgeInfo.label}</span>
+          <span class="text-cyan-400" style="font-size: ${fontSize}px;">${text}...</span>
+        `;
       }
     }
 

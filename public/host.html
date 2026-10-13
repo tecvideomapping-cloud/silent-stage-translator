@@ -98,6 +98,39 @@
               onchange="updateRoom(this.value)">
           </div>
         </div>
+
+        <!-- CONTROLE DO TELÃO (SELEÇÃO DE IDIOMA PELO ADMINISTRADOR) -->
+        <div class="bg-slate-950 border border-cyan-900/50 rounded-xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>📺</span> Controle do Telão de Projeção
+            </span>
+            <span class="text-[11px] text-slate-400">Comando remoto em tempo real</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Modo de Exibição no Telão:</label>
+              <select id="hostScreenModeSelect" onchange="broadcastScreenConfig()"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+                <option value="single">Idioma Único</option>
+                <option value="bilingual">Bilíngue (Original + Traduzido)</option>
+                <option value="multi">Multilíngue (Todos Disponíveis)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Idioma Principal do Telão:</label>
+              <select id="hostScreenLangSelect" onchange="broadcastScreenConfig()"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+                <option value="en">🇺🇸 Inglês (English)</option>
+                <option value="es">🇪🇸 Espanhol (Español)</option>
+                <option value="original">🎙️ Original (Transcrição do Palco)</option>
+                <option value="all">🌐 Todos os Idiomas</option>
+              </select>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Glossário de IA -->
@@ -533,6 +566,19 @@
           text: phrase,
           isFinal: true,
           sourceLang: document.getElementById('sourceLang').value || 'pt-BR'
+        }));
+      }
+    }
+
+    function broadcastScreenConfig() {
+      const mode = document.getElementById('hostScreenModeSelect').value;
+      const lang = document.getElementById('hostScreenLangSelect').value;
+      
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'set_screen_lang',
+          screenMode: mode,
+          selectedLangs: lang === 'all' ? ['original', 'en', 'es'] : (mode === 'bilingual' ? ['original', lang] : [lang])
         }));
       }
     }
