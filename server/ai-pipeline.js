@@ -75,44 +75,8 @@ class AIPipeline {
    */
   feedAudio(roomId, audioBuffer, sourceLang, onTranscript) {
     if (this.mockMode) {
-      // VAD: Calcula energia sonora (RMS) do microfone
-      try {
-        const int16 = new Int16Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.byteLength / 2);
-        let sum = 0;
-        for (let i = 0; i < int16.length; i++) {
-          const val = int16[i] / 32768;
-          sum += val * val;
-        }
-        const rms = Math.sqrt(sum / int16.length);
-
-        if (rms > 0.02) {
-          if (!this.voiceActivity) this.voiceActivity = new Map();
-          const roomVAD = this.voiceActivity.get(roomId) || { activeFrames: 0, lastTrigger: 0 };
-          roomVAD.activeFrames++;
-
-          const now = Date.now();
-          if (roomVAD.activeFrames >= 8 && (now - roomVAD.lastTrigger) > 3000) {
-            roomVAD.lastTrigger = now;
-            roomVAD.activeFrames = 0;
-
-            const sampleSentences = [
-              "Olá a todos, sejam bem-vindos à nossa palestra ao vivo.",
-              "Estamos transmitindo o áudio original da mesa de som com baixíssima latência.",
-              "A tradução simultânea e as legendas inteligentes estão ativas na sala.",
-              "A tecnologia da Videomappingtech permite eventos e palcos silenciosos inovadores.",
-              "O som chega com altíssima fidelidade e sem atraso nos seus fones de ouvido."
-            ];
-            const text = sampleSentences[Math.floor(Math.random() * sampleSentences.length)];
-
-            onTranscript({
-              text,
-              isFinal: true,
-              timestamp: now
-            });
-          }
-          this.voiceActivity.set(roomId, roomVAD);
-        }
-      } catch (e) {}
+      // No modo sem chave externa de API STT, o áudio original é transmitido diretamente
+      // e o reconhecimento real de voz é feito com precisão pelo navegador do host via SpeechRecognition.
       return;
     }
 

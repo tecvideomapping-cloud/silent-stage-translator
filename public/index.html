@@ -365,12 +365,29 @@
       document.getElementById('playerStatus').innerText = 'Canal alterado para: ' + channel;
     }
 
+    let currentInterimSubtitleEl = null;
+
     function renderSubtitle(text, isFinal) {
       const box = document.getElementById('subtitlesBox');
-      const p = document.createElement('p');
-      p.className = isFinal ? 'text-slate-100 font-medium mb-1.5' : 'text-cyan-400 italic mb-1.5';
-      p.innerText = text;
-      box.appendChild(p);
+      if (!box || !text) return;
+
+      if (isFinal) {
+        if (currentInterimSubtitleEl && currentInterimSubtitleEl.parentNode) {
+          currentInterimSubtitleEl.remove();
+          currentInterimSubtitleEl = null;
+        }
+        const p = document.createElement('p');
+        p.className = 'text-slate-100 font-medium mb-2 border-l-2 border-cyan-400 pl-2 bg-slate-900/40 py-1 rounded';
+        p.innerText = text;
+        box.appendChild(p);
+      } else {
+        if (!currentInterimSubtitleEl || !currentInterimSubtitleEl.parentNode) {
+          currentInterimSubtitleEl = document.createElement('p');
+          currentInterimSubtitleEl.className = 'text-cyan-400 italic mb-2 opacity-85';
+          box.appendChild(currentInterimSubtitleEl);
+        }
+        currentInterimSubtitleEl.innerText = text + '...';
+      }
       box.scrollTop = box.scrollHeight;
     }
 

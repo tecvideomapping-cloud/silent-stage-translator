@@ -368,25 +368,60 @@
               window.speechRecognizer.interimResults = true;
               window.speechRecognizer.lang = document.getElementById('sourceLang').value || 'pt-BR';
 
-              window.speechRecognizer.onresult = (evt) => {
-                for (let i = evt.resultIndex; i < evt.results.length; ++i) {
-                  const transcript = evt.results[i][0].transcript;
-                  const isFinal = evt.results[i].isFinal;
+              let currentInterimEl = null;
 
-                  // Atualiza monitor local
-                  const box = document.getElementById('hostTranscriptBox');
+              window.speechRecognizer.onresult = (evt) => {
+                let interimTranscript = '';
+                let finalTranscript = '';
+
+                for (let i = evt.resultIndex; i < evt.results.length; ++i) {
+                  const item = evt.results[i];
+                  if (item.isFinal) {
+                    finalTranscript += item[0].transcript;
+                  } else {
+                    interimTranscript += item[0].transcript;
+                  }
+                }
+
+                const box = document.getElementById('hostTranscriptBox');
+
+                if (finalTranscript.trim()) {
+                  // Se tínhamos linha interim temporária, removemos
+                  if (currentInterimEl && currentInterimEl.parentNode) {
+                    currentInterimEl.remove();
+                    currentInterimEl = null;
+                  }
+
                   const p = document.createElement('p');
-                  p.className = isFinal ? 'text-slate-200 mb-1 font-semibold' : 'text-cyan-400 italic mb-1';
-                  p.innerText = transcript;
+                  p.className = 'text-slate-100 mb-1.5 font-medium border-l-2 border-cyan-400 pl-2 bg-slate-900/40 py-0.5 rounded';
+                  p.innerText = finalTranscript.trim();
                   box.appendChild(p);
                   box.scrollTop = box.scrollHeight;
 
-                  // Envia para o servidor transmitir aos ouvintes e telões
                   if (socket && socket.readyState === WebSocket.OPEN) {
                     socket.send(JSON.stringify({
                       type: 'speech_transcript',
-                      text: transcript,
-                      isFinal: isFinal,
+                      text: finalTranscript.trim(),
+                      isFinal: true,
+                      sourceLang: window.speechRecognizer.lang
+                    }));
+                  }
+                } else if (interimTranscript.trim()) {
+                  // Atualiza a linha temporária no mesmo lugar sem duplicar
+                  if (!currentInterimEl || !currentInterimEl.parentNode) {
+                    currentInterimEl = document.createElement('p');
+                    currentInterimEl.className = 'text-cyan-400 italic mb-1.5 opacity-80';
+                    box.appendChild(currentInterimEl);
+                  }
+                  currentInterimEl.innerText = interimTranscript.trim() + '...';
+                  box.scrollTop = box.scrollHeight;
+
+                  // Envia interim para preview em tempo real (isFinal: false)
+                  if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({
+                      type: 'speech_transcript',
+                      text: interimTranscript.trim(),
+                      isFinal: false,
                       sourceLang: window.speechRecognizer.lang
                     }));
                   }

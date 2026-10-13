@@ -92,25 +92,43 @@
       };
     }
 
+    let screenInterimEl = null;
+
     function displaySubtitle(text, isFinal) {
       const container = document.getElementById('subtitlesContainer');
+      if (!container || !text) return;
       
       // Limpa mensagem inicial
       if (container.querySelector('.text-slate-600')) {
         container.innerHTML = '';
       }
 
-      // Mantém no máximo 2 blocos para visualização limpa de telão
-      const existing = container.querySelectorAll('.subtitle-line');
-      if (existing.length >= 2) {
-        existing[0].remove();
-      }
+      if (isFinal) {
+        if (screenInterimEl && screenInterimEl.parentNode) {
+          screenInterimEl.remove();
+          screenInterimEl = null;
+        }
 
-      const p = document.createElement('p');
-      p.className = `subtitle-line ${isFinal ? 'text-white' : 'text-cyan-400 opacity-90'}`;
-      p.style.fontSize = fontSize + 'px';
-      p.innerText = text;
-      container.appendChild(p);
+        // Mantém no máximo 2 blocos para visualização limpa de telão
+        const existing = container.querySelectorAll('.subtitle-line-final');
+        if (existing.length >= 2) {
+          existing[0].remove();
+        }
+
+        const p = document.createElement('p');
+        p.className = 'subtitle-line subtitle-line-final text-white drop-shadow-md';
+        p.style.fontSize = fontSize + 'px';
+        p.innerText = text;
+        container.appendChild(p);
+      } else {
+        if (!screenInterimEl || !screenInterimEl.parentNode) {
+          screenInterimEl = document.createElement('p');
+          screenInterimEl.className = 'subtitle-line text-cyan-400 opacity-90 italic';
+          screenInterimEl.style.fontSize = fontSize + 'px';
+          container.appendChild(screenInterimEl);
+        }
+        screenInterimEl.innerText = text + '...';
+      }
     }
 
     function changeTheme(themeName) {
