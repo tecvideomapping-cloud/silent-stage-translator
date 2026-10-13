@@ -659,14 +659,9 @@
       document.getElementById('qrModalTitle').innerText = name;
       document.getElementById('qrUrlText').innerText = url;
       const box = document.getElementById('qrBox');
-      box.innerHTML = '';
-      new QRCode(box, {
-        text: url,
-        width: 200,
-        height: 200,
-        colorDark : "#000000",
-        colorLight : "#ffffff"
-      });
+      box.innerHTML = `<img src="/api/qr?text=${encodeURIComponent(url)}" 
+        onerror="this.src='https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}'" 
+        alt="QR Code" class="w-48 h-48 mx-auto rounded-lg shadow-sm">`;
       document.getElementById('qrModal').classList.remove('hidden');
     }
 

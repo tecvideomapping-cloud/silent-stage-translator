@@ -225,14 +225,9 @@
       document.getElementById('shareUrlText').innerText = shareUrl;
       document.getElementById('openScreenBtn').href = `/screen.html?room=${roomId}`;
       const qrEl = document.getElementById('qrcode');
-      qrEl.innerHTML = '';
-      new QRCode(qrEl, {
-        text: shareUrl,
-        width: 170,
-        height: 170,
-        colorDark : "#000000",
-        colorLight : "#ffffff"
-      });
+      qrEl.innerHTML = `<img src="/api/qr?text=${encodeURIComponent(shareUrl)}" 
+        onerror="this.src='https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(shareUrl)}'" 
+        alt="QR Code de Acesso" class="w-44 h-44 mx-auto rounded-lg shadow-sm">`;
     }
 
     function updateRoom(newId) {

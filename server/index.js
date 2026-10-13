@@ -24,6 +24,7 @@ const {
 const { verifyPassword, createSession, removeSession, requireAuth } = require('./auth');
 const { pubSub } = require('./redis');
 const { aiPipeline } = require('./ai-pipeline');
+const QRCode = require('qrcode');
 
 const app = express();
 const server = http.createServer(app);
@@ -227,6 +228,18 @@ app.get('/api/leads', requireAuth, async (req, res) => {
 // ----------------------------------------------------
 // ROTAS PÚBLICAS (OUVINTES, TELÕES E FORMULÁRIO DE CONTATO)
 // ----------------------------------------------------
+
+// Gerador de QR Code SVG
+app.get('/api/qr', async (req, res) => {
+  try {
+    const text = req.query.text || 'https://videomappingtech.com';
+    const svg = await QRCode.toString(text, { type: 'svg', margin: 1, width: 220 });
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.send(svg);
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
 
 // Detalhes da sala (Público para ouvintes e telões)
 app.get('/api/rooms/:id', async (req, res) => {
