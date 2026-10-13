@@ -154,8 +154,13 @@
       </section>
 
       <!-- Transcrição do Monitor de Palco -->
-      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 flex-1 flex flex-col shadow-xl min-h-[200px]">
-        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Monitor da Transcrição ao Vivo</h2>
+      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 flex-1 flex flex-col shadow-xl min-h-[220px]">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Monitor da Transcrição ao Vivo</h2>
+          <button onclick="injectTestSpeech()" class="text-[11px] bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 border border-cyan-500/40 px-2.5 py-1 rounded-md transition font-medium">
+            ⚡ Testar Disparo de Fala
+          </button>
+        </div>
         <div id="hostTranscriptBox" class="flex-1 overflow-y-auto bg-slate-950 rounded-lg border border-slate-800 p-3 text-xs text-slate-300 leading-relaxed max-h-48">
           <p class="text-slate-600 italic">O áudio capturado aparecerá aqui em tempo real...</p>
         </div>
@@ -320,9 +325,21 @@
             if (!isBroadcasting || !socket || socket.readyState !== WebSocket.OPEN) return;
             const inputData = e.inputBuffer.getChannelData(0);
             
-            const pcm16 = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-              const s = Math.max(-1, Math.min(1, inputData[i]));
+            // Reamostragem precisa para 16000 Hz estrito
+            const sourceRate = audioContext.sampleRate;
+            let targetFloats = inputData;
+            if (sourceRate !== 16000) {
+              const ratio = sourceRate / 16000;
+              const newLen = Math.round(inputData.length / ratio);
+              targetFloats = new Float32Array(newLen);
+              for (let i = 0; i < newLen; i++) {
+                targetFloats[i] = inputData[Math.floor(i * ratio)];
+              }
+            }
+
+            const pcm16 = new Int16Array(targetFloats.length);
+            for (let i = 0; i < targetFloats.length; i++) {
+              const s = Math.max(-1, Math.min(1, targetFloats[i]));
               pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
 
@@ -448,6 +465,33 @@
         alert('Glossário atualizado no servidor com sucesso!');
       } catch (e) {
         alert('Glossário salvo localmente.');
+      }
+    }
+
+    function injectTestSpeech() {
+      const phrases = [
+        "Olá a todos, sejam bem-vindos à nossa palestra ao vivo.",
+        "Estamos transmitindo o áudio original da mesa de som com baixíssima latência.",
+        "A tradução simultânea e as legendas inteligentes estão ativas na sala.",
+        "A tecnologia da Videomappingtech permite eventos e palcos silenciosos inovadores.",
+        "O som chega com altíssima fidelidade e sem atraso nos seus fones de ouvido."
+      ];
+      const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+      
+      const box = document.getElementById('hostTranscriptBox');
+      const p = document.createElement('p');
+      p.className = 'text-cyan-300 font-semibold mb-1';
+      p.innerText = `[Teste de Fala] ${phrase}`;
+      box.appendChild(p);
+      box.scrollTop = box.scrollHeight;
+
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'speech_transcript',
+          text: phrase,
+          isFinal: true,
+          sourceLang: document.getElementById('sourceLang').value || 'pt-BR'
+        }));
       }
     }
 

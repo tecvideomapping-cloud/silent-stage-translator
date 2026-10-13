@@ -474,6 +474,16 @@ wss.on('connection', (ws, req) => {
                   client.send(transPayload);
                 }
               }
+
+              aiPipeline.synthesizeSpeech(translatedText, lang).then(ttsAudioBuffer => {
+                if (ttsAudioBuffer) {
+                  for (const client of roomClients) {
+                    if (client.readyState === WebSocket.OPEN && client.channel === lang) {
+                      client.send(ttsAudioBuffer, { binary: true });
+                    }
+                  }
+                }
+              });
             }
           });
         }

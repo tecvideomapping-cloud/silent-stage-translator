@@ -75,7 +75,44 @@ class AIPipeline {
    */
   feedAudio(roomId, audioBuffer, sourceLang, onTranscript) {
     if (this.mockMode) {
-      // No modo mock o áudio original toca normalmente, mas simulamos transcrições esporádicas se não houver chaves de IA
+      // VAD: Calcula energia sonora (RMS) do microfone
+      try {
+        const int16 = new Int16Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.byteLength / 2);
+        let sum = 0;
+        for (let i = 0; i < int16.length; i++) {
+          const val = int16[i] / 32768;
+          sum += val * val;
+        }
+        const rms = Math.sqrt(sum / int16.length);
+
+        if (rms > 0.02) {
+          if (!this.voiceActivity) this.voiceActivity = new Map();
+          const roomVAD = this.voiceActivity.get(roomId) || { activeFrames: 0, lastTrigger: 0 };
+          roomVAD.activeFrames++;
+
+          const now = Date.now();
+          if (roomVAD.activeFrames >= 8 && (now - roomVAD.lastTrigger) > 3000) {
+            roomVAD.lastTrigger = now;
+            roomVAD.activeFrames = 0;
+
+            const sampleSentences = [
+              "Olá a todos, sejam bem-vindos à nossa palestra ao vivo.",
+              "Estamos transmitindo o áudio original da mesa de som com baixíssima latência.",
+              "A tradução simultânea e as legendas inteligentes estão ativas na sala.",
+              "A tecnologia da Videomappingtech permite eventos e palcos silenciosos inovadores.",
+              "O som chega com altíssima fidelidade e sem atraso nos seus fones de ouvido."
+            ];
+            const text = sampleSentences[Math.floor(Math.random() * sampleSentences.length)];
+
+            onTranscript({
+              text,
+              isFinal: true,
+              timestamp: now
+            });
+          }
+          this.voiceActivity.set(roomId, roomVAD);
+        }
+      } catch (e) {}
       return;
     }
 
@@ -97,10 +134,26 @@ class AIPipeline {
       glossaryInstructions = `Glossário obrigatório de termos: ${JSON.stringify(glossary)}. Mantenha esses termos exatamente como definidos.`;
     }
 
+    const mockTranslationDict = {
+      'en': {
+        'Olá a todos, sejam bem-vindos à nossa palestra ao vivo.': 'Hello everyone, welcome to our live presentation.',
+        'Estamos transmitindo o áudio original da mesa de som com baixíssima latência.': 'We are streaming the original audio from the soundboard with ultra-low latency.',
+        'A tradução simultânea e as legendas inteligentes estão ativas na sala.': 'Simultaneous translation and smart subtitles are active in this room.',
+        'A tecnologia da Videomappingtech permite eventos e palcos silenciosos inovadores.': 'Videomappingtech technology enables innovative silent stages and events.',
+        'O som chega com altíssima fidelidade e sem atraso nos seus fones de ouvido.': 'The audio reaches your headphones with high fidelity and zero delay.'
+      },
+      'es': {
+        'Olá a todos, sejam bem-vindos à nossa palestra ao vivo.': 'Hola a todos, bienvenidos a nuestra conferencia en vivo.',
+        'Estamos transmitindo o áudio original da mesa de som com baixíssima latência.': 'Estamos transmitiendo el audio original de la consola con muy baja latencia.',
+        'A tradução simultânea e as legendas inteligentes estão ativas na sala.': 'La traducción simultánea y los subtítulos inteligentes están activos en la sala.',
+        'A tecnologia da Videomappingtech permite eventos e palcos silenciosos inovadores.': 'La tecnología de Videomappingtech permite escenarios silenciosos innovadores.',
+        'O som chega com altíssima fidelidade e sem atraso nos seus fones de ouvido.': 'El sonido llega con alta fidelidad y sin retraso a sus auriculares.'
+      }
+    };
+
     for (const targetLang of targetLangs) {
       if (this.mockMode) {
-        // Mock simples de tradução para testes locais
-        translations[targetLang] = `[${targetLang.toUpperCase()}] ${text}`;
+        translations[targetLang] = mockTranslationDict[targetLang]?.[text] || `[${targetLang.toUpperCase()}] ${text}`;
         continue;
       }
 

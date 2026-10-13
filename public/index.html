@@ -329,9 +329,8 @@
         float32Data[i] = int16View[i] / 32768;
       }
 
-      // Usa o sampleRate real emitido pelo transmissor (ex: 44100 ou 48000)
-      const sRate = window.hostSampleRate || audioContext.sampleRate || 48000;
-      const audioBuffer = audioContext.createBuffer(1, float32Data.length, sRate);
+      // O transmissor envia áudio PCM em 16000 Hz estrito
+      const audioBuffer = audioContext.createBuffer(1, float32Data.length, 16000);
       audioBuffer.getChannelData(0).set(float32Data);
 
       const source = audioContext.createBufferSource();
@@ -339,8 +338,8 @@
       source.connect(gainNode);
 
       const now = audioContext.currentTime;
-      // Elimina atraso cumulativo: se estiver no passado ou mais de 250ms à frente, sincroniza com o momento atual
-      if (nextAudioTime < now || nextAudioTime > now + 0.25) {
+      // Elimina atraso cumulativo: mantém o buffer sempre colado no momento atual (<80ms)
+      if (nextAudioTime < now || nextAudioTime > now + 0.08) {
         nextAudioTime = now;
       }
       source.start(nextAudioTime);
