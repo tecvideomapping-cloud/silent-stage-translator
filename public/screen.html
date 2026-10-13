@@ -38,6 +38,13 @@
         <option value="original">Original (Transcrição)</option>
       </select>
 
+      <label class="text-xs text-slate-300">Marca:</label>
+      <select id="screenLogoLocalSelect" onchange="changeScreenLogo(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
+        <option value="vmp">Video Mapping</option>
+        <option value="client">Logo do Cliente</option>
+        <option value="none">Ocultar Marca</option>
+      </select>
+
       <label class="text-xs text-slate-300">Fundo:</label>
       <select onchange="changeTheme(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
         <option value="theme-black">Preto (LED/Projetor)</option>
@@ -63,6 +70,12 @@
     </div>
   </main>
 
+  <!-- Marca d'água no Canto Inferior Direito -->
+  <div id="screenWatermarkBox" class="fixed bottom-6 right-8 z-20 pointer-events-none transition-opacity duration-300 opacity-90">
+    <img id="watermarkVMP" src="/logo_VMP.svg" alt="Video Mapping" class="h-16 w-auto filter drop-shadow-lg">
+    <img id="watermarkClient" src="" alt="Logo do Cliente" class="h-16 w-auto filter drop-shadow-lg hidden">
+  </div>
+
   <!-- Rodapé discreto -->
   <footer class="text-center py-2 opacity-30 text-xs">
     <span>Legendas geradas em tempo real com IA • Videomappingtech</span>
@@ -80,8 +93,53 @@
     let screenMode = 'single';
     let allowedLangs = [currentScreenLang];
 
-    if (document.getElementById('screenLangSelect')) {
-      document.getElementById('screenLangSelect').value = currentScreenLang;
+    let currentScreenLogo = 'vmp';
+    let clientLogoUrl = '';
+
+    async function loadRoomDetails() {
+      try {
+        const res = await fetch(`/api/rooms/${roomId}`);
+        if (res.ok) {
+          const room = await res.json();
+          if (room.logo_url) {
+            clientLogoUrl = room.logo_url;
+            const clientImg = document.getElementById('watermarkClient');
+            if (clientImg) clientImg.src = clientLogoUrl;
+          }
+        }
+      } catch (e) {}
+    }
+
+    function changeScreenLogo(logoChoice) {
+      currentScreenLogo = logoChoice;
+      const vmpEl = document.getElementById('watermarkVMP');
+      const clientEl = document.getElementById('watermarkClient');
+      const box = document.getElementById('screenWatermarkBox');
+
+      if (document.getElementById('screenLogoLocalSelect')) {
+        document.getElementById('screenLogoLocalSelect').value = logoChoice;
+      }
+
+      if (logoChoice === 'none') {
+        if (box) box.classList.add('hidden');
+      } else if (logoChoice === 'client') {
+        if (box) box.classList.remove('hidden');
+        if (vmpEl) vmpEl.classList.add('hidden');
+        if (clientEl) {
+          if (clientLogoUrl) {
+            clientEl.src = clientLogoUrl;
+            clientEl.classList.remove('hidden');
+          } else {
+            // Se cliente não tiver logo cadastrada, exibe a logo VMP como fallback seguro
+            if (vmpEl) vmpEl.classList.remove('hidden');
+          }
+        }
+      } else {
+        // vmp
+        if (box) box.classList.remove('hidden');
+        if (vmpEl) vmpEl.classList.remove('hidden');
+        if (clientEl) clientEl.classList.add('hidden');
+      }
     }
 
     function changeScreenLang(lang) {
@@ -108,6 +166,9 @@
           if (data.type === 'screen_config') {
             // Comando vindo do Administrador pelo painel do Host
             screenMode = data.screenMode || 'single';
+            if (data.screenLogo) {
+              changeScreenLogo(data.screenLogo);
+            }
             if (data.selectedLangs && Array.isArray(data.selectedLangs)) {
               allowedLangs = data.selectedLangs;
               currentScreenLang = allowedLangs[0] || 'all';
@@ -212,6 +273,7 @@
       }
     }
 
+    loadRoomDetails();
     connectScreenWS();
   </script>
 </body>

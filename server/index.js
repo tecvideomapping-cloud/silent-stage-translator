@@ -488,12 +488,13 @@ wss.on('connection', (ws, req) => {
           });
         }
       } else if (msg.type === 'set_screen_lang') {
-        // Administrador/Host define remotamente o idioma de todos os telões da sala
+        // Administrador/Host define remotamente o idioma e a logo de todos os telões da sala
         for (const client of roomClients) {
           if (client.readyState === WebSocket.OPEN && client.role === 'screen') {
             client.send(JSON.stringify({
               type: 'screen_config',
               screenMode: msg.screenMode,
+              screenLogo: msg.screenLogo || 'vmp',
               selectedLangs: msg.selectedLangs
             }));
           }

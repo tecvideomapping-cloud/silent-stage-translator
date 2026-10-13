@@ -12,7 +12,7 @@
   <!-- Header -->
   <header class="border-b border-slate-800 bg-slate-900/90 px-6 py-4 flex items-center justify-between sticky top-0 z-30">
     <div class="flex items-center gap-3">
-      <div class="w-3.5 h-3.5 rounded-full bg-cyan-500 animate-pulse"></div>
+      <img src="/logo_VMP.svg" alt="Video Mapping Logo" class="h-8 w-auto filter drop-shadow">
       <div>
         <h1 class="font-bold text-lg bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
           Videomappingtech • Host Transmitter
@@ -108,7 +108,7 @@
             <span class="text-[11px] text-slate-400">Comando remoto em tempo real</span>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label class="block text-[11px] font-medium text-slate-400 mb-1">Modo de Exibição no Telão:</label>
               <select id="hostScreenModeSelect" onchange="broadcastScreenConfig()"
@@ -127,6 +127,16 @@
                 <option value="es">🇪🇸 Espanhol (Español)</option>
                 <option value="original">🎙️ Original (Transcrição do Palco)</option>
                 <option value="all">🌐 Todos os Idiomas</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Logo / Marca d'água (Canto Inferior Direito):</label>
+              <select id="hostScreenLogoSelect" onchange="broadcastScreenConfig()"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+                <option value="vmp" selected>Video Mapping (Padrão)</option>
+                <option value="client">Logo do Cliente / Evento</option>
+                <option value="none">Nenhuma (Sem Marca)</option>
               </select>
             </div>
           </div>
@@ -573,11 +583,13 @@
     function broadcastScreenConfig() {
       const mode = document.getElementById('hostScreenModeSelect').value;
       const lang = document.getElementById('hostScreenLangSelect').value;
+      const logo = document.getElementById('hostScreenLogoSelect') ? document.getElementById('hostScreenLogoSelect').value : 'vmp';
       
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
           type: 'set_screen_lang',
           screenMode: mode,
+          screenLogo: logo,
           selectedLangs: lang === 'all' ? ['original', 'en', 'es'] : (mode === 'bilingual' ? ['original', lang] : [lang])
         }));
       }
