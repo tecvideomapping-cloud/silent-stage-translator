@@ -289,7 +289,9 @@
             channelCount: 1,
             sampleRate: 16000,
             echoCancellation: false,
-            noiseSuppression: false
+            noiseSuppression: false,
+            autoGainControl: false,
+            latency: 0
           };
           if (selectedDeviceId) {
             audioConstraints.deviceId = { exact: selectedDeviceId };
@@ -297,10 +299,14 @@
 
           audioStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
 
-          audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          audioContext = new AudioCtx({
+            sampleRate: 16000,
+            latencyHint: 'interactive'
+          });
           const source = audioContext.createMediaStreamSource(audioStream);
           const analyser = audioContext.createAnalyser();
-          analyser.fftSize = 256;
+          analyser.fftSize = 128;
           source.connect(analyser);
 
           const dataArray = new Uint8Array(analyser.frequencyBinCount);
@@ -317,7 +323,8 @@
           }
           requestAnimationFrame(updateVU);
 
-          scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+          // Buffer otimizado de 1024 amostras = ~64ms por bloco (ultra-baixa latência)
+          scriptProcessor = audioContext.createScriptProcessor(1024, 1, 1);
           source.connect(scriptProcessor);
           scriptProcessor.connect(audioContext.destination);
 

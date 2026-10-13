@@ -35,6 +35,9 @@
       </div>
     </div>
     <div class="flex items-center gap-2">
+      <span id="latencyBadge" class="text-[11px] bg-cyan-950/80 border border-cyan-800/80 text-cyan-300 px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
+        ⚡ <span id="latencyValue">--</span>ms
+      </span>
       <span id="roomBadge" class="text-xs bg-slate-800 border border-slate-700 px-2.5 py-1 rounded-full text-slate-300">
         Sala: <strong id="currentRoomText">palco1</strong>
       </span>
@@ -287,6 +290,12 @@
             if (currentChannel === data.lang) {
               speakTranslatedText(data.text, data.lang);
             }
+          } else if (data.type === 'pong') {
+            if (lastPingTime > 0) {
+              measuredLatencyMs = Math.round(performance.now() - lastPingTime);
+              const el = document.getElementById('latencyValue');
+              if (el) el.innerText = measuredLatencyMs;
+            }
           }
         } catch (e) {}
       };
@@ -298,16 +307,32 @@
       };
     }
 
+    let lastPingTime = 0;
+    let measuredLatencyMs = 0;
+
     function ensureAudioContext() {
       if (!audioContext) {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        audioContext = new AudioCtx();
+        audioContext = new AudioCtx({
+          sampleRate: 16000,
+          latencyHint: 'interactive'
+        });
         gainNode = audioContext.createGain();
         gainNode.connect(audioContext.destination);
         nextAudioTime = audioContext.currentTime;
+
+        // Inicia medição periódica de latência com o servidor (Ping/Pong a cada 2.5s)
+        setInterval(measureLatency, 2500);
       }
       if (audioContext.state === 'suspended') {
         audioContext.resume();
+      }
+    }
+
+    function measureLatency() {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        lastPingTime = performance.now();
+        socket.send(JSON.stringify({ type: 'ping', t: lastPingTime }));
       }
     }
 
@@ -354,8 +379,8 @@
       source.connect(gainNode);
 
       const now = audioContext.currentTime;
-      // Elimina atraso cumulativo: mantém o buffer sempre colado no momento atual (<80ms)
-      if (nextAudioTime < now || nextAudioTime > now + 0.08) {
+      // Latência ultra-baixa com anti-drift (< 45ms de atraso máximo)
+      if (nextAudioTime < now || nextAudioTime > now + 0.045) {
         nextAudioTime = now;
       }
       source.start(nextAudioTime);
