@@ -116,12 +116,13 @@ class AIPipeline {
     };
 
     for (const targetLang of targetLangs) {
-      if (this.mockMode) {
-        translations[targetLang] = mockTranslationDict[targetLang]?.[text] || `[${targetLang.toUpperCase()}] ${text}`;
+      // 1. Se houver dicionário estático (palavras comuns de eventos)
+      if (mockTranslationDict[targetLang]?.[text]) {
+        translations[targetLang] = mockTranslationDict[targetLang][text];
         continue;
       }
 
-      // Tentativa 1: OpenAI ou Groq via HTTP Fetch
+      // 2. Provedores LLM configurados (Groq / OpenAI)
       if (this.openaiKey || this.groqKey) {
         try {
           const endpoint = this.groqKey 
@@ -141,7 +142,7 @@ class AIPipeline {
               messages: [
                 {
                   role: 'system',
-                  content: `Você é um tradutor simultâneo ultrarrápido para eventos ao vivo. Traduza a fala a seguir para o idioma com código ISO '${targetLang}'. Retorne APENAS a tradução direta, sem comentários. ${glossaryInstructions}`
+                  content: `Você é um tradutor simultâneo profissional. Traduza o texto para o idioma ISO '${targetLang}'. Retorne APENAS o texto traduzido. ${glossaryInstructions}`
                 },
                 {
                   role: 'user',
@@ -155,16 +156,35 @@ class AIPipeline {
 
           if (res.ok) {
             const data = await res.json();
-            translations[targetLang] = data.choices?.[0]?.message?.content?.trim() || text;
-            continue;
+            const translated = data.choices?.[0]?.message?.content?.trim();
+            if (translated) {
+              translations[targetLang] = translated;
+              continue;
+            }
           }
         } catch (e) {
-          console.error(`[AI-Translate] Erro na tradução para ${targetLang}:`, e.message);
+          console.error(`[AI-Translate] Erro na tradução LLM para ${targetLang}:`, e.message);
         }
       }
 
-      // Fallback
-      translations[targetLang] = text;
+      // 3. Fallback de Tradução Gratuita em Tempo Real (MyMemory / LibreTranslate)
+      try {
+        const langPair = `pt|${targetLang}`;
+        const freeRes = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`);
+        if (freeRes.ok) {
+          const freeData = await freeRes.json();
+          const translatedText = freeData?.responseData?.translatedText;
+          if (translatedText && !translatedText.includes('QUERY LENGTH LIMIT')) {
+            translations[targetLang] = translatedText;
+            continue;
+          }
+        }
+      } catch (freeErr) {
+        console.warn(`[AI-Translate] Fallback gratuito falhou para ${targetLang}:`, freeErr.message);
+      }
+
+      // 4. Último recurso se offline
+      translations[targetLang] = `[${targetLang.toUpperCase()}] ${text}`;
     }
 
     return translations;

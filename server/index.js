@@ -470,7 +470,7 @@ wss.on('connection', (ws, req) => {
               });
 
               for (const client of roomClients) {
-                if (client.readyState === WebSocket.OPEN && (client.channel === lang || client.role === 'screen')) {
+                if (client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener')) {
                   client.send(transPayload);
                 }
               }
