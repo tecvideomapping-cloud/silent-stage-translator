@@ -19,7 +19,11 @@ const {
   saveTranscript,
   getTranscripts,
   saveLead,
-  listLeads
+  listLeads,
+  listSavedGlossaries,
+  getSavedGlossary,
+  saveSavedGlossary,
+  deleteSavedGlossary
 } = require('./db');
 const { verifyPassword, createSession, removeSession, requireAuth } = require('./auth');
 const { pubSub } = require('./redis');
@@ -280,6 +284,79 @@ app.put('/api/rooms/:id/glossary', async (req, res) => {
   }
 });
 
+// ----------------------------------------------------
+// BIBLIOTECA DE GLOSSÁRIOS REUTILIZÁVEIS
+// ----------------------------------------------------
+// Listar todos os glossários salvos
+app.get('/api/glossaries', async (req, res) => {
+  try {
+    const glossaries = await listSavedGlossaries();
+    res.json({ glossaries });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Obter glossário específico
+app.get('/api/glossaries/:id', async (req, res) => {
+  try {
+    const glossary = await getSavedGlossary(req.params.id);
+    if (!glossary) return res.status(404).json({ error: 'Glossário não encontrado' });
+    res.json(glossary);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Criar novo modelo de glossário reutilizável
+app.post('/api/glossaries', async (req, res) => {
+  try {
+    const { name, description, category, terms } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Nome do glossário é obrigatório' });
+    }
+    const created = await saveSavedGlossary({
+      name: name.trim(),
+      description: (description || '').trim(),
+      category: (category || 'Geral').trim(),
+      terms: terms || {}
+    });
+    res.status(201).json(created);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Atualizar modelo de glossário existente
+app.put('/api/glossaries/:id', async (req, res) => {
+  try {
+    const { name, description, category, terms } = req.body;
+    const existing = await getSavedGlossary(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Glossário não encontrado' });
+
+    const updated = await saveSavedGlossary({
+      id: req.params.id,
+      name: name !== undefined ? name.trim() : existing.name,
+      description: description !== undefined ? description.trim() : existing.description,
+      category: category !== undefined ? category.trim() : existing.category,
+      terms: terms !== undefined ? terms : existing.terms
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Deletar modelo de glossário
+app.delete('/api/glossaries/:id', async (req, res) => {
+  try {
+    const success = await deleteSavedGlossary(req.params.id);
+    res.json({ success });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Transcrições da sala
 app.get('/api/rooms/:id/transcripts', async (req, res) => {
   try {
@@ -341,6 +418,7 @@ app.post('/api/leads', async (req, res) => {
 // ----------------------------------------------------
 // WebSocket Server (Áudio Original + Tradução + Legendas)
 // ----------------------------------------------------
+const roomAudioMeta = new Map(); // roomId -> { type: 'audio_meta', format, sampleRate, kbps, profileName }
 
 wss.on('connection', (ws, req) => {
   const urlParams = new URLSearchParams(req.url.replace('/?', '?'));
@@ -367,16 +445,28 @@ wss.on('connection', (ws, req) => {
     timestamp: Date.now()
   }));
 
+  // Envia perfil de compressão e taxa de bits atual da sala para novos ouvintes
+  if (roomAudioMeta.has(roomId)) {
+    try {
+      ws.send(JSON.stringify(roomAudioMeta.get(roomId)));
+    } catch (e) {}
+  }
+
   ws.on('message', async (data, isBinary) => {
     // 1. Mensagens Binárias: Chunks de Áudio
     if (isBinary) {
       if (ws.role !== 'host') return;
 
-      // Broadcast direto do Áudio Original (Palestra Silenciosa)
+      // Broadcast direto do Áudio Original com baixíssima latência (Palestra Silenciosa)
       for (const client of roomClients) {
         if (client !== ws && client.readyState === WebSocket.OPEN && client.channel === 'original') {
           client.send(data, { binary: true });
         }
+      }
+
+      // Se o Host já estiver transcrevendo nativamente pelo navegador, ignora STT secundário
+      if (ws.hasHostSpeechSTT) {
+        return;
       }
 
       // Processamento de IA (Deepgram / Fallback)
@@ -443,12 +533,14 @@ wss.on('connection', (ws, req) => {
         ws.channel = msg.channel;
         ws.send(JSON.stringify({ type: 'channel_switched', channel: ws.channel }));
       } else if (msg.type === 'audio_meta') {
+        roomAudioMeta.set(roomId, msg);
         for (const client of roomClients) {
           if (client !== ws && client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify(msg));
           }
         }
       } else if (msg.type === 'speech_transcript') {
+        ws.hasHostSpeechSTT = true;
         const { text, isFinal, sourceLang } = msg;
         const subPayload = JSON.stringify({
           type: 'subtitle',

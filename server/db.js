@@ -6,9 +6,80 @@ const memoryStore = {
   users: new Map(),
   clients: new Map(),
   rooms: new Map(),
+  savedGlossaries: new Map(),
   transcripts: [],
   leads: []
 };
+
+const defaultGlossaryPresets = [
+  {
+    id: 1,
+    name: 'Videomapping & Tecnologia de Eventos',
+    description: 'Termos de projeção mapeada, áudio profissional e palco silencioso',
+    category: 'Tecnologia & Eventos',
+    terms: {
+      'Videomappingtech': 'Marca registrada - não traduzir',
+      'Silent Stage': 'Palco Silencioso',
+      'Keynote': 'Palestra Magna',
+      'Line Array': 'Sistema de Caixas Acústicas Line Array',
+      'Sidecar': 'Módulo Auxiliar',
+      'Prompt': 'Instrução de IA',
+      'Chroma Key': 'Fundo Verde de Recorte',
+      'Breakout Room': 'Sala Temática / Sala de Apoio'
+    },
+    created_at: new Date()
+  },
+  {
+    id: 2,
+    name: 'Corporativo, Negócios & Finanças',
+    description: 'Jargões empresariais, siglas executivas e governança',
+    category: 'Corporativo',
+    terms: {
+      'B2B': 'Business-to-Business',
+      'Stakeholder': 'Parte Interessada / Acionista',
+      'ROI': 'Retorno sobre Investimento',
+      'Briefing': 'Alinhamento de Requisitos',
+      'Pitch': 'Apresentação Rápida de Negócios',
+      'EBITDA': 'Lucro antes de Juros, Impostos e Depreciação',
+      'Compliance': 'Conformidade e Ética Corporativa'
+    },
+    created_at: new Date()
+  },
+  {
+    id: 3,
+    name: 'Inteligência Artificial & TI',
+    description: 'Vocabulário técnico de modelos de linguagem, computação e nuvem',
+    category: 'Inteligência Artificial',
+    terms: {
+      'LLM': 'Modelo de Linguagem Amplo',
+      'Fine-Tuning': 'Ajuste Fino de Modelo',
+      'Zero-Shot': 'Inferência sem Treinamento Prévio',
+      'Embeddings': 'Vetores Semânticos',
+      'Latency': 'Latência de Rede',
+      'Throughput': 'Capacidade de Processamento',
+      'Pipeline': 'Fluxo Automatizado de Dados'
+    },
+    created_at: new Date()
+  },
+  {
+    id: 4,
+    name: 'Medicina, Saúde & Farma',
+    description: 'Terminologias de ensaios clínicos, farmacologia e saúde',
+    category: 'Saúde & Medicina',
+    terms: {
+      'Randomized Trial': 'Ensaio Clínico Randomizado',
+      'Double-Blind': 'Duplo-Cego',
+      'Adverse Event': 'Evento Adverso',
+      'Peer-Reviewed': 'Revisado por Pares',
+      'Placebo-Controlled': 'Controlado por Placebo',
+      'Protocol': 'Protocolo Clínico'
+    },
+    created_at: new Date()
+  }
+];
+
+// Carrega presets na memória
+defaultGlossaryPresets.forEach(g => memoryStore.savedGlossaries.set(g.id, g));
 
 async function initDb() {
   // Inicializa usuário admin em memória
@@ -115,6 +186,16 @@ async function initDb() {
         message TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS saved_glossaries (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT DEFAULT '',
+        category VARCHAR(100) DEFAULT 'Geral',
+        terms JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
     `);
 
     // Cria o primeiro admin padrão no Postgres se não houver usuários cadastrados
@@ -126,6 +207,22 @@ async function initDb() {
         [defaultAdmin.email, defaultAdmin.password_hash, defaultAdmin.password_salt, defaultAdmin.name, defaultAdmin.role]
       );
       console.log('[DB] Usuário administrador padrão criado com sucesso: admin@videomappingtech.com');
+    }
+
+    // Inicializa glossários padrão no Postgres se a tabela estiver vazia
+    const glossCheck = await pool.query('SELECT count(*) FROM saved_glossaries');
+    if (parseInt(glossCheck.rows[0].count) === 0) {
+      for (const preset of defaultGlossaryPresets) {
+        await pool.query(
+          `INSERT INTO saved_glossaries (id, name, description, category, terms)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (id) DO NOTHING`,
+          [preset.id, preset.name, preset.description, preset.category, JSON.stringify(preset.terms)]
+        );
+      }
+      // Ajusta o sequence para novos IDs não conflitarem
+      await pool.query(`SELECT setval('saved_glossaries_id_seq', (SELECT COALESCE(MAX(id), 1) FROM saved_glossaries))`);
+      console.log('[DB] Modelos de glossário padrão inicializados no PostgreSQL.');
     }
 
     console.log('[DB] Tabelas PostgreSQL inicializadas.');
@@ -440,6 +537,95 @@ async function listLeads() {
   return memoryStore.leads;
 }
 
+// ----------------------------------------------------
+// GLOSSÁRIOS REUTILIZÁVEIS / MODELOS SALVOS
+// ----------------------------------------------------
+async function listSavedGlossaries() {
+  if (pool) {
+    try {
+      const res = await pool.query('SELECT * FROM saved_glossaries ORDER BY id ASC');
+      return res.rows;
+    } catch (e) {
+      console.error('[DB] Erro ao listar glossários salvos:', e.message);
+    }
+  }
+  return Array.from(memoryStore.savedGlossaries.values());
+}
+
+async function getSavedGlossary(id) {
+  const numericId = parseInt(id);
+  if (pool) {
+    try {
+      const res = await pool.query('SELECT * FROM saved_glossaries WHERE id = $1', [numericId]);
+      if (res.rows.length > 0) return res.rows[0];
+    } catch (e) {
+      console.error('[DB] Erro ao buscar glossário salvo:', e.message);
+    }
+  }
+  return memoryStore.savedGlossaries.get(numericId) || null;
+}
+
+async function saveSavedGlossary(glossary) {
+  const termsJson = JSON.stringify(glossary.terms || {});
+  if (pool) {
+    try {
+      if (glossary.id) {
+        const numericId = parseInt(glossary.id);
+        const res = await pool.query(
+          `UPDATE saved_glossaries SET
+            name = $1, description = $2, category = $3, terms = $4, updated_at = NOW()
+           WHERE id = $5 RETURNING *`,
+          [glossary.name, glossary.description || '', glossary.category || 'Geral', termsJson, numericId]
+        );
+        if (res.rows.length > 0) {
+          memoryStore.savedGlossaries.set(numericId, res.rows[0]);
+          return res.rows[0];
+        }
+      } else {
+        const res = await pool.query(
+          `INSERT INTO saved_glossaries (name, description, category, terms)
+           VALUES ($1, $2, $3, $4) RETURNING *`,
+          [glossary.name, glossary.description || '', glossary.category || 'Geral', termsJson]
+        );
+        if (res.rows.length > 0) {
+          memoryStore.savedGlossaries.set(res.rows[0].id, res.rows[0]);
+          return res.rows[0];
+        }
+      }
+    } catch (e) {
+      console.error('[DB] Erro ao salvar modelo de glossário no Postgres:', e.message);
+      throw e;
+    }
+  }
+
+  // Fallback em memória
+  const id = glossary.id ? parseInt(glossary.id) : (Math.max(0, ...memoryStore.savedGlossaries.keys()) + 1);
+  const entry = {
+    id,
+    name: glossary.name,
+    description: glossary.description || '',
+    category: glossary.category || 'Geral',
+    terms: glossary.terms || {},
+    created_at: glossary.created_at || new Date(),
+    updated_at: new Date()
+  };
+  memoryStore.savedGlossaries.set(id, entry);
+  return entry;
+}
+
+async function deleteSavedGlossary(id) {
+  const numericId = parseInt(id);
+  if (pool) {
+    try {
+      await pool.query('DELETE FROM saved_glossaries WHERE id = $1', [numericId]);
+    } catch (e) {
+      console.error('[DB] Erro ao deletar glossário salvo:', e.message);
+    }
+  }
+  memoryStore.savedGlossaries.delete(numericId);
+  return true;
+}
+
 module.exports = {
   initDb,
   getUserByEmail,
@@ -455,5 +641,9 @@ module.exports = {
   saveTranscript,
   getTranscripts,
   saveLead,
-  listLeads
+  listLeads,
+  listSavedGlossaries,
+  getSavedGlossary,
+  saveSavedGlossary,
+  deleteSavedGlossary
 };

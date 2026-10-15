@@ -85,6 +85,49 @@
           </span>
         </div>
 
+        <!-- Compressão & Taxa de Bits (kbps) da Transmissão (Estilo Spotify) -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>🎧</span> Compressão & Taxa de Bits (kbps)
+                </span>
+                <span id="compressionBadge" class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2.5 py-0.5 rounded-full font-semibold">96 kbps • Spotify Normal</span>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-0.5">Defina a taxa de bits da transmissão para economizar banda ou entregar áudio de alta fidelidade.</p>
+            </div>
+            <div id="bandwidthEstimate" class="text-[11px] text-emerald-300 font-mono bg-emerald-950/40 border border-emerald-800/50 px-2.5 py-1 rounded-lg shrink-0">
+              ~12 KB/s por ouvinte (-62% banda)
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Qualidade & Taxa de Bits:</label>
+              <select id="audioBitrateSelect" onchange="updateAudioProfile(this.value)"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-medium">
+                <option value="24">🎙️ 24 kbps • Ultra Econômico (Wi-Fi Lotado / 4G Fraco)</option>
+                <option value="48">📻 48 kbps • Voz Otimizada (Conferências & Palestras)</option>
+                <option value="96" selected>🎵 96 kbps • Spotify Normal (Equilíbrio Recomendado)</option>
+                <option value="160">🎧 160 kbps • Spotify Alta Qualidade (Música e Dinâmica)</option>
+                <option value="320">💎 320 kbps • Spotify Estúdio / Hi-Fi (Grau de Master)</option>
+                <option value="pcm256">⚡ 256 kbps • Linear PCM Sem Compressão (Mesa Direta)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Algoritmo de Compressão:</label>
+              <select id="audioCodecSelect" onchange="updateCustomCodec(this.value)"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-medium">
+                <option value="mulaw" selected>Compressão Acústica Dinâmica (G.711 / Estilo Spotify)</option>
+                <option value="adpcm">ADPCM Adaptativo 4:1 (Ultra Econômico em Banda)</option>
+                <option value="pcm16">Linear PCM 16-bit (Sem Compressão Acústica)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <!-- VU Meter de Volume -->
         <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-2">
           <div class="flex justify-between text-xs text-slate-400">
@@ -169,34 +212,69 @@
         </div>
       </section>
 
-      <!-- Glossário de IA -->
-      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl">
-        <div class="flex items-center justify-between mb-3">
+      <!-- Glossário de IA & Biblioteca Reutilizável -->
+      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 class="text-base font-bold text-white flex items-center gap-2">
-              <span>📖</span> Glossário & Jargões do Evento
-            </h2>
-            <p class="text-xs text-slate-400">Insira siglas, nomes de palestrantes e termos técnicos para tradução exata.</p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-base font-bold text-white flex items-center gap-2">
+                <span>📖</span> Glossário & Jargões do Evento
+              </h2>
+              <span id="glossaryCountBadge" class="text-[10px] bg-cyan-950 text-cyan-400 border border-cyan-800/80 px-2 py-0.5 rounded-full font-semibold">0 termos</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-0.5">Defina siglas, termos técnicos e nomes de palestrantes para tradução impecável.</p>
           </div>
-          <button onclick="saveGlossary()" class="text-xs bg-cyan-600 hover:bg-cyan-500 text-white font-semibold px-4 py-2 rounded-lg transition">
-            Salvar no Servidor
-          </button>
+          <div class="flex items-center gap-2">
+            <button onclick="clearCurrentGlossary()" class="text-xs text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 border border-slate-800 hover:border-rose-900/40 px-3 py-2 rounded-lg transition" title="Limpar termos da lista atual">
+              Limpar Lista
+            </button>
+            <button onclick="saveGlossary()" class="text-xs bg-cyan-600 hover:bg-cyan-500 text-white font-semibold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5">
+              <span>💾</span> Salvar neste Evento
+            </button>
+          </div>
         </div>
 
-        <div class="flex gap-2 mb-3">
-          <input type="text" id="termInput" placeholder="Ex: Videomappingtech"
+        <!-- Barra de Carregamento & Gestão de Modelos Reutilizáveis -->
+        <div class="p-3 bg-slate-950/80 border border-slate-800/90 rounded-xl flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          <div class="flex items-center gap-2 flex-1">
+            <span class="text-xs font-semibold text-cyan-400 whitespace-nowrap flex items-center gap-1">
+              <span>📚</span> Modelos Salvos:
+            </span>
+            <select id="savedGlossarySelect" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 min-w-[180px]">
+              <option value="">Carregando biblioteca...</option>
+            </select>
+            <button type="button" onclick="applySelectedSavedGlossary('merge')" title="Adiciona os termos do modelo aos termos atuais do evento" class="text-xs bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 border border-cyan-500/40 px-3 py-1.5 rounded-lg transition font-medium flex items-center gap-1">
+              <span>➕</span> Mesclar
+            </button>
+            <button type="button" onclick="applySelectedSavedGlossary('replace')" title="Substitui os termos atuais pelos termos do modelo selecionado" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-lg transition font-medium">
+              Substituir
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="openSaveAsTemplateModal()" title="Salvar lista de termos atual como um novo modelo reutilizável" class="text-xs bg-emerald-700/40 hover:bg-emerald-600/60 text-emerald-300 border border-emerald-500/40 px-3 py-1.5 rounded-lg transition font-semibold flex items-center gap-1.5 shadow-sm">
+              <span>💾</span> Salvar como Novo Modelo
+            </button>
+            <button type="button" onclick="openManageGlossaryModal()" title="Gerenciar todos os glossários salvos na biblioteca" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1">
+              <span>⚙️</span> Biblioteca
+            </button>
+          </div>
+        </div>
+
+        <!-- Adição de Termo -->
+        <div class="flex gap-2">
+          <input type="text" id="termInput" placeholder="Termo / Sigla (ex: Videomappingtech)"
             class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
-          <input type="text" id="defInput" placeholder="Ex: Não traduzir / Marca"
+          <input type="text" id="defInput" placeholder="Tradução / Orientação (ex: Não traduzir / Marca)"
             class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
-          <button onclick="addGlossaryItem()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-lg text-xs font-medium">
+          <button onclick="addGlossaryItem()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition">
             + Adicionar
           </button>
         </div>
 
-        <div id="glossaryList" class="flex flex-wrap gap-2 min-h-[40px] p-2 bg-slate-950 rounded-lg border border-slate-800">
-          <span class="text-xs bg-slate-900 border border-slate-800 text-slate-300 px-2.5 py-1 rounded-md flex items-center gap-1.5">
-            <strong>Videomappingtech:</strong> Marca / Não traduzir
-          </span>
+        <!-- Lista de Termos Ativos no Palco -->
+        <div id="glossaryList" class="flex flex-wrap gap-2 min-h-[40px] max-h-48 overflow-y-auto p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+          <!-- Renderizado via JS -->
         </div>
       </section>
 
@@ -235,9 +313,106 @@
         </div>
       </section>
 
-    </div>
-
   </main>
+
+  <!-- Modal: Salvar Glossário Atual como Modelo Reutilizável -->
+  <div id="saveTemplateModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-800 max-w-lg w-full rounded-2xl p-6 shadow-2xl flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">💾</span>
+          <div>
+            <h3 class="text-base font-bold text-white">Salvar na Biblioteca de Glossários</h3>
+            <p class="text-[11px] text-slate-400">Reaproveite este conjunto de termos em qualquer evento futuro</p>
+          </div>
+        </div>
+        <button onclick="closeModal('saveTemplateModal')" class="text-slate-400 hover:text-white text-xl font-bold">×</button>
+      </div>
+
+      <form onsubmit="handleSaveCurrentAsTemplate(event)" class="flex flex-col gap-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Nome do Modelo de Glossário *</label>
+          <input type="text" id="templateNameInput" placeholder="Ex: Tech Summit 2026 - IA e Cloud" required
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">Categoria</label>
+            <input type="text" id="templateCategoryInput" placeholder="Ex: Tecnologia, Medicina, Finanças" value="Geral"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">Total de Termos</label>
+            <div id="saveTemplateTermCount" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-cyan-400 font-bold">
+              0 termos selecionados
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Descrição Breve (Opcional)</label>
+          <input type="text" id="templateDescInput" placeholder="Ex: Vocabulário específico de palestrantes e patrocinadores"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-400 mb-1">Prévia dos Termos que Serão Salvos:</label>
+          <div id="saveTemplatePreview" class="max-h-28 overflow-y-auto bg-slate-950 p-2.5 rounded-lg border border-slate-800 flex flex-wrap gap-1.5 text-[11px]">
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2.5 border-t border-slate-800 pt-3 mt-1">
+          <button type="button" onclick="closeModal('saveTemplateModal')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">
+            Cancelar
+          </button>
+          <button type="submit" class="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-lg shadow-lg flex items-center gap-1.5">
+            <span>💾</span> Salvar Modelo
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Gerenciar Biblioteca de Glossários -->
+  <div id="manageGlossaryModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-800 max-w-3xl w-full rounded-2xl p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh]">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">📚</span>
+          <div>
+            <h3 class="text-base font-bold text-white">Biblioteca de Glossários Reutilizáveis</h3>
+            <p class="text-[11px] text-slate-400">Modelos salvos no servidor disponíveis para qualquer palco ou evento</p>
+          </div>
+        </div>
+        <button onclick="closeModal('manageGlossaryModal')" class="text-slate-400 hover:text-white text-xl font-bold">×</button>
+      </div>
+
+      <!-- Barra de Ações Rápidas: Pesquisa + Importar JSON -->
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-xs">
+        <input type="text" id="manageGlossarySearch" placeholder="🔍 Filtrar modelos por nome ou categoria..." oninput="filterManageGlossaries()"
+          class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:border-cyan-500 focus:outline-none">
+        <div class="flex items-center gap-2">
+          <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-2 rounded-lg font-medium transition flex items-center gap-1.5 whitespace-nowrap">
+            <span>📥</span> Importar JSON
+            <input type="file" id="importJsonInput" accept=".json" class="hidden" onchange="handleImportJson(event)">
+          </label>
+        </div>
+      </div>
+
+      <!-- Lista de Modelos Salvos -->
+      <div id="manageGlossariesList" class="flex-1 overflow-y-auto max-h-[55vh] flex flex-col gap-3 pr-1">
+        <!-- Renderizado dinamicamente via JS -->
+      </div>
+
+      <div class="border-t border-slate-800 pt-3 flex items-center justify-between text-xs text-slate-400">
+        <span id="manageGlossariesTotalCount">0 modelos cadastrados</span>
+        <button type="button" onclick="closeModal('manageGlossaryModal')" class="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-lg transition">
+          Fechar
+        </button>
+      </div>
+    </div>
+  </div>
 
   <script>
     const urlParams = new URLSearchParams(window.location.search);
@@ -250,6 +425,167 @@
     let scriptProcessor = null;
     let socket = null;
     let glossaryMap = { 'Videomappingtech': 'Marca' };
+
+    // ----------------------------------------------------
+    // COMPRESSÃO & TAXA DE BITS (kbps) - ESTILO SPOTIFY
+    // ----------------------------------------------------
+    const AUDIO_PROFILES = {
+      '24': {
+        name: 'Voz Ultra Econômica',
+        kbps: 24,
+        codec: 'adpcm',
+        sampleRate: 6000,
+        badgeText: '24 kbps • Ultra Econômico',
+        bandwidthText: '~3 KB/s por ouvinte (-90% banda)'
+      },
+      '48': {
+        name: 'Voz Otimizada',
+        kbps: 48,
+        codec: 'adpcm',
+        sampleRate: 12000,
+        badgeText: '48 kbps • Voz Otimizada',
+        bandwidthText: '~6 KB/s por ouvinte (-81% banda)'
+      },
+      '96': {
+        name: 'Spotify Normal',
+        kbps: 96,
+        codec: 'mulaw',
+        sampleRate: 12000,
+        badgeText: '96 kbps • Spotify Normal',
+        bandwidthText: '~12 KB/s por ouvinte (-62% banda)'
+      },
+      '160': {
+        name: 'Spotify Alta Qualidade',
+        kbps: 160,
+        codec: 'mulaw',
+        sampleRate: 20000,
+        badgeText: '160 kbps • Spotify Alta Qualidade',
+        bandwidthText: '~20 KB/s por ouvinte (-38% banda)'
+      },
+      '320': {
+        name: 'Spotify Estúdio / Hi-Fi',
+        kbps: 320,
+        codec: 'pcm16',
+        sampleRate: 20000,
+        badgeText: '320 kbps • Spotify Estúdio / Hi-Fi',
+        bandwidthText: '~40 KB/s por ouvinte (Hi-Fi Master)'
+      },
+      'pcm256': {
+        name: 'Linear PCM Sem Compressão',
+        kbps: 256,
+        codec: 'pcm16',
+        sampleRate: 16000,
+        badgeText: '256 kbps • Linear PCM Sem Compressão',
+        bandwidthText: '~32 KB/s por ouvinte (Broadcast Direto)'
+      }
+    };
+
+    let currentAudioProfile = {
+      id: '96',
+      ...AUDIO_PROFILES['96']
+    };
+
+    function updateAudioProfile(profileKey) {
+      const p = AUDIO_PROFILES[profileKey];
+      if (!p) return;
+      currentAudioProfile = { id: profileKey, ...p };
+      
+      const codecSelect = document.getElementById('audioCodecSelect');
+      if (codecSelect) codecSelect.value = p.codec;
+
+      updateAudioUI();
+      broadcastAudioMeta();
+    }
+
+    function updateCustomCodec(codecKey) {
+      currentAudioProfile.codec = codecKey;
+      if (codecKey === 'adpcm') {
+        currentAudioProfile.sampleRate = Math.min(24000, Math.round((currentAudioProfile.kbps * 1000) / 4));
+      } else if (codecKey === 'mulaw') {
+        currentAudioProfile.sampleRate = Math.min(24000, Math.round((currentAudioProfile.kbps * 1000) / 8));
+      } else {
+        currentAudioProfile.sampleRate = Math.min(24000, Math.round((currentAudioProfile.kbps * 1000) / 16));
+      }
+      updateAudioUI();
+      broadcastAudioMeta();
+    }
+
+    function updateAudioUI() {
+      const badge = document.getElementById('compressionBadge');
+      const bw = document.getElementById('bandwidthEstimate');
+      if (badge) badge.innerText = currentAudioProfile.badgeText || `${currentAudioProfile.kbps} kbps`;
+      if (bw) bw.innerText = currentAudioProfile.bandwidthText || `~${Math.round(currentAudioProfile.kbps / 8)} KB/s por ouvinte`;
+    }
+
+    function broadcastAudioMeta() {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'audio_meta',
+          format: currentAudioProfile.codec,
+          sampleRate: currentAudioProfile.sampleRate,
+          kbps: currentAudioProfile.kbps,
+          profileName: currentAudioProfile.name
+        }));
+      }
+    }
+
+    // Encoder G.711 μ-law
+    function encodeMuLawSample(sample) {
+      const BIAS = 0x84;
+      const CLIP = 32635;
+      let sign = (sample >> 8) & 0x80;
+      if (sign !== 0) sample = -sample;
+      if (sample > CLIP) sample = CLIP;
+      sample += BIAS;
+      let exponent = 7;
+      for (let expMask = 0x4000; (sample & expMask) === 0 && exponent > 0; exponent--, expMask >>= 1) {}
+      let mantissa = (sample >> (exponent + 3)) & 0x0F;
+      return ~(sign | (exponent << 4) | mantissa) & 0xFF;
+    }
+
+    // Encoder IMA ADPCM 4:1
+    const IMA_INDEX_TABLE = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8];
+    const IMA_STEP_TABLE = [
+      7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+      50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230,
+      253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+      1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327,
+      3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487,
+      12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767
+    ];
+    let txAdpcmPredictor = 0;
+    let txAdpcmStepIndex = 0;
+
+    function encodeAdpcmNibble(sample) {
+      let step = IMA_STEP_TABLE[txAdpcmStepIndex];
+      let diff = sample - txAdpcmPredictor;
+      let nibble = 0;
+      if (diff < 0) {
+        nibble = 8;
+        diff = -diff;
+      }
+      let mask = 4;
+      let delta = step >> 3;
+      for (let i = 0; i < 3; i++) {
+        if (diff >= step) {
+          nibble |= mask;
+          diff -= step;
+          delta += step;
+        }
+        step >>= 1;
+        mask >>= 1;
+      }
+      if (nibble & 8) txAdpcmPredictor -= delta;
+      else txAdpcmPredictor += delta;
+      if (txAdpcmPredictor > 32767) txAdpcmPredictor = 32767;
+      else if (txAdpcmPredictor < -32768) txAdpcmPredictor = -32768;
+
+      txAdpcmStepIndex += IMA_INDEX_TABLE[nibble];
+      if (txAdpcmStepIndex < 0) txAdpcmStepIndex = 0;
+      else if (txAdpcmStepIndex > 88) txAdpcmStepIndex = 88;
+
+      return nibble;
+    }
 
     async function loadRoomDetails() {
       try {
@@ -465,26 +801,76 @@
           scriptProcessor.onaudioprocess = (e) => {
             if (!isBroadcasting || !socket || socket.readyState !== WebSocket.OPEN) return;
             const inputData = e.inputBuffer.getChannelData(0);
-            
-            // Reamostragem precisa para 16000 Hz estrito
             const sourceRate = audioContext.sampleRate;
+            const targetRate = currentAudioProfile.sampleRate;
+            const codec = currentAudioProfile.codec; // 'mulaw', 'adpcm', 'pcm16'
+
+            // 1. Reamostragem com interpolação linear suave para o sampleRate do perfil
             let targetFloats = inputData;
-            if (sourceRate !== 16000) {
-              const ratio = sourceRate / 16000;
+            if (sourceRate !== targetRate) {
+              const ratio = sourceRate / targetRate;
               const newLen = Math.round(inputData.length / ratio);
               targetFloats = new Float32Array(newLen);
               for (let i = 0; i < newLen; i++) {
-                targetFloats[i] = inputData[Math.floor(i * ratio)];
+                const srcPos = i * ratio;
+                const idx = Math.floor(srcPos);
+                const frac = srcPos - idx;
+                const s1 = inputData[idx] || 0;
+                const s2 = inputData[idx + 1] !== undefined ? inputData[idx + 1] : s1;
+                targetFloats[i] = s1 + frac * (s2 - s1);
               }
             }
 
-            const pcm16 = new Int16Array(targetFloats.length);
-            for (let i = 0; i < targetFloats.length; i++) {
+            // 2. Converte Float32 para Int16
+            const numSamples = targetFloats.length;
+            const pcm16 = new Int16Array(numSamples);
+            for (let i = 0; i < numSamples; i++) {
               const s = Math.max(-1, Math.min(1, targetFloats[i]));
               pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
 
-            socket.send(pcm16.buffer);
+            // 3. Empacota com cabeçalho compacto de 4 bytes:
+            // Byte 0: 0xAA (Magic sync)
+            // Byte 1: Codec ID (0 = PCM16, 1 = μ-law 8-bit, 2 = ADPCM 4-bit)
+            // Byte 2-3: targetRate (Uint16)
+            let packetBuffer = null;
+            if (codec === 'mulaw') {
+              // G.711 μ-law: 1 byte por amostra (50% de compressão imediata)
+              packetBuffer = new Uint8Array(4 + numSamples);
+              packetBuffer[0] = 0xAA;
+              packetBuffer[1] = 1; // μ-law
+              packetBuffer[2] = targetRate & 0xFF;
+              packetBuffer[3] = (targetRate >> 8) & 0xFF;
+              for (let i = 0; i < numSamples; i++) {
+                packetBuffer[4 + i] = encodeMuLawSample(pcm16[i]);
+              }
+            } else if (codec === 'adpcm') {
+              // IMA ADPCM: 4 bits por amostra (75% de compressão)
+              const halfLen = Math.ceil(numSamples / 2);
+              packetBuffer = new Uint8Array(4 + halfLen);
+              packetBuffer[0] = 0xAA;
+              packetBuffer[1] = 2; // ADPCM
+              packetBuffer[2] = targetRate & 0xFF;
+              packetBuffer[3] = (targetRate >> 8) & 0xFF;
+              for (let i = 0; i < halfLen; i++) {
+                const s1 = pcm16[i * 2];
+                const s2 = (i * 2 + 1 < numSamples) ? pcm16[i * 2 + 1] : 0;
+                const n1 = encodeAdpcmNibble(s1);
+                const n2 = encodeAdpcmNibble(s2);
+                packetBuffer[4 + i] = (n1 & 0x0F) | ((n2 & 0x0F) << 4);
+              }
+            } else {
+              // PCM 16 linear sem compressão
+              const byteLen = numSamples * 2;
+              packetBuffer = new Uint8Array(4 + byteLen);
+              packetBuffer[0] = 0xAA;
+              packetBuffer[1] = 0; // PCM16
+              packetBuffer[2] = targetRate & 0xFF;
+              packetBuffer[3] = (targetRate >> 8) & 0xFF;
+              new Uint8Array(packetBuffer.buffer, 4).set(new Uint8Array(pcm16.buffer));
+            }
+
+            socket.send(packetBuffer.buffer);
           };
 
           isBroadcasting = true;
@@ -492,13 +878,8 @@
           document.getElementById('btnIcon').innerText = '⏹️';
           document.getElementById('btnText').innerText = 'Parar Transmissão';
 
-          // Envia metadata do sampleRate real para os ouvintes
-          if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-              type: 'audio_meta',
-              sampleRate: 16000
-            }));
-          }
+          // Envia metadata do perfil de compressão e sampleRate para os ouvintes
+          broadcastAudioMeta();
 
           // Ativa Reconhecimento de Fala nativo do navegador para transcrição/tradução instantânea
           const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -678,6 +1059,302 @@
       }
     }
 
+    let savedGlossariesCache = [];
+
+    // Carregar biblioteca de glossários salvos do servidor e cache local
+    async function fetchSavedGlossaries() {
+      const select = document.getElementById('savedGlossarySelect');
+      try {
+        const res = await fetch('/api/glossaries');
+        if (res.ok) {
+          const data = await res.json();
+          savedGlossariesCache = data.glossaries || [];
+          localStorage.setItem('vmp_saved_glossaries', JSON.stringify(savedGlossariesCache));
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar glossários do servidor. Usando cache local:', err);
+        const cached = localStorage.getItem('vmp_saved_glossaries');
+        if (cached) {
+          try { savedGlossariesCache = JSON.parse(cached); } catch (e) {}
+        }
+      }
+
+      // Popula o select
+      if (select) {
+        select.innerHTML = '<option value="">-- Selecionar Modelo Salvo... --</option>';
+        savedGlossariesCache.forEach(g => {
+          const opt = document.createElement('option');
+          opt.value = g.id;
+          const termCount = Object.keys(g.terms || {}).length;
+          opt.innerText = `📚 [${g.category || 'Geral'}] ${g.name} (${termCount} termos)`;
+          select.appendChild(opt);
+        });
+      }
+
+      renderManageGlossariesList();
+    }
+
+    // Aplica o modelo selecionado no palco atual
+    function applySelectedSavedGlossary(mode = 'merge') {
+      const select = document.getElementById('savedGlossarySelect');
+      const val = select ? select.value : '';
+      if (!val) {
+        alert('Por favor, selecione primeiro um modelo de glossário na lista!');
+        return;
+      }
+      const model = savedGlossariesCache.find(g => String(g.id) === String(val));
+      if (!model || !model.terms) {
+        alert('Modelo de glossário não encontrado.');
+        return;
+      }
+
+      const incomingTerms = model.terms;
+      const count = Object.keys(incomingTerms).length;
+
+      if (mode === 'replace') {
+        if (!confirm(`Deseja substituir todos os termos atuais pelos ${count} termos do modelo "${model.name}"?`)) {
+          return;
+        }
+        glossaryMap = { ...incomingTerms };
+      } else {
+        // Merge
+        glossaryMap = { ...glossaryMap, ...incomingTerms };
+      }
+
+      renderGlossary();
+      alert(`✅ ${count} termos do modelo "${model.name}" carregados com sucesso!\nClique em "Salvar neste Evento" para confirmar as alterações no servidor.`);
+    }
+
+    // Modal: Salvar Atual como Novo Modelo
+    function openSaveAsTemplateModal() {
+      const count = Object.keys(glossaryMap).length;
+      if (count === 0) {
+        alert('Adicione pelo menos um termo ao glossário antes de salvar um modelo!');
+        return;
+      }
+
+      document.getElementById('templateNameInput').value = '';
+      document.getElementById('templateCategoryInput').value = 'Geral';
+      document.getElementById('templateDescInput').value = '';
+      document.getElementById('saveTemplateTermCount').innerText = `${count} ${count === 1 ? 'termo' : 'termos'} incluídos`;
+
+      const preview = document.getElementById('saveTemplatePreview');
+      preview.innerHTML = '';
+      for (const [k, v] of Object.entries(glossaryMap)) {
+        const chip = document.createElement('span');
+        chip.className = 'bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded';
+        chip.innerHTML = `<strong>${k}:</strong> ${v}`;
+        preview.appendChild(chip);
+      }
+
+      document.getElementById('saveTemplateModal').classList.remove('hidden');
+      setTimeout(() => document.getElementById('templateNameInput').focus(), 100);
+    }
+
+    async function handleSaveCurrentAsTemplate(e) {
+      e.preventDefault();
+      const name = document.getElementById('templateNameInput').value.trim();
+      const category = document.getElementById('templateCategoryInput').value.trim() || 'Geral';
+      const description = document.getElementById('templateDescInput').value.trim();
+
+      if (!name) return;
+
+      try {
+        const res = await fetch('/api/glossaries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            category,
+            description,
+            terms: glossaryMap
+          })
+        });
+
+        if (res.ok) {
+          const created = await res.json();
+          closeModal('saveTemplateModal');
+          await fetchSavedGlossaries();
+          const select = document.getElementById('savedGlossarySelect');
+          if (select) select.value = created.id;
+          alert(`✅ Modelo "${name}" salvo com sucesso na biblioteca!`);
+        } else {
+          alert('Erro ao salvar modelo no servidor.');
+        }
+      } catch (err) {
+        alert('Erro ao conectar ao servidor: ' + err.message);
+      }
+    }
+
+    // Modal: Gerenciar Glossários
+    function openManageGlossaryModal() {
+      renderManageGlossariesList();
+      document.getElementById('manageGlossaryModal').classList.remove('hidden');
+    }
+
+    function renderManageGlossariesList(filterText = '') {
+      const container = document.getElementById('manageGlossariesList');
+      if (!container) return;
+      container.innerHTML = '';
+
+      const term = (filterText || '').toLowerCase().trim();
+      const list = savedGlossariesCache.filter(g => {
+        if (!term) return true;
+        return (g.name || '').toLowerCase().includes(term) ||
+               (g.category || '').toLowerCase().includes(term) ||
+               (g.description || '').toLowerCase().includes(term);
+      });
+
+      const totalCountEl = document.getElementById('manageGlossariesTotalCount');
+      if (totalCountEl) totalCountEl.innerText = `${list.length} de ${savedGlossariesCache.length} modelos cadastrados`;
+
+      if (list.length === 0) {
+        container.innerHTML = `
+          <div class="p-8 text-center bg-slate-950/60 rounded-xl border border-slate-800 text-slate-500 text-xs">
+            Nenhum modelo de glossário encontrado.
+          </div>
+        `;
+        return;
+      }
+
+      list.forEach(g => {
+        const card = document.createElement('div');
+        card.className = 'bg-slate-950/80 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:border-slate-700 transition';
+        const termEntries = Object.entries(g.terms || {});
+        const termCount = termEntries.length;
+
+        const previewChips = termEntries.slice(0, 4).map(([k, v]) => 
+          `<span class="bg-slate-900 border border-slate-800 text-slate-300 px-1.5 py-0.5 rounded text-[10px] truncate max-w-[140px]">${k}</span>`
+        ).join('');
+        const moreBadge = termCount > 4 ? `<span class="text-slate-500 text-[10px]">+${termCount - 4} mais</span>` : '';
+
+        card.innerHTML = `
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-bold text-white truncate">${g.name}</span>
+              <span class="text-[10px] bg-cyan-950 text-cyan-400 border border-cyan-800 px-2 py-0.5 rounded-full">${g.category || 'Geral'}</span>
+              <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">${termCount} termos</span>
+            </div>
+            ${g.description ? `<p class="text-[11px] text-slate-400 mb-2 truncate">${g.description}</p>` : ''}
+            <div class="flex items-center flex-wrap gap-1">
+              ${previewChips}
+              ${moreBadge}
+            </div>
+          </div>
+
+          <div class="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+            <button onclick="applyFromManageModal('${g.id}', 'merge')" class="text-[11px] bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 border border-cyan-500/40 px-2.5 py-1.5 rounded-lg transition font-medium flex items-center gap-1" title="Adicionar aos termos atuais deste evento">
+              <span>➕</span> Mesclar
+            </button>
+            <button onclick="applyFromManageModal('${g.id}', 'replace')" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1.5 rounded-lg transition font-medium" title="Substituir todos os termos do evento">
+              Substituir
+            </button>
+            <button onclick="exportGlossaryAsJson('${g.id}')" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 px-2 py-1.5 rounded-lg transition" title="Exportar JSON">
+              📥
+            </button>
+            <button onclick="deleteSavedGlossaryItem('${g.id}', '${g.name.replace(/'/g, "\\'")}')" class="text-[11px] bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1.5 rounded-lg transition" title="Excluir este modelo">
+              🗑️
+            </button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function filterManageGlossaries() {
+      const val = document.getElementById('manageGlossarySearch').value;
+      renderManageGlossariesList(val);
+    }
+
+    function applyFromManageModal(id, mode) {
+      const select = document.getElementById('savedGlossarySelect');
+      if (select) select.value = id;
+      closeModal('manageGlossaryModal');
+      applySelectedSavedGlossary(mode);
+    }
+
+    async function deleteSavedGlossaryItem(id, name) {
+      if (!confirm(`Deseja realmente excluir o modelo de glossário "${name}" da biblioteca?`)) return;
+      try {
+        const res = await fetch(`/api/glossaries/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          await fetchSavedGlossaries();
+          alert(`Modelo "${name}" excluído com sucesso.`);
+        } else {
+          alert('Erro ao excluir modelo.');
+        }
+      } catch (err) {
+        alert('Erro de conexão: ' + err.message);
+      }
+    }
+
+    function exportGlossaryAsJson(id) {
+      const item = savedGlossariesCache.find(g => String(g.id) === String(id));
+      if (!item) return;
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(item, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `glossario-${item.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
+
+    async function handleImportJson(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          let name = parsed.name || file.name.replace('.json', '');
+          let category = parsed.category || 'Importado';
+          let description = parsed.description || 'Importado via arquivo JSON';
+          let terms = parsed.terms || (typeof parsed === 'object' && !parsed.name ? parsed : {});
+
+          if (Object.keys(terms).length === 0 && typeof parsed === 'object') {
+            terms = parsed;
+          }
+
+          if (Object.keys(terms).length === 0) {
+            alert('Nenhum termo válido encontrado no arquivo JSON!');
+            return;
+          }
+
+          const res = await fetch('/api/glossaries', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, category, description, terms })
+          });
+
+          if (res.ok) {
+            await fetchSavedGlossaries();
+            alert(`✅ Glossário "${name}" importado com sucesso com ${Object.keys(terms).length} termos!`);
+          } else {
+            alert('Erro ao salvar glossário importado no servidor.');
+          }
+        } catch (err) {
+          alert('Erro ao processar JSON: ' + err.message);
+        }
+        event.target.value = '';
+      };
+      reader.readAsText(file);
+    }
+
+    function clearCurrentGlossary() {
+      if (Object.keys(glossaryMap).length === 0) return;
+      if (confirm('Deseja limpar todos os termos da lista atual do evento?')) {
+        glossaryMap = {};
+        renderGlossary();
+      }
+    }
+
+    function closeModal(id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    }
+
     function addGlossaryItem() {
       const term = document.getElementById('termInput').value.trim();
       const def = document.getElementById('defInput').value.trim();
@@ -691,11 +1368,23 @@
 
     function renderGlossary() {
       const container = document.getElementById('glossaryList');
+      const badge = document.getElementById('glossaryCountBadge');
+      const keys = Object.keys(glossaryMap);
+
+      if (badge) {
+        badge.innerText = `${keys.length} ${keys.length === 1 ? 'termo' : 'termos'}`;
+      }
+
       container.innerHTML = '';
+      if (keys.length === 0) {
+        container.innerHTML = '<span class="text-xs text-slate-500 italic p-1">Nenhum termo ativo no evento. Adicione acima ou carregue um modelo da biblioteca.</span>';
+        return;
+      }
+
       for (const [k, v] of Object.entries(glossaryMap)) {
         const span = document.createElement('span');
-        span.className = 'text-xs bg-slate-900 border border-slate-800 text-slate-300 px-2.5 py-1 rounded-md flex items-center gap-1.5';
-        span.innerHTML = `<strong>${k}:</strong> ${v} <button onclick="removeGlossaryItem('${k}')" class="text-rose-400 hover:text-rose-300 font-bold ml-1">×</button>`;
+        span.className = 'text-xs bg-slate-900 border border-slate-800 text-slate-300 px-2.5 py-1 rounded-md flex items-center gap-1.5 shadow-sm';
+        span.innerHTML = `<strong>${k}:</strong> ${v} <button onclick="removeGlossaryItem('${k}')" class="text-rose-400 hover:text-rose-300 font-bold ml-1 text-sm">×</button>`;
         container.appendChild(span);
       }
     }
@@ -766,6 +1455,7 @@
     renderGlossary();
     refreshAudioDevices();
     loadRoomDetails();
+    fetchSavedGlossaries();
     connectHostWS();
   </script>
 </body>

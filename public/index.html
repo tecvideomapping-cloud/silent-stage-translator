@@ -80,6 +80,7 @@
         <div>
           <span class="text-xs text-slate-400">Status:</span>
           <p id="playerStatus" class="text-sm font-semibold text-slate-300">Pronto para iniciar</p>
+          <span id="audioQualityBadge" class="inline-block mt-0.5 text-[10px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full font-mono">🎵 96 kbps • Spotify Normal</span>
         </div>
         <button id="togglePlayBtn" onclick="toggleAudio()"
           class="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-6 py-2.5 rounded-full shadow-lg transition active:scale-95 flex items-center gap-2">
@@ -464,7 +465,15 @@
             handleP2PSignal(data.fromClientId, data.signal);
           } else if (data.type === 'audio_meta') {
             window.hostSampleRate = data.sampleRate;
-            console.log('SampleRate do transmissor recebido:', data.sampleRate);
+            window.hostAudioFormat = data.format;
+            window.hostAudioKbps = data.kbps;
+            const badge = document.getElementById('audioQualityBadge');
+            if (badge) {
+              const label = data.profileName || (data.kbps ? `${data.kbps} kbps` : 'Qualidade Otimizada');
+              badge.innerText = `🎵 ${label}`;
+              badge.className = 'inline-block mt-0.5 text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2 py-0.5 rounded-full font-semibold';
+            }
+            console.log('[Áudio] Formato e taxa de bits recebidos do transmissor:', data);
           } else if (data.type === 'subtitle') {
             // Legenda original
             renderSubtitle(data.text, data.isFinal, 'original');
@@ -548,16 +557,101 @@
       }
     }
 
+    // Tabela de decodificação ultrarrápida G.711 μ-law (Lookup O(1))
+    const MULAW_DECODE_TABLE = new Float32Array(256);
+    (function initMuLawTable() {
+      for (let i = 0; i < 256; i++) {
+        let val = ~i;
+        let sign = val & 0x80;
+        let exponent = (val >> 4) & 0x07;
+        let mantissa = val & 0x0F;
+        let sample = ((mantissa << 3) + 0x84) << exponent;
+        sample -= 0x84;
+        MULAW_DECODE_TABLE[i] = (sign !== 0 ? -sample : sample) / 32768;
+      }
+    })();
+
+    // Decodificador IMA ADPCM
+    const IMA_INDEX_TABLE = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8];
+    const IMA_STEP_TABLE = [
+      7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+      50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230,
+      253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+      1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327,
+      3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487,
+      12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767
+    ];
+    let rxAdpcmPredictor = 0;
+    let rxAdpcmStepIndex = 0;
+
+    function decodeAdpcmNibble(nibble) {
+      let step = IMA_STEP_TABLE[rxAdpcmStepIndex];
+      let delta = step >> 3;
+      if (nibble & 4) delta += step;
+      if (nibble & 2) delta += step >> 1;
+      if (nibble & 1) delta += step >> 2;
+
+      if (nibble & 8) rxAdpcmPredictor -= delta;
+      else rxAdpcmPredictor += delta;
+
+      if (rxAdpcmPredictor > 32767) rxAdpcmPredictor = 32767;
+      else if (rxAdpcmPredictor < -32768) rxAdpcmPredictor = -32768;
+
+      rxAdpcmStepIndex += IMA_INDEX_TABLE[nibble & 0x0F];
+      if (rxAdpcmStepIndex < 0) rxAdpcmStepIndex = 0;
+      else if (rxAdpcmStepIndex > 88) rxAdpcmStepIndex = 88;
+
+      return rxAdpcmPredictor / 32768;
+    }
+
     function playRawPCM(arrayBuffer) {
       if (!audioContext) return;
-      const int16View = new Int16Array(arrayBuffer);
-      const float32Data = new Float32Array(int16View.length);
-      for (let i = 0; i < int16View.length; i++) {
-        float32Data[i] = int16View[i] / 32768;
+      const u8 = new Uint8Array(arrayBuffer);
+      let float32Data = null;
+      let targetSampleRate = 16000;
+
+      // Verifica se o pacote possui cabeçalho de compressão dinâmica (0xAA)
+      if (u8.length >= 4 && u8[0] === 0xAA) {
+        const codecId = u8[1];
+        targetSampleRate = u8[2] | (u8[3] << 8);
+        if (targetSampleRate < 4000 || targetSampleRate > 48000) targetSampleRate = 16000;
+
+        if (codecId === 1) {
+          // G.711 μ-law (Estilo Spotify 96k / 160k)
+          const numSamples = u8.length - 4;
+          float32Data = new Float32Array(numSamples);
+          for (let i = 0; i < numSamples; i++) {
+            float32Data[i] = MULAW_DECODE_TABLE[u8[4 + i]];
+          }
+        } else if (codecId === 2) {
+          // IMA ADPCM (24k / 48k)
+          const numBytes = u8.length - 4;
+          float32Data = new Float32Array(numBytes * 2);
+          for (let i = 0; i < numBytes; i++) {
+            const byte = u8[4 + i];
+            float32Data[i * 2] = decodeAdpcmNibble(byte & 0x0F);
+            float32Data[i * 2 + 1] = decodeAdpcmNibble((byte >> 4) & 0x0F);
+          }
+        } else {
+          // PCM16 Linear
+          const int16View = new Int16Array(arrayBuffer, 4);
+          float32Data = new Float32Array(int16View.length);
+          for (let i = 0; i < int16View.length; i++) {
+            float32Data[i] = int16View[i] / 32768;
+          }
+        }
+      } else {
+        // Legado / PCM16 puro sem cabeçalho
+        const int16View = new Int16Array(arrayBuffer);
+        float32Data = new Float32Array(int16View.length);
+        for (let i = 0; i < int16View.length; i++) {
+          float32Data[i] = int16View[i] / 32768;
+        }
       }
 
-      // O transmissor envia áudio PCM em 16000 Hz estrito
-      const audioBuffer = audioContext.createBuffer(1, float32Data.length, 16000);
+      if (!float32Data || float32Data.length === 0) return;
+
+      const audioBuffer = audioContext.createBuffer(1, float32Data.length, targetSampleRate);
       audioBuffer.getChannelData(0).set(float32Data);
 
       const source = audioContext.createBufferSource();
@@ -565,7 +659,6 @@
       source.connect(gainNode);
 
       const now = audioContext.currentTime;
-      // Latência ultra-baixa com anti-drift (< 45ms de atraso máximo)
       if (nextAudioTime < now || nextAudioTime > now + 0.045) {
         nextAudioTime = now;
       }

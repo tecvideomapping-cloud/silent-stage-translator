@@ -52,6 +52,10 @@
         <span>📩 Propostas & Orçamentos</span>
         <span id="leadsBadge" class="bg-cyan-500/20 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full">0</span>
       </button>
+      <button onclick="switchTab('glossaries')" id="tabBtnGlossaries" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
+        <span>📖 Biblioteca de Glossários</span>
+        <span id="glossariesBadge" class="bg-cyan-500/20 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full">0</span>
+      </button>
     </div>
 
     <!-- ABA 1: GERENCIAMENTO DE EVENTOS -->
@@ -132,6 +136,24 @@
             </tbody>
           </table>
         </div>
+      </div>
+    <!-- ABA 4: BIBLIOTECA DE GLOSSÁRIOS REUTILIZÁVEIS -->
+    <section id="sectionGlossaries" class="hidden flex flex-col gap-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <span>📖</span> Biblioteca de Glossários & Jargões
+          </h2>
+          <p class="text-xs text-slate-400">Modelos de termos técnicos, jargões corporativos e nomes de palestrantes salvos para qualquer evento</p>
+        </div>
+        <button onclick="openNewAdminGlossaryModal()"
+          class="text-xs bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-4 py-2.5 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-1.5 self-start sm:self-auto">
+          <span>+</span> Novo Modelo de Glossário
+        </button>
+      </div>
+
+      <div id="adminGlossariesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="p-8 text-center text-slate-500 italic col-span-full">Carregando glossários salvos...</div>
       </div>
     </section>
 
@@ -274,6 +296,17 @@
           </div>
         </div>
 
+        <!-- Glossário Pré-carregado -->
+        <div class="border-t border-slate-800 pt-3">
+          <p class="font-bold text-slate-200 uppercase tracking-wider text-[11px] mb-2 text-cyan-400">📖 Glossário & Jargões da Sala</p>
+          <div>
+            <label class="block font-semibold text-slate-400 mb-1">Pré-carregar Modelo da Biblioteca (Opcional):</label>
+            <select id="formPreloadGlossary" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 text-xs focus:border-cyan-500 focus:outline-none">
+              <option value="">Nenhum (Criar sala sem termos pré-definidos)</option>
+            </select>
+          </div>
+        </div>
+
         <div class="flex items-center justify-end gap-3 border-t border-slate-800 pt-3">
           <button type="button" onclick="closeModal('eventModal')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">
             Cancelar
@@ -376,6 +409,54 @@
       <button onclick="closeModal('qrModal')" class="w-full py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold text-slate-200">
         Fechar
       </button>
+    </div>
+  </div>
+
+  <!-- MODAL: NOVO / EDITAR GLOSSÁRIO -->
+  <div id="adminGlossaryModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-800 max-w-lg w-full rounded-2xl p-6 shadow-2xl flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 id="adminGlossaryModalTitle" class="text-base font-bold text-white">Novo Modelo de Glossário</h3>
+        <button onclick="closeModal('adminGlossaryModal')" class="text-slate-400 hover:text-white text-xl font-bold">×</button>
+      </div>
+
+      <form onsubmit="handleSaveAdminGlossary(event)" class="flex flex-col gap-3 text-xs">
+        <input type="hidden" id="adminGlossaryId">
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Nome do Modelo de Glossário *</label>
+          <input type="text" id="adminGlossaryName" placeholder="Ex: Congresso Internacional de Cardiologia" required
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">Categoria</label>
+            <input type="text" id="adminGlossaryCategory" placeholder="Ex: Tecnologia, Medicina" value="Geral"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">Descrição Curta</label>
+            <input type="text" id="adminGlossaryDesc" placeholder="Ex: Termos e palestrantes do evento"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Termos do Glossário (Linha por Linha ou JSON):</label>
+          <p class="text-[10px] text-slate-400 mb-1">Digite uma linha por termo: <code>Termo = Definição</code> ou JSON <code>{"Termo": "Definição"}</code></p>
+          <textarea id="adminGlossaryTerms" rows="8" placeholder="Videomappingtech = Marca registrada&#10;Keynote = Palestra Magna&#10;Line Array = Sistema Line Array"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 font-mono focus:border-cyan-500 focus:outline-none text-[11px]"></textarea>
+        </div>
+
+        <div class="flex items-center justify-end gap-2.5 border-t border-slate-800 pt-3">
+          <button type="button" onclick="closeModal('adminGlossaryModal')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">
+            Cancelar
+          </button>
+          <button type="submit" class="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg">
+            Salvar Modelo
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -567,15 +648,17 @@
     }
 
     function switchTab(tab) {
-      ['events', 'clients', 'leads'].forEach(t => {
+      ['events', 'clients', 'leads', 'glossaries'].forEach(t => {
         const sec = document.getElementById('section' + t.charAt(0).toUpperCase() + t.slice(1));
         const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
-        if (t === tab) {
-          sec.classList.remove('hidden');
-          btn.className = 'pb-3 text-sm font-semibold border-b-2 border-cyan-500 text-cyan-400 transition flex items-center gap-2';
-        } else {
-          sec.classList.add('hidden');
-          btn.className = 'pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2';
+        if (sec && btn) {
+          if (t === tab) {
+            sec.classList.remove('hidden');
+            btn.className = 'pb-3 text-sm font-semibold border-b-2 border-cyan-500 text-cyan-400 transition flex items-center gap-2';
+          } else {
+            sec.classList.add('hidden');
+            btn.className = 'pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2';
+          }
         }
       });
     }
@@ -598,9 +681,206 @@
       document.getElementById(id).classList.add('hidden');
     }
 
+    let adminGlossariesCache = [];
+
+    async function loadAdminGlossaries() {
+      try {
+        const res = await fetch('/api/glossaries');
+        if (res.ok) {
+          const data = await res.json();
+          adminGlossariesCache = data.glossaries || [];
+          document.getElementById('glossariesBadge').innerText = adminGlossariesCache.length;
+
+          // Atualiza select de preloading no modal de evento
+          const preloadSelect = document.getElementById('formPreloadGlossary');
+          if (preloadSelect) {
+            preloadSelect.innerHTML = '<option value="">Nenhum (Criar sala sem termos pré-definidos)</option>';
+            adminGlossariesCache.forEach(g => {
+              const opt = document.createElement('option');
+              opt.value = g.id;
+              opt.innerText = `📖 [${g.category}] ${g.name} (${Object.keys(g.terms || {}).length} termos)`;
+              preloadSelect.appendChild(opt);
+            });
+          }
+
+          renderAdminGlossariesGrid();
+        }
+      } catch (err) {
+        console.error('Erro ao carregar glossários:', err);
+      }
+    }
+
+    function renderAdminGlossariesGrid() {
+      const grid = document.getElementById('adminGlossariesGrid');
+      if (!grid) return;
+
+      if (adminGlossariesCache.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full p-12 text-center bg-slate-900 border border-slate-800 rounded-2xl">
+            <span class="text-3xl mb-2 block">📖</span>
+            <p class="text-sm font-bold text-white">Nenhum modelo de glossário cadastrado</p>
+            <p class="text-xs text-slate-400 mt-1">Crie modelos para padronizar siglas e termos em todos os eventos.</p>
+            <button onclick="openNewAdminGlossaryModal()" class="mt-4 text-xs bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-4 py-2 rounded-lg">
+              + Cadastrar Primeiro Glossário
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = adminGlossariesCache.map(g => {
+        const entries = Object.entries(g.terms || {});
+        const count = entries.length;
+        const chips = entries.slice(0, 6).map(([k, v]) => `
+          <span class="text-[10px] bg-slate-950 border border-slate-800 text-slate-300 px-2 py-0.5 rounded truncate max-w-[130px]" title="${k}: ${v}">
+            <strong>${k}:</strong> ${v}
+          </span>
+        `).join('');
+        const more = count > 6 ? `<span class="text-[10px] text-cyan-400">+${count - 6} mais</span>` : '';
+
+        return `
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl hover:border-slate-700 transition">
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] bg-cyan-950 text-cyan-400 border border-cyan-800 px-2 py-0.5 rounded-full font-semibold">
+                  ${g.category || 'Geral'}
+                </span>
+                <span class="text-xs text-slate-400 font-mono font-bold">${count} termos</span>
+              </div>
+              <h3 class="font-bold text-base text-white mb-1">${g.name}</h3>
+              <p class="text-xs text-slate-400 mb-4 line-clamp-2">${g.description || 'Modelo de glossário salvo para eventos.'}</p>
+              
+              <div class="flex flex-wrap gap-1.5 mb-4 max-h-24 overflow-hidden">
+                ${chips}
+                ${more}
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-3 border-t border-slate-800 text-xs">
+              <button onclick="openEditAdminGlossaryModal('${g.id}')" class="text-cyan-400 hover:text-cyan-300 font-medium">
+                ✏️ Editar
+              </button>
+              <div class="flex items-center gap-2">
+                <button onclick="exportAdminGlossary('${g.id}')" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded" title="Exportar JSON">
+                  📥 Exportar
+                </button>
+                <button onclick="deleteAdminGlossary('${g.id}', '${g.name.replace(/'/g, "\\'")}')" class="bg-rose-950/60 hover:bg-rose-900 text-rose-300 px-2.5 py-1 rounded" title="Excluir">
+                  🗑️
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function openNewAdminGlossaryModal() {
+      document.getElementById('adminGlossaryId').value = '';
+      document.getElementById('adminGlossaryName').value = '';
+      document.getElementById('adminGlossaryCategory').value = 'Geral';
+      document.getElementById('adminGlossaryDesc').value = '';
+      document.getElementById('adminGlossaryTerms').value = '';
+      document.getElementById('adminGlossaryModalTitle').innerText = 'Novo Modelo de Glossário';
+      document.getElementById('adminGlossaryModal').classList.remove('hidden');
+    }
+
+    function openEditAdminGlossaryModal(id) {
+      const g = adminGlossariesCache.find(item => String(item.id) === String(id));
+      if (!g) return;
+
+      document.getElementById('adminGlossaryId').value = g.id;
+      document.getElementById('adminGlossaryName').value = g.name;
+      document.getElementById('adminGlossaryCategory').value = g.category || 'Geral';
+      document.getElementById('adminGlossaryDesc').value = g.description || '';
+      
+      const termLines = Object.entries(g.terms || {}).map(([k, v]) => `${k} = ${v}`).join('\n');
+      document.getElementById('adminGlossaryTerms').value = termLines;
+      document.getElementById('adminGlossaryModalTitle').innerText = 'Editar Modelo: ' + g.name;
+      document.getElementById('adminGlossaryModal').classList.remove('hidden');
+    }
+
+    async function handleSaveAdminGlossary(e) {
+      e.preventDefault();
+      const id = document.getElementById('adminGlossaryId').value;
+      const name = document.getElementById('adminGlossaryName').value.trim();
+      const category = document.getElementById('adminGlossaryCategory').value.trim() || 'Geral';
+      const description = document.getElementById('adminGlossaryDesc').value.trim();
+      const rawText = document.getElementById('adminGlossaryTerms').value.trim();
+
+      let terms = {};
+      // Se for JSON direto
+      if (rawText.startsWith('{') && rawText.endsWith('}')) {
+        try { terms = JSON.parse(rawText); } catch (e) {}
+      } else {
+        // Linha por linha (Termo = Definição)
+        rawText.split('\n').forEach(line => {
+          const trimmed = line.trim();
+          if (!trimmed) return;
+          const idx = trimmed.indexOf('=');
+          if (idx !== -1) {
+            const k = trimmed.substring(0, idx).trim();
+            const v = trimmed.substring(idx + 1).trim();
+            if (k) terms[k] = v || k;
+          } else {
+            terms[trimmed] = trimmed;
+          }
+        });
+      }
+
+      const method = id ? 'PUT' : 'POST';
+      const url = id ? `/api/glossaries/${id}` : '/api/glossaries';
+
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, category, description, terms })
+        });
+        if (res.ok) {
+          closeModal('adminGlossaryModal');
+          loadAdminGlossaries();
+        } else {
+          alert('Erro ao salvar modelo de glossário.');
+        }
+      } catch (err) {
+        alert('Erro ao conectar: ' + err.message);
+      }
+    }
+
+    async function deleteAdminGlossary(id, name) {
+      if (!confirm(`Deseja realmente excluir o modelo de glossário "${name}"?`)) return;
+      try {
+        await fetch(`/api/glossaries/${id}`, { method: 'DELETE' });
+        loadAdminGlossaries();
+      } catch (err) {
+        alert('Erro ao excluir: ' + err.message);
+      }
+    }
+
+    function exportAdminGlossary(id) {
+      const g = adminGlossariesCache.find(item => String(item.id) === String(id));
+      if (!g) return;
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(g, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `glossario-${g.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
+
     async function handleSaveEvent(e) {
       e.preventDefault();
       const targetLangs = Array.from(document.querySelectorAll('input[name="targetLang"]:checked')).map(el => el.value);
+
+      let preloadGlossaryTerms = {};
+      const preloadedId = document.getElementById('formPreloadGlossary')?.value;
+      if (preloadedId) {
+        const found = adminGlossariesCache.find(g => String(g.id) === String(preloadedId));
+        if (found && found.terms) {
+          preloadGlossaryTerms = found.terms;
+        }
+      }
 
       const payload = {
         id: document.getElementById('formRoomId').value.trim(),
@@ -617,7 +897,8 @@
         allowTranslation: document.getElementById('formAllowTranslation').checked,
         allowSubtitles: document.getElementById('formAllowSubtitles').checked,
         sourceLanguage: document.getElementById('formSourceLang').value,
-        targetLanguages: targetLangs
+        targetLanguages: targetLangs,
+        glossary: preloadGlossaryTerms
       };
 
       try {
@@ -725,6 +1006,7 @@
     loadRooms();
     loadClients();
     loadLeads();
+    loadAdminGlossaries();
   </script>
 </body>
 </html>
