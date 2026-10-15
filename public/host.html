@@ -891,7 +891,7 @@
               window.speechRecognizer.lang = document.getElementById('sourceLang').value || 'pt-BR';
 
               let currentInterimEl = null;
-              let committedText = '';
+              let committedWordCount = 0;
               let activeResultIndex = -1;
               let pauseDebounceTimer = null;
 
@@ -932,8 +932,6 @@
                 const trimmed = (clauseText || '').trim();
                 if (!trimmed) return;
 
-                // Registra o trecho comitado para JAMAIS repetir no final
-                committedText += (committedText ? ' ' : '') + trimmed;
                 appendConfirmedTranscript(trimmed);
 
                 if (socket && socket.readyState === WebSocket.OPEN) {
@@ -951,18 +949,17 @@
                   const item = evt.results[i];
                   const isSpeechFinal = item.isFinal;
                   const fullTranscript = (item[0] && item[0].transcript) ? item[0].transcript.trim() : '';
+                  if (!fullTranscript) continue;
 
-                  // Se o navegador iniciou um novo bloco de fala
+                  // Se o navegador iniciou um novo bloco de fala (novo turno de voz)
                   if (i !== activeResultIndex) {
                     activeResultIndex = i;
-                    committedText = '';
+                    committedWordCount = 0;
                   }
 
-                  // Obtém com precisão matemática apenas o que ainda NÃO foi comitado
-                  let uncommitted = fullTranscript;
-                  if (committedText && uncommitted.startsWith(committedText)) {
-                    uncommitted = uncommitted.substring(committedText.length).trim();
-                  }
+                  const allWords = fullTranscript.split(/\s+/).filter(Boolean);
+                  const uncommittedWords = allWords.slice(committedWordCount);
+                  const uncommitted = uncommittedWords.join(' ');
 
                   // Mostra o texto ao vivo se formando sem quebrar palavras
                   updateInterimTranscript(uncommitted);
@@ -976,25 +973,24 @@
                     }));
                   }
 
-                  // Se o navegador finalizou este bloco de fala por completo
+                  // 1. O navegador sinalizou fim deste bloco de fala
                   if (isSpeechFinal) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    if (uncommitted) {
-                      commitClause(uncommitted);
+                    if (uncommittedWords.length > 0) {
+                      commitClause(uncommittedWords.join(' '));
                     }
-                    committedText = '';
+                    committedWordCount = 0;
                     updateInterimTranscript('');
                     continue;
                   }
 
-                  // 1. Quebra em pontuação natural de fim de oração (. ! ?) ou vírgula/dois-pontos após 3 palavras
-                  const words = uncommitted.split(/\s+/).filter(Boolean);
+                  // 2. Quebra por pontuação (. ! ? , ;) com pelo menos 2 palavras
                   let punctIndex = -1;
-                  for (let w = 0; w < words.length; w++) {
-                    if (/[.!?]$/.test(words[w])) {
+                  for (let w = 0; w < uncommittedWords.length; w++) {
+                    if (/[.!?]$/.test(uncommittedWords[w])) {
                       punctIndex = w;
                       break;
-                    } else if (/[,;:]$/.test(words[w]) && w >= 2) {
+                    } else if (/[,;:]$/.test(uncommittedWords[w]) && w >= 2) {
                       punctIndex = w;
                       break;
                     }
@@ -1002,25 +998,44 @@
 
                   if (punctIndex >= 0) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    const clause = words.slice(0, punctIndex + 1).join(' ');
+                    const wordsToCommit = uncommittedWords.slice(0, punctIndex + 1);
+                    const clause = wordsToCommit.join(' ');
+                    committedWordCount += wordsToCommit.length;
                     commitClause(clause);
-                    const remaining = words.slice(punctIndex + 1).join(' ');
+
+                    const remaining = allWords.slice(committedWordCount).join(' ');
                     updateInterimTranscript(remaining);
                     continue;
                   }
 
-                  // 2. Cadência de respiração / silêncio natural do orador
-                  // Para orações longas (>= 7 palavras) dispara em micro-pausa de 280ms; frases normais em 350ms
-                  if (uncommitted) {
+                  // 3. JANELA DESLIZANTE SIMULTÂNEA: Se o locutor estiver falando sem pausas e acumular 5 palavras,
+                  // despacha as primeiras 4 palavras na hora, permitindo que a tradução e voz ocorram
+                  // ENQUANTO O LOCUTOR AINDA ESTÁ FALANDO (sem esperar ele terminar a fala inteira!)
+                  if (uncommittedWords.length >= 5) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    const textSnapshot = uncommitted;
-                    const debounceDelay = words.length >= 7 ? 280 : 350;
+                    const wordsToCommit = uncommittedWords.slice(0, 4);
+                    const clause = wordsToCommit.join(' ');
+                    committedWordCount += wordsToCommit.length;
+                    commitClause(clause);
+
+                    const remaining = allWords.slice(committedWordCount).join(' ');
+                    updateInterimTranscript(remaining);
+                    continue;
+                  }
+
+                  // 4. Cadência de micro-pausa (250ms) para ideias curtas ou pausas naturais de respiração
+                  if (uncommittedWords.length > 0) {
+                    if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
                     pauseDebounceTimer = setTimeout(() => {
-                      if (textSnapshot) {
-                        commitClause(textSnapshot);
+                      const currentAllWords = (item[0] && item[0].transcript) ? item[0].transcript.trim().split(/\s+/).filter(Boolean) : [];
+                      const pendingWords = currentAllWords.slice(committedWordCount);
+                      if (pendingWords.length > 0) {
+                        const clause = pendingWords.join(' ');
+                        committedWordCount += pendingWords.length;
+                        commitClause(clause);
                         updateInterimTranscript('');
                       }
-                    }, debounceDelay);
+                    }, 250);
                   }
                 }
               };

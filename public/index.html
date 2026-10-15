@@ -684,6 +684,11 @@
         socket.send(JSON.stringify({ type: 'switch_channel', channel }));
       }
       document.getElementById('playerStatus').innerText = 'Canal alterado para: ' + channel;
+
+      // Se for canal de áudio e o player ainda não estiver ativo, arma automaticamente o áudio
+      if (channel !== 'text' && !isPlaying) {
+        toggleAudio();
+      }
     }
 
     let selectedSubtitleLang = 'auto';
@@ -698,36 +703,58 @@
 
     const speechQueue = [];
     let isSpeaking = false;
+    let speechWatchdogTimer = null;
+    let cachedVoices = [];
+
+    function refreshVoices() {
+      if ('speechSynthesis' in window) {
+        cachedVoices = window.speechSynthesis.getVoices() || [];
+      }
+    }
+
+    if ('speechSynthesis' in window) {
+      refreshVoices();
+      window.speechSynthesis.onvoiceschanged = refreshVoices;
+      // Prevenção de suspensão do SpeechSynthesis em background pelo Chrome
+      setInterval(() => {
+        if ('speechSynthesis' in window && window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+      }, 4000);
+    }
 
     function clearSpeechQueue() {
       speechQueue.length = 0;
       isSpeaking = false;
+      if (speechWatchdogTimer) {
+        clearTimeout(speechWatchdogTimer);
+        speechWatchdogTimer = null;
+      }
+      window._activeUtterance = null;
       if ('speechSynthesis' in window) {
         try { window.speechSynthesis.cancel(); } catch (e) {}
       }
     }
 
     function speakTranslatedText(text, lang) {
-      if (!isPlaying || !('speechSynthesis' in window) || !text) return;
+      if (!text || !('speechSynthesis' in window)) return;
       
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = lang === 'en' ? 'en-US' : (lang === 'es' ? 'es-ES' : lang);
-      utterance.rate = 1.1; // Ritmo ligeiramente acelerado para cadência simultânea sem atraso
-      if (gainNode) {
-        utterance.volume = gainNode.gain.value;
+      // Se o usuário selecionou o canal de idioma mas ainda não clicou em play, ativa automaticamente
+      if (!isPlaying) {
+        ensureAudioContext();
+        isPlaying = true;
+        const btn = document.getElementById('togglePlayBtn');
+        const icon = document.getElementById('playIcon');
+        const txt = document.getElementById('playText');
+        if (btn) btn.className = 'bg-rose-600 hover:bg-rose-500 text-white font-bold px-6 py-2.5 rounded-full shadow-lg transition active:scale-95 flex items-center gap-2';
+        if (icon) icon.innerText = '⏸';
+        if (txt) txt.innerText = 'Pausar';
+        const st = document.getElementById('playerStatus');
+        if (st) st.innerText = 'Ouvindo ao vivo (' + currentChannel + ')';
       }
 
-      utterance.onend = () => {
-        isSpeaking = false;
-        playNextSpeech();
-      };
+      speechQueue.push({ text, lang });
 
-      utterance.onerror = () => {
-        isSpeaking = false;
-        playNextSpeech();
-      };
-
-      speechQueue.push(utterance);
       if (!isSpeaking) {
         playNextSpeech();
       }
@@ -736,18 +763,75 @@
     function playNextSpeech() {
       if (speechQueue.length === 0) {
         isSpeaking = false;
+        if (speechWatchdogTimer) {
+          clearTimeout(speechWatchdogTimer);
+          speechWatchdogTimer = null;
+        }
+        window._activeUtterance = null;
         return;
       }
-      // Se acumular mais de 2 frases, acelera o ritmo para desovar e acompanhar o palestrante
-      if (speechQueue.length > 2) {
-        speechQueue.forEach(u => u.rate = 1.25);
+
+      const item = speechQueue.shift();
+      if (!item || !item.text) {
+        playNextSpeech();
+        return;
       }
+
       isSpeaking = true;
-      const nextUtterance = speechQueue.shift();
+
       try {
-        window.speechSynthesis.speak(nextUtterance);
-      } catch (e) {
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+
+        const utterance = new SpeechSynthesisUtterance(item.text);
+        const langPrefix = item.lang === 'en' ? 'en' : (item.lang === 'es' ? 'es' : item.lang);
+        utterance.lang = item.lang === 'en' ? 'en-US' : (item.lang === 'es' ? 'es-ES' : item.lang);
+
+        if (cachedVoices.length === 0) refreshVoices();
+        const voice = cachedVoices.find(v => v.lang.toLowerCase().startsWith(langPrefix));
+        if (voice) utterance.voice = voice;
+
+        // Se houver frases acumuladas na fila, acelera ligeiramente para manter simultaneidade perfeita
+        utterance.rate = speechQueue.length > 1 ? 1.25 : 1.1;
+
+        if (gainNode) {
+          utterance.volume = gainNode.gain.value;
+        }
+
+        // CRÍTICO: Guarda referência no window para o Garbage Collector do Chrome NÃO matar o utterance
+        window._activeUtterance = utterance;
+
+        const onFinish = () => {
+          if (speechWatchdogTimer) {
+            clearTimeout(speechWatchdogTimer);
+            speechWatchdogTimer = null;
+          }
+          window._activeUtterance = null;
+          isSpeaking = false;
+          playNextSpeech();
+        };
+
+        utterance.onend = onFinish;
+        utterance.onerror = (err) => {
+          console.warn('[TTS] Utterance error:', err);
+          onFinish();
+        };
+
+        // Watchdog de segurança para JAMAIS travar a fila se o Chrome esquecer de disparar o onend
+        if (speechWatchdogTimer) clearTimeout(speechWatchdogTimer);
+        const maxExpectedMs = Math.max(2200, (item.text.length * 85) + 1200);
+        speechWatchdogTimer = setTimeout(() => {
+          console.warn('[TTS Watchdog] Forçando liberação da fila para:', item.text);
+          try { window.speechSynthesis.resume(); } catch(e){}
+          onFinish();
+        }, maxExpectedMs);
+
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.error('[TTS] Falha ao falar:', err);
         isSpeaking = false;
+        playNextSpeech();
       }
     }
 
