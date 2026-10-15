@@ -53,20 +53,36 @@
           </button>
         </div>
 
-        <!-- SELETOR DE DISPOSITIVO DE ENTRADA DE ÁUDIO -->
-        <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col gap-2">
+        <!-- SELETOR DE DISPOSITIVO DE ENTRADA DE ÁUDIO & INTERFACES -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
           <div class="flex items-center justify-between">
             <label class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-              <span>🎛️</span> Dispositivo de Entrada (Mesa de Som / Interface USB / Mic):
+              <span>🎛️</span> Interface de Áudio / Mesa de Som / Entrada:
             </label>
-            <button onclick="refreshAudioDevices()" class="text-[11px] text-cyan-400 hover:underline">
-              Atualizar Lista
+            <button onclick="requestAudioPermissionsAndRefresh()" class="text-[11px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-semibold transition">
+              <span>🔄</span> Detectar Placas & Interfaces USB
             </button>
           </div>
-          <select id="audioDeviceSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
-            <option value="">Carregando dispositivos de áudio...</option>
-          </select>
-          <span class="text-[10px] text-slate-500">Conecte sua interface Behringer, Focusrite, mesa digital ou microfone USB e selecione acima.</span>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div class="sm:col-span-2">
+              <label class="block text-[10px] text-slate-400 mb-1">Dispositivo de Áudio:</label>
+              <select id="audioDeviceSelect" onchange="onAudioDeviceChanged()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono">
+                <option value="">Carregando interfaces e dispositivos de áudio...</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] text-slate-400 mb-1">Canais da Interface:</label>
+              <select id="audioChannelSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+                <option value="mix" selected>Mix L+R (Canais 1+2)</option>
+                <option value="left">Canal 1 (Left / Entrada 1)</option>
+                <option value="right">Canal 2 (Right / Entrada 2)</option>
+              </select>
+            </div>
+          </div>
+          <span class="text-[11px] text-slate-400">
+            Suporte a <strong>Interfaces USB (Focusrite Scarlett, Behringer UMC, Yamaha, Mackie, PreSonus)</strong>, Mesas Digitais via USB e Linha P2/P10.
+          </span>
         </div>
 
         <!-- VU Meter de Volume -->
@@ -252,12 +268,27 @@
       } catch (e) {}
     }
 
-    // Listar dispositivos de entrada de áudio (mesas USB, microfones)
+    async function requestAudioPermissionsAndRefresh() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(t => t.stop());
+        await refreshAudioDevices();
+      } catch (e) {
+        alert('Permissão de áudio necessária no navegador: ' + e.message);
+      }
+    }
+
+    // Listar dispositivos de entrada de áudio e interfaces (Focusrite, Behringer, mesas USB)
     async function refreshAudioDevices() {
       const select = document.getElementById('audioDeviceSelect');
+      if (!select) return;
       try {
-        // Solicita permissão para que as labels apareçam
-        await navigator.mediaDevices.getUserMedia({ audio: true }).then(s => s.getTracks().forEach(t => t.stop()));
+        // Solicita permissão rápida para expor labels de hardware se ainda não liberado
+        try {
+          const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+          s.getTracks().forEach(t => t.stop());
+        } catch (e) {}
+
         const devices = await navigator.mediaDevices.enumerateDevices();
         const audioInputs = devices.filter(d => d.kind === 'audioinput');
 
@@ -267,15 +298,49 @@
           return;
         }
 
+        const savedDeviceId = localStorage.getItem('vmp_host_audio_device');
+
         audioInputs.forEach((device, index) => {
           const opt = document.createElement('option');
           opt.value = device.deviceId;
-          opt.text = device.label || `Microfone / Entrada ${index + 1}`;
+          const label = device.label || `Dispositivo de Entrada ${index + 1}`;
+          const lower = label.toLowerCase();
+          
+          let icon = '🎙️';
+          let category = 'Mic';
+          if (lower.includes('usb') || lower.includes('codec') || lower.includes('scarlett') || 
+              lower.includes('behringer') || lower.includes('focusrite') || lower.includes('yamaha') || 
+              lower.includes('interface') || lower.includes('asio') || lower.includes('line') || 
+              lower.includes('linha') || lower.includes('mix') || lower.includes('soundcraft') ||
+              lower.includes('presonus') || lower.includes('komplete') || lower.includes('roland') ||
+              lower.includes('stereo mix') || lower.includes('cable') || lower.includes('virtual')) {
+            icon = '🎛️';
+            category = 'Interface / Mesa';
+          } else if (lower.includes('headset') || lower.includes('fone')) {
+            icon = '🎧';
+            category = 'Headset';
+          }
+
+          opt.text = `${icon} [${category}] ${label}`;
+          if (device.deviceId === savedDeviceId) {
+            opt.selected = true;
+          }
           select.appendChild(opt);
         });
       } catch (err) {
         select.innerHTML = '<option value="">Permissão negada para listar entradas</option>';
       }
+    }
+
+    function onAudioDeviceChanged() {
+      const select = document.getElementById('audioDeviceSelect');
+      if (select && select.value) {
+        localStorage.setItem('vmp_host_audio_device', select.value);
+      }
+    }
+
+    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', refreshAudioDevices);
     }
 
     function renderQRCode() {
@@ -339,12 +404,10 @@
         try {
           const selectedDeviceId = document.getElementById('audioDeviceSelect').value;
           const audioConstraints = {
-            channelCount: 1,
-            sampleRate: 16000,
+            channelCount: 2, // Suporta estéreo para placas de som e mesas
             echoCancellation: false,
             noiseSuppression: false,
-            autoGainControl: false,
-            latency: 0
+            autoGainControl: false
           };
           if (selectedDeviceId) {
             audioConstraints.deviceId = { exact: selectedDeviceId };
@@ -376,14 +439,32 @@
           }
           requestAnimationFrame(updateVU);
 
-          // Buffer otimizado de 1024 amostras = ~64ms por bloco (ultra-baixa latência)
-          scriptProcessor = audioContext.createScriptProcessor(1024, 1, 1);
+          // Buffer otimizado de 1024 amostras com suporte a 2 canais de entrada da interface
+          scriptProcessor = audioContext.createScriptProcessor(1024, 2, 1);
           source.connect(scriptProcessor);
           scriptProcessor.connect(audioContext.destination);
 
           scriptProcessor.onaudioprocess = (e) => {
             if (!isBroadcasting || !socket || socket.readyState !== WebSocket.OPEN) return;
-            const inputData = e.inputBuffer.getChannelData(0);
+            
+            const numChannels = e.inputBuffer.numberOfChannels;
+            const channelMode = document.getElementById('audioChannelSelect')?.value || 'mix';
+            let inputData;
+
+            if (numChannels >= 2 && channelMode === 'left') {
+              inputData = e.inputBuffer.getChannelData(0); // Canal 1 (L)
+            } else if (numChannels >= 2 && channelMode === 'right') {
+              inputData = e.inputBuffer.getChannelData(1); // Canal 2 (R)
+            } else if (numChannels >= 2 && channelMode === 'mix') {
+              const ch0 = e.inputBuffer.getChannelData(0);
+              const ch1 = e.inputBuffer.getChannelData(1);
+              inputData = new Float32Array(ch0.length);
+              for (let i = 0; i < ch0.length; i++) {
+                inputData[i] = (ch0[i] + ch1[i]) * 0.5;
+              }
+            } else {
+              inputData = e.inputBuffer.getChannelData(0);
+            }
             
             // Reamostragem precisa para 16000 Hz estrito
             const sourceRate = audioContext.sampleRate;
@@ -539,29 +620,28 @@
                     continue;
                   }
 
-                  // 2. Quebra por bloco de tradução simultânea (5 a 6 palavras)
+                  // 2. Quebra por bloco de tradução simultânea (3 a 4 palavras)
                   // Dispara imediatamente para traduzir enquanto o orador ainda está falando!
-                  if (uncommittedWords.length >= 6) {
+                  if (uncommittedWords.length >= 4) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    const chunk = uncommittedWords.slice(0, 6);
+                    const chunk = uncommittedWords.slice(0, 4);
                     commitChunk(chunk);
                     const remaining = allWords.slice(committedWordCount).join(' ');
                     updateInterimTranscript(remaining);
                     continue;
                   }
 
-                  // 3. Cadência por pausa de respiração / silêncio curto (800ms)
-                  // Se o locutor disse 2, 3 ou 4 palavras e pausou, traduz na hora sem esperar!
+                  // 3. Cadência por pausa de respiração / silêncio curto (450ms)
+                  // Se o locutor disse 1, 2 ou 3 palavras e pausou, traduz na hora sem esperar!
                   if (uncommittedWords.length > 0) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
+                    const wordsSnapshot = uncommittedWords.slice();
                     pauseDebounceTimer = setTimeout(() => {
-                      const latestWords = (item[0]?.transcript || '').trim().split(/\s+/).filter(Boolean);
-                      const pending = latestWords.slice(committedWordCount);
-                      if (pending.length > 0) {
-                        commitChunk(pending);
+                      if (wordsSnapshot.length > 0) {
+                        commitChunk(wordsSnapshot);
                         updateInterimTranscript('');
                       }
-                    }, 800);
+                    }, 450);
                   }
                 }
               };

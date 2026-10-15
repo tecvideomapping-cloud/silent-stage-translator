@@ -202,6 +202,10 @@
             // Legenda original (transcrição do palco)
             if (currentScreenLang === 'all' || allowedLangs.includes('original') || allowedLangs.includes('all')) {
               displaySubtitle(data.text, data.isFinal, 'original');
+            } else if (!data.isFinal) {
+              // Mesmo quando a tela estiver em modo traduzido, exibe a fala instantânea
+              // enquanto a tradução da frase de 4 palavras está a caminho
+              displayInterimActivity(data.text);
             }
           } else if (data.type === 'subtitle_translated') {
             // Legenda traduzida
@@ -219,6 +223,23 @@
     }
 
     let screenInterimEl = null;
+
+    function displayInterimActivity(text) {
+      const container = document.getElementById('subtitlesContainer');
+      if (!container || !text) return;
+      if (container.querySelector('.text-slate-600')) {
+        container.innerHTML = '';
+      }
+      if (!screenInterimEl || !screenInterimEl.parentNode) {
+        screenInterimEl = document.createElement('div');
+        screenInterimEl.className = 'subtitle-line flex items-center justify-center gap-3 opacity-90 italic';
+        container.appendChild(screenInterimEl);
+      }
+      screenInterimEl.innerHTML = `
+        <span class="text-xs sm:text-sm font-mono border px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border-cyan-500/40 uppercase">AO VIVO 🎙️</span>
+        <span class="text-cyan-300" style="font-size: ${Math.round(fontSize * 0.9)}px;">${text}...</span>
+      `;
+    }
 
     const langBadges = {
       'original': { label: 'AO VIVO', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' },

@@ -597,6 +597,10 @@
 
     function changeSubtitleLang(lang) {
       selectedSubtitleLang = lang;
+      const box = document.getElementById('subtitlesBox');
+      if (box) {
+        box.innerHTML = `<p class="text-slate-500 italic text-sm text-center my-auto">Idioma de legendas: ${lang.toUpperCase()}. Aguardando falas...</p>`;
+      }
     }
 
     const speechQueue = [];
@@ -656,18 +660,27 @@
 
     let currentInterimSubtitleEl = null;
 
-    function renderSubtitle(text, isFinal, lang = null) {
+    function renderSubtitle(text, isFinal, lang = 'original') {
       const box = document.getElementById('subtitlesBox');
       if (!box || !text) return;
 
-      // Filtragem por preferência de idioma
-      const targetPref = selectedSubtitleLang === 'auto' ? currentChannel : selectedSubtitleLang;
-      if (targetPref !== 'original' && targetPref !== 'auto' && targetPref !== 'text') {
-        if (lang && lang !== targetPref) {
-          return; // Não exibe se for de outro idioma traduzido
-        }
+      // Limpa mensagem de aguardando se houver
+      if (box.querySelector('.text-slate-500')) {
+        box.innerHTML = '';
       }
 
+      // 1. Determina com precisão o idioma desejado pelo participante
+      let desiredLang = selectedSubtitleLang;
+      if (desiredLang === 'auto') {
+        desiredLang = (currentChannel === 'text' || currentChannel === 'original') ? 'original' : currentChannel;
+      }
+
+      // 2. Se a legenda NÃO for do idioma escolhido, DESCARTA! Nunca mistura idiomas
+      if (lang !== desiredLang) {
+        return;
+      }
+
+      // 3. Renderiza a legenda do idioma único selecionado
       if (isFinal) {
         if (currentInterimSubtitleEl && currentInterimSubtitleEl.parentNode) {
           currentInterimSubtitleEl.remove();
@@ -677,6 +690,10 @@
         p.className = 'text-slate-100 font-medium mb-2 border-l-2 border-cyan-400 pl-2 bg-slate-900/40 py-1 rounded';
         p.innerText = text;
         box.appendChild(p);
+
+        while (box.children.length > 50) {
+          box.removeChild(box.firstChild);
+        }
       } else {
         if (!currentInterimSubtitleEl || !currentInterimSubtitleEl.parentNode) {
           currentInterimSubtitleEl = document.createElement('p');
