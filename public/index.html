@@ -80,7 +80,7 @@
         <div>
           <span class="text-xs text-slate-400">Status:</span>
           <p id="playerStatus" class="text-sm font-semibold text-slate-300">Pronto para iniciar</p>
-          <span id="audioQualityBadge" class="inline-block mt-0.5 text-[10px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full font-mono">🎵 96 kbps • Spotify Normal</span>
+          <span id="audioQualityBadge" class="inline-block mt-0.5 text-[10px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full font-mono">🎵 96 kbps • Qualidade Padrão</span>
         </div>
         <button id="togglePlayBtn" onclick="toggleAudio()"
           class="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-6 py-2.5 rounded-full shadow-lg transition active:scale-95 flex items-center gap-2">
@@ -617,7 +617,7 @@
         if (targetSampleRate < 4000 || targetSampleRate > 48000) targetSampleRate = 16000;
 
         if (codecId === 1) {
-          // G.711 μ-law (Estilo Spotify 96k / 160k)
+          // G.711 μ-law (Compressão Acústica 96k / 160k)
           const numSamples = u8.length - 4;
           float32Data = new Float32Array(numSamples);
           for (let i = 0; i < numSamples; i++) {

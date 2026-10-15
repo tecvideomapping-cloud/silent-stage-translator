@@ -85,7 +85,7 @@
           </span>
         </div>
 
-        <!-- Compressão & Taxa de Bits (kbps) da Transmissão (Estilo Spotify) -->
+        <!-- Compressão & Taxa de Bits (kbps) da Transmissão -->
         <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
@@ -93,7 +93,7 @@
                 <span class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
                   <span>🎧</span> Compressão & Taxa de Bits (kbps)
                 </span>
-                <span id="compressionBadge" class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2.5 py-0.5 rounded-full font-semibold">96 kbps • Spotify Normal</span>
+                <span id="compressionBadge" class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2.5 py-0.5 rounded-full font-semibold">96 kbps • Qualidade Padrão</span>
               </div>
               <p class="text-[11px] text-slate-400 mt-0.5">Defina a taxa de bits da transmissão para economizar banda ou entregar áudio de alta fidelidade.</p>
             </div>
@@ -109,9 +109,9 @@
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-medium">
                 <option value="24">🎙️ 24 kbps • Ultra Econômico (Wi-Fi Lotado / 4G Fraco)</option>
                 <option value="48">📻 48 kbps • Voz Otimizada (Conferências & Palestras)</option>
-                <option value="96" selected>🎵 96 kbps • Spotify Normal (Equilíbrio Recomendado)</option>
-                <option value="160">🎧 160 kbps • Spotify Alta Qualidade (Música e Dinâmica)</option>
-                <option value="320">💎 320 kbps • Spotify Estúdio / Hi-Fi (Grau de Master)</option>
+                <option value="96" selected>🎵 96 kbps • Qualidade Padrão (Equilíbrio Recomendado)</option>
+                <option value="160">🎧 160 kbps • Alta Fidelidade (Música e Dinâmica)</option>
+                <option value="320">💎 320 kbps • Qualidade de Estúdio / Hi-Fi (Grau de Master)</option>
                 <option value="pcm256">⚡ 256 kbps • Linear PCM Sem Compressão (Mesa Direta)</option>
               </select>
             </div>
@@ -120,7 +120,7 @@
               <label class="block text-[11px] font-medium text-slate-400 mb-1">Algoritmo de Compressão:</label>
               <select id="audioCodecSelect" onchange="updateCustomCodec(this.value)"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-medium">
-                <option value="mulaw" selected>Compressão Acústica Dinâmica (G.711 / Estilo Spotify)</option>
+                <option value="mulaw" selected>Compressão Acústica Dinâmica (G.711 μ-law)</option>
                 <option value="adpcm">ADPCM Adaptativo 4:1 (Ultra Econômico em Banda)</option>
                 <option value="pcm16">Linear PCM 16-bit (Sem Compressão Acústica)</option>
               </select>
@@ -427,7 +427,7 @@
     let glossaryMap = { 'Videomappingtech': 'Marca' };
 
     // ----------------------------------------------------
-    // COMPRESSÃO & TAXA DE BITS (kbps) - ESTILO SPOTIFY
+    // COMPRESSÃO & TAXA DE BITS (kbps)
     // ----------------------------------------------------
     const AUDIO_PROFILES = {
       '24': {
@@ -447,27 +447,27 @@
         bandwidthText: '~6 KB/s por ouvinte (-81% banda)'
       },
       '96': {
-        name: 'Spotify Normal',
+        name: 'Qualidade Padrão',
         kbps: 96,
         codec: 'mulaw',
         sampleRate: 12000,
-        badgeText: '96 kbps • Spotify Normal',
+        badgeText: '96 kbps • Qualidade Padrão',
         bandwidthText: '~12 KB/s por ouvinte (-62% banda)'
       },
       '160': {
-        name: 'Spotify Alta Qualidade',
+        name: 'Alta Fidelidade',
         kbps: 160,
         codec: 'mulaw',
         sampleRate: 20000,
-        badgeText: '160 kbps • Spotify Alta Qualidade',
+        badgeText: '160 kbps • Alta Fidelidade',
         bandwidthText: '~20 KB/s por ouvinte (-38% banda)'
       },
       '320': {
-        name: 'Spotify Estúdio / Hi-Fi',
+        name: 'Qualidade de Estúdio / Hi-Fi',
         kbps: 320,
         codec: 'pcm16',
         sampleRate: 20000,
-        badgeText: '320 kbps • Spotify Estúdio / Hi-Fi',
+        badgeText: '320 kbps • Estúdio / Hi-Fi',
         bandwidthText: '~40 KB/s por ouvinte (Hi-Fi Master)'
       },
       'pcm256': {
@@ -987,14 +987,14 @@
                     continue;
                   }
 
-                  // 1. Quebra apenas em pontuação natural de fim de oração (. ! ?) ou vírgula após ideia longa
+                  // 1. Quebra em pontuação natural de fim de oração (. ! ?) ou vírgula/dois-pontos após 3 palavras
                   const words = uncommitted.split(/\s+/).filter(Boolean);
                   let punctIndex = -1;
                   for (let w = 0; w < words.length; w++) {
                     if (/[.!?]$/.test(words[w])) {
                       punctIndex = w;
                       break;
-                    } else if (/[,;:]$/.test(words[w]) && w >= 5) {
+                    } else if (/[,;:]$/.test(words[w]) && w >= 2) {
                       punctIndex = w;
                       break;
                     }
@@ -1009,17 +1009,18 @@
                     continue;
                   }
 
-                  // 2. Cadência de respiração / silêncio natural do orador (750ms)
-                  // Quando o locutor termina a frase e respira, despacha a oração completa com sentido gramatical
+                  // 2. Cadência de respiração / silêncio natural do orador
+                  // Para orações longas (>= 7 palavras) dispara em micro-pausa de 280ms; frases normais em 350ms
                   if (uncommitted) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
                     const textSnapshot = uncommitted;
+                    const debounceDelay = words.length >= 7 ? 280 : 350;
                     pauseDebounceTimer = setTimeout(() => {
                       if (textSnapshot) {
                         commitClause(textSnapshot);
                         updateInterimTranscript('');
                       }
-                    }, 750);
+                    }, debounceDelay);
                   }
                 }
               };

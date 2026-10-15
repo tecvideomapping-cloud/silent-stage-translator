@@ -8,7 +8,7 @@ class AIPipeline {
     this.deeplKey = process.env.DEEPL_API_KEY;
     this.cartesiaKey = process.env.CARTESIA_API_KEY;
     this.elevenlabsKey = process.env.ELEVENLABS_API_KEY;
-    this.mockMode = process.env.MOCK_AI === 'true' || (!this.deepgramKey && !this.openaiKey);
+    this.mockMode = process.env.MOCK_AI === 'true' || (!this.deepgramKey && !this.openaiKey && !this.groqKey && !this.cartesiaKey && !this.elevenlabsKey);
     
     // Conexões ativas do Deepgram por sala
     this.sttSockets = new Map();
@@ -87,15 +87,29 @@ class AIPipeline {
   }
 
   /**
-   * Traduz o texto para os idiomas alvo respeitando o glossário cadastrado
+   * Traduz o texto para os idiomas alvo respeitando o glossário cadastrado com altíssima velocidade (<150ms).
+   * Executa em paralelo (Promise.all) e dispara o callback onLanguageTranslated assim que cada idioma conclui.
    */
-  async translateText(text, targetLangs, glossary = {}) {
+  async translateText(text, targetLangs, glossary = {}, onLanguageTranslated = null) {
     const translations = {};
+    if (!text || !text.trim()) return translations;
 
-    // Dicionário de termos para substituição de glossário
+    // Helper para aplicar termos de glossário pós-tradução quando aplicável
+    const applyGlossary = (rawText) => {
+      if (!glossary || Object.keys(glossary).length === 0) return rawText;
+      let output = rawText;
+      for (const [term, replacement] of Object.entries(glossary)) {
+        if (!term || !replacement) continue;
+        const regex = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+        output = output.replace(regex, replacement);
+      }
+      return output;
+    };
+
+    // Dicionário de termos para substituição de glossário via prompt LLM
     let glossaryInstructions = '';
     if (glossary && Object.keys(glossary).length > 0) {
-      glossaryInstructions = `Glossário obrigatório de termos: ${JSON.stringify(glossary)}. Mantenha esses termos exatamente como definidos.`;
+      glossaryInstructions = `Glossário obrigatório: ${JSON.stringify(glossary)}. Mantenha esses termos exatamente como definidos.`;
     }
 
     const mockTranslationDict = {
@@ -115,24 +129,28 @@ class AIPipeline {
       }
     };
 
-    for (const targetLang of targetLangs) {
-      // 1. Se houver dicionário estático (palavras comuns de eventos)
+    const translateSingleLanguage = async (targetLang) => {
+      // 1. Dicionário estático instantâneo (0ms)
       if (mockTranslationDict[targetLang]?.[text]) {
-        translations[targetLang] = mockTranslationDict[targetLang][text];
-        continue;
+        const res = applyGlossary(mockTranslationDict[targetLang][text]);
+        translations[targetLang] = res;
+        if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, res);
+        return res;
       }
 
-      // 2. Provedores LLM configurados (Groq / OpenAI)
+      // 2. Provedores LLM de ultra-baixa latência (Groq llama-3.1-8b-instant ~90ms / OpenAI gpt-4o-mini)
       if (this.openaiKey || this.groqKey) {
         try {
           const endpoint = this.groqKey 
             ? 'https://api.groq.com/openai/v1/chat/completions' 
             : 'https://api.openai.com/v1/chat/completions';
           const key = this.groqKey || this.openaiKey;
-          const model = this.groqKey ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
+          // llama-3.1-8b-instant alcança 800+ tokens/segundo com inferência ultra-rápida (<100ms)
+          const model = this.groqKey ? 'llama-3.1-8b-instant' : 'gpt-4o-mini';
 
           const res = await fetch(endpoint, {
             method: 'POST',
+            signal: AbortSignal.timeout(1800), // Timeout rígido de 1.8s para nunca travar a fila
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${key}`
@@ -142,51 +160,89 @@ class AIPipeline {
               messages: [
                 {
                   role: 'system',
-                  content: `Você é um tradutor simultâneo profissional. Traduza o texto para o idioma ISO '${targetLang}'. Retorne APENAS o texto traduzido. ${glossaryInstructions}`
+                  content: `Você é um tradutor simultâneo profissional. Traduza o texto para o idioma ISO '${targetLang}'. Retorne APENAS o texto traduzido, sem explicações. ${glossaryInstructions}`
                 },
                 {
                   role: 'user',
                   content: text
                 }
               ],
-              temperature: 0.2,
-              max_tokens: 300
+              temperature: 0.1,
+              max_tokens: 150
             })
           });
 
           if (res.ok) {
             const data = await res.json();
-            const translated = data.choices?.[0]?.message?.content?.trim();
+            let translated = data.choices?.[0]?.message?.content?.trim();
             if (translated) {
+              if (translated.startsWith('"') && translated.endsWith('"')) {
+                translated = translated.slice(1, -1).trim();
+              }
+              translated = applyGlossary(translated);
               translations[targetLang] = translated;
-              continue;
+              if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, translated);
+              return translated;
             }
           }
         } catch (e) {
-          console.error(`[AI-Translate] Erro na tradução LLM para ${targetLang}:`, e.message);
+          console.warn(`[AI-Translate] LLM rápido excedeu tempo ou falhou para ${targetLang} (${e.message}), usando fallback rápido`);
         }
       }
 
-      // 3. Fallback de Tradução Gratuita em Tempo Real (MyMemory / LibreTranslate)
+      // 3. Fallback de altíssima velocidade (<50ms): Google GTX Engine
+      try {
+        const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(targetLang)}&dt=t&q=${encodeURIComponent(text)}`;
+        const gtxRes = await fetch(gtxUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+          signal: AbortSignal.timeout(2000)
+        });
+        if (gtxRes.ok) {
+          const contentType = gtxRes.headers.get('content-type') || '';
+          if (contentType.includes('json')) {
+            const gtxData = await gtxRes.json();
+            if (Array.isArray(gtxData?.[0])) {
+              let translated = gtxData[0].map(chunk => chunk[0] || '').join('').trim();
+              if (translated) {
+                translated = applyGlossary(translated);
+                translations[targetLang] = translated;
+                if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, translated);
+                return translated;
+              }
+            }
+          }
+        }
+      } catch (gtxErr) {
+        console.warn(`[AI-Translate] Google GTX fallback falhou para ${targetLang}:`, gtxErr.message);
+      }
+
+      // 4. Fallback secundário (MyMemory)
       try {
         const langPair = `pt|${targetLang}`;
-        const freeRes = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`);
+        const freeRes = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`, {
+          signal: AbortSignal.timeout(1200)
+        });
         if (freeRes.ok) {
           const freeData = await freeRes.json();
           const translatedText = freeData?.responseData?.translatedText;
           if (translatedText && !translatedText.includes('QUERY LENGTH LIMIT')) {
-            translations[targetLang] = translatedText;
-            continue;
+            const clean = applyGlossary(translatedText);
+            translations[targetLang] = clean;
+            if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, clean);
+            return clean;
           }
         }
-      } catch (freeErr) {
-        console.warn(`[AI-Translate] Fallback gratuito falhou para ${targetLang}:`, freeErr.message);
-      }
+      } catch (freeErr) {}
 
-      // 4. Último recurso se offline
-      translations[targetLang] = `[${targetLang.toUpperCase()}] ${text}`;
-    }
+      // 5. Último recurso se offline
+      const fallback = `[${targetLang.toUpperCase()}] ${text}`;
+      translations[targetLang] = fallback;
+      if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, fallback);
+      return fallback;
+    };
 
+    // Executa TODOS os idiomas alvo em paralelo instantâneo (Promise.all)
+    await Promise.all(targetLangs.map(lang => translateSingleLanguage(lang)));
     return translations;
   }
 

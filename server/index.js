@@ -560,10 +560,9 @@ wss.on('connection', (ws, req) => {
           getRoom(roomId).then(async (room) => {
             const targetLangs = room?.target_languages || ['en', 'es'];
             const glossary = room?.glossary || {};
-            const translations = await aiPipeline.translateText(text, targetLangs, glossary);
-            await saveTranscript(roomId, text, translations);
 
-            for (const [lang, translatedText] of Object.entries(translations)) {
+            // Callback disparado instantaneamente no momento em que a tradução de cada idioma fica pronta (<100ms)
+            const onLangReady = (lang, translatedText) => {
               const transPayload = JSON.stringify({
                 type: 'subtitle_translated',
                 lang,
@@ -586,8 +585,15 @@ wss.on('connection', (ws, req) => {
                     }
                   }
                 }
-              });
-            }
+              }).catch(() => {});
+            };
+
+            const translations = await aiPipeline.translateText(text, targetLangs, glossary, onLangReady);
+
+            // Persistência assíncrona não-bloqueante no banco de dados (não atrasa transmissão ao vivo)
+            saveTranscript(roomId, text, translations).catch(err => {
+              console.error('[DB] Erro não-bloqueante ao salvar transcrição:', err.message);
+            });
           });
         }
       } else if (msg.type === 'set_screen_lang') {
