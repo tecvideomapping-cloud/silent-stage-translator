@@ -48,6 +48,16 @@
     </div>
   </header>
 
+  <!-- Banner de Destrave de Áudio Mobile (Autoplay Guard) -->
+  <div id="audioUnlockBanner" onclick="unlockAudioForMobile()" class="bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 text-white text-xs font-semibold px-4 py-2.5 text-center flex items-center justify-center gap-2 cursor-pointer shadow-lg animate-pulse transition hover:brightness-110">
+    <span>🎧</span>
+    <span>Toque aqui para liberar o áudio e a tradução ao vivo no seu dispositivo</span>
+    <span class="bg-white/20 px-2 py-0.5 rounded-full text-[10px] uppercase font-bold tracking-wider">Ativar</span>
+  </div>
+
+  <!-- Player de Áudio Compartilhado e Pré-Desbloqueado para iOS Safari & Android -->
+  <audio id="sharedTtsAudioPlayer" playsinline webkit-playsinline preload="auto" style="display:none"></audio>
+
   <!-- Banner do Evento (se configurado no Admin) -->
   <div id="bannerContainer" class="hidden w-full max-h-40 overflow-hidden border-b border-slate-800">
     <img id="bannerImg" src="" alt="Banner do Evento" class="w-full h-full object-cover">
@@ -567,8 +577,13 @@
     }
 
     function adjustVolume(val) {
+      const v = parseFloat(val);
       if (gainNode) {
-        gainNode.gain.value = parseFloat(val);
+        gainNode.gain.value = v;
+      }
+      const player = ensureSharedTtsPlayer();
+      if (player) {
+        player.volume = Math.max(0, Math.min(1, v));
       }
     }
 
@@ -725,6 +740,37 @@
     // REPRODUÇÃO DE ÁUDIO EM SEGUNDO PLANO / TELA BLOQUEADA (LOCK-SCREEN AUDIO)
     // ----------------------------------------------------
     let bgKeepAliveAudio = null;
+    let sharedTtsAudioPlayer = null;
+
+    function ensureSharedTtsPlayer() {
+      if (!sharedTtsAudioPlayer) {
+        sharedTtsAudioPlayer = document.getElementById('sharedTtsAudioPlayer');
+        if (!sharedTtsAudioPlayer) {
+          sharedTtsAudioPlayer = document.createElement('audio');
+          sharedTtsAudioPlayer.id = 'sharedTtsAudioPlayer';
+          sharedTtsAudioPlayer.setAttribute('playsinline', '');
+          sharedTtsAudioPlayer.setAttribute('webkit-playsinline', '');
+          sharedTtsAudioPlayer.preload = 'auto';
+          document.body.appendChild(sharedTtsAudioPlayer);
+        }
+      }
+      return sharedTtsAudioPlayer;
+    }
+
+    function unlockAudioForMobile() {
+      ensureAudioContext();
+      armBackgroundAudioKeepAlive();
+      const player = ensureSharedTtsPlayer();
+      if (player) {
+        // Tenta destrave imediato de áudio no iOS Safari através do gesto do usuário
+        player.play().then(() => player.pause()).catch(() => {});
+      }
+      const banner = document.getElementById('audioUnlockBanner');
+      if (banner) banner.classList.add('hidden');
+    }
+
+    document.addEventListener('touchstart', unlockAudioForMobile, { once: true, passive: true });
+    document.addEventListener('click', unlockAudioForMobile, { once: true, passive: true });
 
     function armBackgroundAudioKeepAlive() {
       try {
@@ -794,6 +840,7 @@
       if (!isPlaying) {
         ensureAudioContext();
         armBackgroundAudioKeepAlive();
+        unlockAudioForMobile();
         isPlaying = true;
         const btn = document.getElementById('togglePlayBtn');
         const icon = document.getElementById('playIcon');
@@ -833,13 +880,15 @@
       const speed = currentSpeakerProfile?.speed || 1.05;
       const pitch = currentSpeakerProfile?.pitch || 0;
       const url = `/api/tts?lang=${encodeURIComponent(item.lang)}&text=${encodeURIComponent(item.text)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}`;
-      const audio = new Audio(url);
-      currentTtsAudioEl = audio;
-      audio.setAttribute('playsinline', '');
-      audio.setAttribute('webkit-playsinline', '');
       
-      // Se houver fila acumulada, aumenta ligeiramente a velocidade
+      // Utiliza o player compartilhado pré-desbloqueado no DOM para garantir compatibilidade com iOS Safari e Android
+      const audio = ensureSharedTtsPlayer();
+      currentTtsAudioEl = audio;
+      audio.src = url;
       audio.playbackRate = ttsAudioQueue.length > 1 ? (speed * 1.15) : speed;
+      if (gainNode) {
+        audio.volume = gainNode.gain.value;
+      }
 
       const finishCurrent = () => {
         if (ttsWatchdogTimer) {

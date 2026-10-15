@@ -415,14 +415,22 @@ app.post('/api/leads', async (req, res) => {
   }
 });
 
-// Endpoint de Áudio TTS em MP3 (Vozes Neurais Humanas, Calibração de Timbre e Reprodução em Segundo Plano)
-app.get('/api/tts', async (req, res) => {
-  try {
-    const { lang, text, voice, speed, pitch } = req.query;
-    if (!text) return res.status(400).send('Text required');
-    const targetLang = (lang || 'en').split('-')[0].toLowerCase();
-    const cleanText = text.trim();
+// Cache em memória de alta performance para TTS (LRU 800 itens) & Deduplicação de requisições concorrentes
+const ttsMemoryCache = new Map();
+const ttsInFlightRequests = new Map();
 
+async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
+  const cacheKey = `${targetLang}_${voice || 'male_deep'}_${speed || 1.05}_${pitch || 0}_${cleanText}`;
+  if (ttsMemoryCache.has(cacheKey)) {
+    return ttsMemoryCache.get(cacheKey);
+  }
+
+  // Se já há uma requisição em andamento para a mesma frase (ex: múltiplos ouvintes na sala), compartilha a Promise
+  if (ttsInFlightRequests.has(cacheKey)) {
+    return await ttsInFlightRequests.get(cacheKey);
+  }
+
+  const generatePromise = (async () => {
     // 1. OpenAI Neural TTS (Vozes de altíssima fidelidade humana, entonação e respiração natural)
     if (process.env.OPENAI_API_KEY) {
       try {
@@ -459,10 +467,7 @@ app.get('/api/tts', async (req, res) => {
         });
 
         if (oaiRes.ok) {
-          res.setHeader('Content-Type', 'audio/mpeg');
-          res.setHeader('Cache-Control', 'public, max-age=86400');
-          const buffer = Buffer.from(await oaiRes.arrayBuffer());
-          return res.send(buffer);
+          return Buffer.from(await oaiRes.arrayBuffer());
         }
       } catch (oaiErr) {
         console.warn('[TTS OpenAI] Falha na síntese neural, usando contingência:', oaiErr.message);
@@ -473,7 +478,6 @@ app.get('/api/tts', async (req, res) => {
     if (process.env.ELEVENLABS_API_KEY) {
       try {
         const v = (voice || '').toLowerCase();
-        // ID de voz masculina ou feminina padrão
         const voiceId = (v.includes('female') || v === 'nova') 
           ? '21m00Tcm4TlvDq8ikWAM' // Rachel
           : 'ErXwobaYiN019PkySvjV'; // Antoni
@@ -493,29 +497,52 @@ app.get('/api/tts', async (req, res) => {
         });
 
         if (elRes.ok) {
-          res.setHeader('Content-Type', 'audio/mpeg');
-          res.setHeader('Cache-Control', 'public, max-age=86400');
-          const buffer = Buffer.from(await elRes.arrayBuffer());
-          return res.send(buffer);
+          return Buffer.from(await elRes.arrayBuffer());
         }
       } catch (elErr) {}
     }
 
-    // 3. Fallback Direto de Baixa Latência (Google TTS com cache persistente)
+    // 3. Fallback Direto de Baixa Latência (Google TTS)
     const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${encodeURIComponent(targetLang)}&client=tw-ob&q=${encodeURIComponent(cleanText)}`;
     const response = await fetch(googleTtsUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
       },
-      signal: AbortSignal.timeout(3500)
+      signal: AbortSignal.timeout(4000)
     });
     if (response.ok) {
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      const buffer = Buffer.from(await response.arrayBuffer());
-      return res.send(buffer);
+      return Buffer.from(await response.arrayBuffer());
     }
-    res.status(502).send('TTS Provider Error');
+    throw new Error('TTS Provider Error');
+  })();
+
+  ttsInFlightRequests.set(cacheKey, generatePromise);
+  try {
+    const buffer = await generatePromise;
+    // Mantém cache LRU em memória limitado a 800 itens
+    if (ttsMemoryCache.size > 800) {
+      const firstKey = ttsMemoryCache.keys().next().value;
+      ttsMemoryCache.delete(firstKey);
+    }
+    ttsMemoryCache.set(cacheKey, buffer);
+    return buffer;
+  } finally {
+    ttsInFlightRequests.delete(cacheKey);
+  }
+}
+
+// Endpoint de Áudio TTS em MP3 (Vozes Neurais Humanas, Calibração de Timbre e Reprodução em Segundo Plano)
+app.get('/api/tts', async (req, res) => {
+  try {
+    const { lang, text, voice, speed, pitch } = req.query;
+    if (!text) return res.status(400).send('Text required');
+    const targetLang = (lang || 'en').split('-')[0].toLowerCase();
+    const cleanText = text.trim();
+
+    const buffer = await getOrGenerateTts(targetLang, cleanText, voice, speed, pitch);
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.send(buffer);
   } catch (err) {
     res.status(500).send(err.message);
   }
