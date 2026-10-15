@@ -71,6 +71,10 @@ async function initDb() {
         banner_url TEXT DEFAULT '',
         logo_url TEXT DEFAULT '',
         primary_color VARCHAR(30) DEFAULT '#06b6d4',
+        secondary_color VARCHAR(30) DEFAULT '#3b82f6',
+        bg_color VARCHAR(30) DEFAULT '#020617',
+        font_family VARCHAR(50) DEFAULT 'Inter',
+        custom_css TEXT DEFAULT '',
         sponsors JSONB DEFAULT '[]'::jsonb,
         allow_original_audio BOOLEAN DEFAULT true,
         allow_translation BOOLEAN DEFAULT true,
@@ -83,6 +87,10 @@ async function initDb() {
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS banner_url TEXT DEFAULT '';
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS logo_url TEXT DEFAULT '';
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS primary_color VARCHAR(30) DEFAULT '#06b6d4';
+      ALTER TABLE rooms ADD COLUMN IF NOT EXISTS secondary_color VARCHAR(30) DEFAULT '#3b82f6';
+      ALTER TABLE rooms ADD COLUMN IF NOT EXISTS bg_color VARCHAR(30) DEFAULT '#020617';
+      ALTER TABLE rooms ADD COLUMN IF NOT EXISTS font_family VARCHAR(50) DEFAULT 'Inter';
+      ALTER TABLE rooms ADD COLUMN IF NOT EXISTS custom_css TEXT DEFAULT '';
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS sponsors JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS allow_original_audio BOOLEAN DEFAULT true;
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS allow_translation BOOLEAN DEFAULT true;
@@ -272,10 +280,10 @@ async function saveRoom(room) {
       await pool.query(
         `INSERT INTO rooms (
           id, name, host_key, client_id, source_language, target_languages, glossary,
-          banner_url, logo_url, primary_color, sponsors,
+          banner_url, logo_url, primary_color, secondary_color, bg_color, font_family, custom_css, sponsors,
           allow_original_audio, allow_translation, allow_subtitles, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
         ON CONFLICT (id) DO UPDATE SET
           name = EXCLUDED.name,
           client_id = EXCLUDED.client_id,
@@ -285,6 +293,10 @@ async function saveRoom(room) {
           banner_url = EXCLUDED.banner_url,
           logo_url = EXCLUDED.logo_url,
           primary_color = EXCLUDED.primary_color,
+          secondary_color = EXCLUDED.secondary_color,
+          bg_color = EXCLUDED.bg_color,
+          font_family = EXCLUDED.font_family,
+          custom_css = EXCLUDED.custom_css,
           sponsors = EXCLUDED.sponsors,
           allow_original_audio = EXCLUDED.allow_original_audio,
           allow_translation = EXCLUDED.allow_translation,
@@ -301,6 +313,10 @@ async function saveRoom(room) {
           room.banner_url || '',
           room.logo_url || '',
           room.primary_color || '#06b6d4',
+          room.secondary_color || '#3b82f6',
+          room.bg_color || '#020617',
+          room.font_family || 'Inter',
+          room.custom_css || '',
           JSON.stringify(room.sponsors || []),
           room.allow_original_audio !== false,
           room.allow_translation !== false,

@@ -35,6 +35,9 @@
       </div>
     </div>
     <div class="flex items-center gap-2">
+      <span id="p2pBadge" class="text-[11px] bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 px-2 py-0.5 rounded-full font-mono flex items-center gap-1" title="Tecnologia P2P Mesh Ativa (Economia de Banda)">
+        👥 <span id="p2pCount">0</span> P2P
+      </span>
       <span id="latencyBadge" class="text-[11px] bg-cyan-950/80 border border-cyan-800/80 text-cyan-300 px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
         ⚡ <span id="latencyValue">--</span>ms
       </span>
@@ -178,6 +181,42 @@
         document.getElementById('bannerImg').src = room.banner_url;
         document.getElementById('bannerContainer').classList.remove('hidden');
       }
+
+      // 1. Aplicação de Cores da Marca (CSS Variables)
+      const primary = room.primary_color || '#06b6d4';
+      const secondary = room.secondary_color || '#3b82f6';
+      const bgColor = room.bg_color || '#020617';
+      const font = room.font_family || 'Inter';
+
+      document.documentElement.style.setProperty('--primary-color', primary);
+      document.documentElement.style.setProperty('--secondary-color', secondary);
+      document.documentElement.style.setProperty('--app-bg', bgColor);
+      document.body.style.backgroundColor = bgColor;
+
+      // 2. Carregamento Dinâmico de Fontes do Google Fonts
+      if (font && font !== 'Inter') {
+        const fontId = 'custom-brand-font';
+        if (!document.getElementById(fontId)) {
+          const link = document.createElement('link');
+          link.id = fontId;
+          link.rel = 'stylesheet';
+          link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@300;400;600;700;800&display=swap`;
+          document.head.appendChild(link);
+        }
+        document.body.style.fontFamily = `'${font}', sans-serif`;
+      }
+
+      // 3. Injeção de CSS Personalizado do Cliente
+      if (room.custom_css) {
+        const cssId = 'client-custom-css';
+        let styleTag = document.getElementById(cssId);
+        if (!styleTag) {
+          styleTag = document.createElement('style');
+          styleTag.id = cssId;
+          document.head.appendChild(styleTag);
+        }
+        styleTag.innerHTML = room.custom_css;
+      }
     }
 
     function buildChannelsUI(room) {
@@ -254,6 +293,142 @@
       });
     }
 
+    // ----------------------------------------------------
+    // TECNOLOGIA P2P MESH (ECONOMIA DE BANDA & STREAMING PEER-TO-PEER)
+    // ----------------------------------------------------
+    let myClientId = null;
+    const peerConnections = new Map(); // peerId -> { pc, dc }
+    const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+    let p2pActivePeers = 0;
+
+    function updateP2PBadge() {
+      const el = document.getElementById('p2pCount');
+      if (el) el.innerText = peerConnections.size;
+    }
+
+    function initP2PMesh() {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'p2p_find_peers' }));
+      }
+    }
+
+    async function handleP2PPeersList(peerIds) {
+      for (const peerId of peerIds) {
+        if (!peerConnections.has(peerId) && peerId !== myClientId) {
+          createPeerConnection(peerId, true);
+        }
+      }
+    }
+
+    function createPeerConnection(peerId, isInitiator) {
+      if (peerConnections.has(peerId)) return;
+      try {
+        const pc = new RTCPeerConnection({ iceServers });
+        let dc = null;
+
+        if (isInitiator) {
+          dc = pc.createDataChannel('audio-mesh', { ordered: false, maxRetransmits: 0 });
+          setupDataChannel(dc, peerId);
+        } else {
+          pc.ondatachannel = (e) => {
+            setupDataChannel(e.channel, peerId);
+          };
+        }
+
+        pc.onicecandidate = (e) => {
+          if (e.candidate && socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+              type: 'p2p_signal',
+              targetClientId: peerId,
+              signal: { candidate: e.candidate }
+            }));
+          }
+        };
+
+        peerConnections.set(peerId, { pc, dc });
+
+        if (isInitiator) {
+          pc.createOffer().then(offer => pc.setLocalDescription(offer)).then(() => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({
+                type: 'p2p_signal',
+                targetClientId: peerId,
+                signal: { sdp: pc.localDescription }
+              }));
+            }
+          }).catch(() => {});
+        }
+      } catch (err) {
+        console.warn('P2P connection error:', err);
+      }
+    }
+
+    function setupDataChannel(dc, peerId) {
+      dc.binaryType = 'arraybuffer';
+      dc.onopen = () => {
+        updateP2PBadge();
+        const conn = peerConnections.get(peerId);
+        if (conn) conn.dc = dc;
+      };
+      dc.onclose = () => {
+        peerConnections.delete(peerId);
+        updateP2PBadge();
+      };
+      dc.onerror = () => {
+        peerConnections.delete(peerId);
+        updateP2PBadge();
+      };
+      dc.onmessage = (e) => {
+        // Recebeu chunk de áudio PCM diretamente de um par (P2P - Zero consumo de banda do servidor!)
+        if (e.data instanceof ArrayBuffer) {
+          if (isPlaying && audioContext && currentChannel === 'original') {
+            playRawPCM(e.data);
+          }
+          // Retransmite para outros vizinhos na malha (Mesh Gossip)
+          relayAudioP2P(e.data, peerId);
+        }
+      };
+    }
+
+    function relayAudioP2P(arrayBuffer, excludePeerId = null) {
+      for (const [peerId, conn] of peerConnections.entries()) {
+        if (peerId !== excludePeerId && conn.dc && conn.dc.readyState === 'open') {
+          try {
+            conn.dc.send(arrayBuffer);
+          } catch (e) {}
+        }
+      }
+    }
+
+    async function handleP2PSignal(fromClientId, signal) {
+      let conn = peerConnections.get(fromClientId);
+      if (!conn) {
+        createPeerConnection(fromClientId, false);
+        conn = peerConnections.get(fromClientId);
+      }
+      if (!conn) return;
+
+      const pc = conn.pc;
+      try {
+        if (signal.sdp) {
+          await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          if (signal.sdp.type === 'offer') {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({
+                type: 'p2p_signal',
+                targetClientId: fromClientId,
+                signal: { sdp: pc.localDescription }
+              }));
+            }
+          }
+        } else if (signal.candidate) {
+          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        }
+      } catch (e) {}
+    }
+
     function connectWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}?roomId=${roomId}&role=listener&channel=${currentChannel}`;
@@ -265,6 +440,8 @@
         document.getElementById('statusIndicator').className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
         document.getElementById('statusIndicator').title = 'Conectado ao vivo';
         document.getElementById('playerStatus').innerText = 'Conectado ao canal ' + currentChannel;
+        // Inicia busca por pares P2P na mesma sala
+        setTimeout(initP2PMesh, 1500);
       };
 
       socket.onmessage = async (event) => {
@@ -272,12 +449,20 @@
           if (isPlaying && audioContext && currentChannel !== 'text') {
             playRawPCM(event.data);
           }
+          // Distribui para pares vizinhos na malha P2P
+          relayAudioP2P(event.data);
           return;
         }
 
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'audio_meta') {
+          if (data.type === 'connected') {
+            myClientId = data.clientId;
+          } else if (data.type === 'p2p_peers') {
+            handleP2PPeersList(data.peers || []);
+          } else if (data.type === 'p2p_signal') {
+            handleP2PSignal(data.fromClientId, data.signal);
+          } else if (data.type === 'audio_meta') {
             window.hostSampleRate = data.sampleRate;
             console.log('SampleRate do transmissor recebido:', data.sampleRate);
           } else if (data.type === 'subtitle') {

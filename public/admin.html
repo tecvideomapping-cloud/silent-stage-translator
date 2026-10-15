@@ -167,27 +167,63 @@
           </div>
         </div>
 
-        <!-- Identidade Visual & Branding -->
+        <!-- Identidade Visual & Branding Avançado -->
         <div class="border-t border-slate-800 pt-3">
-          <p class="font-bold text-slate-200 uppercase tracking-wider text-[11px] mb-2 text-cyan-400">🎨 Identidade Visual do Evento</p>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <p class="font-bold text-slate-200 uppercase tracking-wider text-[11px] mb-2 text-cyan-400">🎨 Identidade Visual & Customização da Marca</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div>
-              <label class="block font-semibold text-slate-400 mb-1">Logo URL:</label>
+              <label class="block font-semibold text-slate-400 mb-1">Logo URL da Marca / Cliente:</label>
               <input type="url" id="formLogoUrl" placeholder="https://exemplo.com/logo.png"
                 class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
             </div>
             <div>
-              <label class="block font-semibold text-slate-400 mb-1">Banner URL (Capa):</label>
+              <label class="block font-semibold text-slate-400 mb-1">Banner URL (Capa / Topo do App):</label>
               <input type="url" id="formBannerUrl" placeholder="https://exemplo.com/banner.jpg"
                 class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
             </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3">
             <div>
-              <label class="block font-semibold text-slate-400 mb-1">Cor Primária:</label>
-              <div class="flex items-center gap-2">
-                <input type="color" id="formPrimaryColor" value="#06b6d4" class="h-9 w-12 bg-transparent cursor-pointer rounded border border-slate-700">
-                <input type="text" id="formPrimaryColorText" value="#06b6d4" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 font-mono">
+              <label class="block font-semibold text-slate-400 mb-1 text-[11px]">Cor Primária (Destaques/Botões):</label>
+              <div class="flex items-center gap-1.5">
+                <input type="color" id="formPrimaryColor" value="#06b6d4" class="h-9 w-10 bg-transparent cursor-pointer rounded border border-slate-700" oninput="document.getElementById('formPrimaryColorText').value = this.value">
+                <input type="text" id="formPrimaryColorText" value="#06b6d4" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 font-mono text-xs" oninput="document.getElementById('formPrimaryColor').value = this.value">
               </div>
             </div>
+
+            <div>
+              <label class="block font-semibold text-slate-400 mb-1 text-[11px]">Cor Secundária (Gradientes):</label>
+              <div class="flex items-center gap-1.5">
+                <input type="color" id="formSecondaryColor" value="#3b82f6" class="h-9 w-10 bg-transparent cursor-pointer rounded border border-slate-700" oninput="document.getElementById('formSecondaryColorText').value = this.value">
+                <input type="text" id="formSecondaryColorText" value="#3b82f6" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 font-mono text-xs" oninput="document.getElementById('formSecondaryColor').value = this.value">
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-400 mb-1 text-[11px]">Cor de Fundo do App:</label>
+              <div class="flex items-center gap-1.5">
+                <input type="color" id="formBgColor" value="#020617" class="h-9 w-10 bg-transparent cursor-pointer rounded border border-slate-700" oninput="document.getElementById('formBgColorText').value = this.value">
+                <input type="text" id="formBgColorText" value="#020617" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 font-mono text-xs" oninput="document.getElementById('formBgColor').value = this.value">
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-400 mb-1 text-[11px]">Tipografia (Fonte da Marca):</label>
+              <select id="formFontFamily" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 text-xs focus:border-cyan-500 focus:outline-none">
+                <option value="Inter">Moderna (Inter / Padrão)</option>
+                <option value="Montserrat">Corporativa (Montserrat)</option>
+                <option value="Poppins">Tech / Startup (Poppins)</option>
+                <option value="Roboto">Clássica (Roboto)</option>
+                <option value="Playfair Display">Elegante / Luxo (Playfair)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-400 mb-1 text-[11px]">CSS Personalizado (Opcional - Estilos customizados da marca):</label>
+            <textarea id="formCustomCss" rows="2" placeholder="/* ex: .channel-btn { border-radius: 20px; } */"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 font-mono text-xs focus:border-cyan-500 focus:outline-none"></textarea>
           </div>
         </div>
 
@@ -573,6 +609,10 @@
         bannerUrl: document.getElementById('formBannerUrl').value.trim(),
         logoUrl: document.getElementById('formLogoUrl').value.trim(),
         primaryColor: document.getElementById('formPrimaryColor').value,
+        secondaryColor: document.getElementById('formSecondaryColor').value,
+        bgColor: document.getElementById('formBgColor').value,
+        fontFamily: document.getElementById('formFontFamily').value,
+        customCss: document.getElementById('formCustomCss').value.trim(),
         allowOriginalAudio: document.getElementById('formAllowOriginal').checked,
         allowTranslation: document.getElementById('formAllowTranslation').checked,
         allowSubtitles: document.getElementById('formAllowSubtitles').checked,

@@ -169,6 +169,10 @@ app.post('/api/rooms', requireAuth, async (req, res) => {
       bannerUrl,
       logoUrl,
       primaryColor,
+      secondaryColor,
+      bgColor,
+      fontFamily,
+      customCss,
       sponsors,
       allowOriginalAudio,
       allowTranslation,
@@ -190,6 +194,10 @@ app.post('/api/rooms', requireAuth, async (req, res) => {
       banner_url: bannerUrl || '',
       logo_url: logoUrl || '',
       primary_color: primaryColor || '#06b6d4',
+      secondary_color: secondaryColor || '#3b82f6',
+      bg_color: bgColor || '#020617',
+      font_family: fontFamily || 'Inter',
+      custom_css: customCss || '',
       sponsors: sponsors || [],
       allow_original_audio: allowOriginalAudio !== false,
       allow_translation: allowTranslation !== false,
@@ -340,6 +348,8 @@ wss.on('connection', (ws, req) => {
   const role = urlParams.get('role') || 'listener';
   let channel = urlParams.get('channel') || 'original';
 
+  const clientId = 'c_' + Math.random().toString(36).substring(2, 9);
+  ws.clientId = clientId;
   ws.roomId = roomId;
   ws.role = role;
   ws.channel = channel;
@@ -350,6 +360,7 @@ wss.on('connection', (ws, req) => {
 
   ws.send(JSON.stringify({
     type: 'connected',
+    clientId,
     roomId,
     role,
     channel,
@@ -499,6 +510,32 @@ wss.on('connection', (ws, req) => {
             }));
           }
         }
+      } else if (msg.type === 'p2p_signal') {
+        // Roteamento de sinalização WebRTC P2P (Offer, Answer, ICE Candidate)
+        const targetId = msg.targetClientId;
+        for (const client of roomClients) {
+          if (client.clientId === targetId && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+              type: 'p2p_signal',
+              fromClientId: ws.clientId,
+              signal: msg.signal
+            }));
+            break;
+          }
+        }
+      } else if (msg.type === 'p2p_find_peers') {
+        // Retorna candidatos a pares na mesma sala e canal para mesh P2P
+        const peers = [];
+        for (const client of roomClients) {
+          if (client !== ws && client.readyState === WebSocket.OPEN && client.role === 'listener' && client.channel === ws.channel) {
+            peers.push(client.clientId);
+            if (peers.length >= 4) break; // Limita a 4 vizinhos por nó para topologia leve
+          }
+        }
+        ws.send(JSON.stringify({
+          type: 'p2p_peers',
+          peers
+        }));
       } else if (msg.type === 'ping') {
         ws.send(JSON.stringify({ type: 'pong' }));
       }
