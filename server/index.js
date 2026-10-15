@@ -419,6 +419,7 @@ app.post('/api/leads', async (req, res) => {
 // WebSocket Server (Áudio Original + Tradução + Legendas)
 // ----------------------------------------------------
 const roomAudioMeta = new Map(); // roomId -> { type: 'audio_meta', format, sampleRate, kbps, profileName }
+const roomLastFinalTranscript = new Map(); // roomId -> { text, time }
 
 wss.on('connection', (ws, req) => {
   const urlParams = new URLSearchParams(req.url.replace('/?', '?'));
@@ -557,6 +558,16 @@ wss.on('connection', (ws, req) => {
         }
 
         if (isFinal) {
+          const cleanText = (text || '').trim();
+          if (!cleanText) return;
+
+          const lastObj = roomLastFinalTranscript.get(roomId);
+          if (lastObj && lastObj.text.toLowerCase() === cleanText.toLowerCase() && (Date.now() - lastObj.time) < 1500) {
+            // Ignora disparo duplicado idêntico recebido em menos de 1.5s
+            return;
+          }
+          roomLastFinalTranscript.set(roomId, { text: cleanText, time: Date.now() });
+
           getRoom(roomId).then(async (room) => {
             const targetLangs = room?.target_languages || ['en', 'es'];
             const glossary = room?.glossary || {};

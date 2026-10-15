@@ -891,9 +891,11 @@
               window.speechRecognizer.lang = document.getElementById('sourceLang').value || 'pt-BR';
 
               let currentInterimEl = null;
-              let committedWordCount = 0;
-              let activeResultIndex = -1;
+              const finalizedIndices = new Set();
+              const committedPerIndex = {};
               let pauseDebounceTimer = null;
+              let lastCommittedClause = '';
+              let lastCommittedTime = 0;
 
               function appendConfirmedTranscript(chunkText) {
                 const box = document.getElementById('hostTranscriptBox');
@@ -932,6 +934,13 @@
                 const trimmed = (clauseText || '').trim();
                 if (!trimmed) return;
 
+                // Proteção contra duplicação de frases/palavras idênticas em curto intervalo
+                if (trimmed.toLowerCase() === lastCommittedClause.toLowerCase() && (Date.now() - lastCommittedTime) < 1800) {
+                  return;
+                }
+                lastCommittedClause = trimmed;
+                lastCommittedTime = Date.now();
+
                 appendConfirmedTranscript(trimmed);
 
                 if (socket && socket.readyState === WebSocket.OPEN) {
@@ -946,45 +955,40 @@
 
               window.speechRecognizer.onresult = (evt) => {
                 for (let i = evt.resultIndex; i < evt.results.length; ++i) {
+                  // Se este bloco de fala já foi finalizado e despachado anteriormente, ignora totalmente
+                  if (finalizedIndices.has(i)) continue;
+
                   const item = evt.results[i];
                   const isSpeechFinal = item.isFinal;
                   const fullTranscript = (item[0] && item[0].transcript) ? item[0].transcript.trim() : '';
                   if (!fullTranscript) continue;
 
-                  // Se o navegador iniciou um novo bloco de fala (novo turno de voz)
-                  if (i !== activeResultIndex) {
-                    activeResultIndex = i;
-                    committedWordCount = 0;
+                  if (committedPerIndex[i] === undefined) {
+                    committedPerIndex[i] = 0;
                   }
 
                   const allWords = fullTranscript.split(/\s+/).filter(Boolean);
-                  const uncommittedWords = allWords.slice(committedWordCount);
+                  const startIdx = committedPerIndex[i] || 0;
+                  const uncommittedWords = allWords.slice(startIdx);
                   const uncommitted = uncommittedWords.join(' ');
 
-                  // Mostra o texto ao vivo se formando sem quebrar palavras
+                  // Exibe em itálico provisório apenas o trecho que ainda não virou legenda final
                   updateInterimTranscript(uncommitted);
 
-                  if (socket && socket.readyState === WebSocket.OPEN && uncommitted) {
-                    socket.send(JSON.stringify({
-                      type: 'speech_transcript',
-                      text: uncommitted,
-                      isFinal: false,
-                      sourceLang: window.speechRecognizer.lang
-                    }));
-                  }
-
-                  // 1. O navegador sinalizou fim deste bloco de fala
+                  // 1. O navegador sinalizou conclusão definitiva deste bloco de fala
                   if (isSpeechFinal) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    if (uncommittedWords.length > 0) {
-                      commitClause(uncommittedWords.join(' '));
+                    const pendingWords = allWords.slice(committedPerIndex[i] || 0);
+                    if (pendingWords.length > 0) {
+                      commitClause(pendingWords.join(' '));
                     }
-                    committedWordCount = 0;
+                    finalizedIndices.add(i);
+                    delete committedPerIndex[i];
                     updateInterimTranscript('');
                     continue;
                   }
 
-                  // 2. Quebra por pontuação (. ! ? , ;) com pelo menos 2 palavras
+                  // 2. Quebra por pontuação natural (. ! ? , ; :) com pelo menos 3 palavras
                   let punctIndex = -1;
                   for (let w = 0; w < uncommittedWords.length; w++) {
                     if (/[.!?]$/.test(uncommittedWords[w])) {
@@ -1000,42 +1004,45 @@
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
                     const wordsToCommit = uncommittedWords.slice(0, punctIndex + 1);
                     const clause = wordsToCommit.join(' ');
-                    committedWordCount += wordsToCommit.length;
+                    committedPerIndex[i] = (committedPerIndex[i] || 0) + wordsToCommit.length;
                     commitClause(clause);
 
-                    const remaining = allWords.slice(committedWordCount).join(' ');
+                    const remaining = allWords.slice(committedPerIndex[i]).join(' ');
                     updateInterimTranscript(remaining);
                     continue;
                   }
 
-                  // 3. JANELA DESLIZANTE SIMULTÂNEA: Se o locutor estiver falando sem pausas e acumular 5 palavras,
-                  // despacha as primeiras 4 palavras na hora, permitindo que a tradução e voz ocorram
-                  // ENQUANTO O LOCUTOR AINDA ESTÁ FALANDO (sem esperar ele terminar a fala inteira!)
-                  if (uncommittedWords.length >= 5) {
+                  // 3. Cadência simultânea para orações longas contínuas (>= 7 palavras sem pontuação)
+                  if (uncommittedWords.length >= 7) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    const wordsToCommit = uncommittedWords.slice(0, 4);
+                    const wordsToCommit = uncommittedWords.slice(0, 6);
                     const clause = wordsToCommit.join(' ');
-                    committedWordCount += wordsToCommit.length;
+                    committedPerIndex[i] = (committedPerIndex[i] || 0) + wordsToCommit.length;
                     commitClause(clause);
 
-                    const remaining = allWords.slice(committedWordCount).join(' ');
+                    const remaining = allWords.slice(committedPerIndex[i]).join(' ');
                     updateInterimTranscript(remaining);
                     continue;
                   }
 
-                  // 4. Cadência de micro-pausa (250ms) para ideias curtas ou pausas naturais de respiração
+                  // 4. Cadência de pausa / respiração natural do orador (350ms)
                   if (uncommittedWords.length > 0) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
+                    const targetIdx = i;
                     pauseDebounceTimer = setTimeout(() => {
-                      const currentAllWords = (item[0] && item[0].transcript) ? item[0].transcript.trim().split(/\s+/).filter(Boolean) : [];
-                      const pendingWords = currentAllWords.slice(committedWordCount);
-                      if (pendingWords.length > 0) {
-                        const clause = pendingWords.join(' ');
-                        committedWordCount += pendingWords.length;
+                      if (finalizedIndices.has(targetIdx)) return;
+                      const curItem = evt.results[targetIdx];
+                      if (!curItem || !curItem[0]) return;
+                      const curWords = curItem[0].transcript.trim().split(/\s+/).filter(Boolean);
+                      const curStart = committedPerIndex[targetIdx] || 0;
+                      const pending = curWords.slice(curStart);
+                      if (pending.length > 0) {
+                        const clause = pending.join(' ');
+                        committedPerIndex[targetIdx] = curStart + pending.length;
                         commitClause(clause);
                         updateInterimTranscript('');
                       }
-                    }, 250);
+                    }, 350);
                   }
                 }
               };

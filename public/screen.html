@@ -264,6 +264,12 @@
           screenInterimEl = null;
         }
 
+        // Se a última linha final for idêntica e do mesmo idioma, não duplica
+        const lastFinal = container.querySelector('.subtitle-line-final:last-child');
+        if (lastFinal && lastFinal.dataset.text === text.trim() && lastFinal.dataset.lang === lang) {
+          return;
+        }
+
         // Mantém blocos adequados para cadência simultânea contínua
         const maxLines = allowedLangs.length > 1 ? 5 : 3;
         const existing = container.querySelectorAll('.subtitle-line-final');
@@ -273,6 +279,8 @@
 
         const div = document.createElement('div');
         div.className = 'subtitle-line subtitle-line-final flex items-center justify-center gap-3 drop-shadow-md';
+        div.dataset.text = text.trim();
+        div.dataset.lang = lang;
         
         // Mostra badge do idioma se estiver em modo multilíngue ou bilíngue
         const showBadge = allowedLangs.length > 1 || currentScreenLang === 'all';

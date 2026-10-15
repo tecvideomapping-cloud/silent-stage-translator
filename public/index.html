@@ -736,9 +736,20 @@
       }
     }
 
+    let lastSpokenText = '';
+    let lastSpokenTime = 0;
+
     function speakTranslatedText(text, lang) {
       if (!text || !('speechSynthesis' in window)) return;
       
+      const clean = text.trim();
+      // Não repete exatamente a mesma frase falada nos últimos 2.5 segundos
+      if (clean.toLowerCase() === lastSpokenText.toLowerCase() && (Date.now() - lastSpokenTime) < 2500) {
+        return;
+      }
+      lastSpokenText = clean;
+      lastSpokenTime = Date.now();
+
       // Se o usuário selecionou o canal de idioma mas ainda não clicou em play, ativa automaticamente
       if (!isPlaying) {
         ensureAudioContext();
@@ -753,7 +764,7 @@
         if (st) st.innerText = 'Ouvindo ao vivo (' + currentChannel + ')';
       }
 
-      speechQueue.push({ text, lang });
+      speechQueue.push({ text: clean, lang });
 
       if (!isSpeaking) {
         playNextSpeech();
@@ -862,6 +873,12 @@
         if (currentInterimSubtitleEl && currentInterimSubtitleEl.parentNode) {
           currentInterimSubtitleEl.remove();
           currentInterimSubtitleEl = null;
+        }
+
+        // Se a última legenda adicionada for idêntica, evita repetição visual
+        const lastEl = box.lastElementChild;
+        if (lastEl && lastEl.innerText.trim().toLowerCase() === text.trim().toLowerCase()) {
+          return;
         }
         const p = document.createElement('p');
         p.className = 'text-slate-100 font-medium mb-2 border-l-2 border-cyan-400 pl-2 bg-slate-900/40 py-1 rounded';
