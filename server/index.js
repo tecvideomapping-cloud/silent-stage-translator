@@ -415,17 +415,126 @@ app.post('/api/leads', async (req, res) => {
   }
 });
 
+// Endpoint de Áudio TTS em MP3 (Vozes Neurais Humanas, Calibração de Timbre e Reprodução em Segundo Plano)
+app.get('/api/tts', async (req, res) => {
+  try {
+    const { lang, text, voice, speed, pitch } = req.query;
+    if (!text) return res.status(400).send('Text required');
+    const targetLang = (lang || 'en').split('-')[0].toLowerCase();
+    const cleanText = text.trim();
+
+    // 1. OpenAI Neural TTS (Vozes de altíssima fidelidade humana, entonação e respiração natural)
+    if (process.env.OPENAI_API_KEY) {
+      try {
+        let openAiVoice = 'alloy';
+        const v = (voice || '').toLowerCase();
+        if (v === 'male_deep' || v === 'onyx' || v === 'baritone') {
+          openAiVoice = 'onyx'; // Masculina profunda, encorpada e firme
+        } else if (v === 'male_natural' || v === 'echo' || v === 'orador') {
+          openAiVoice = 'echo'; // Masculina natural, equilibrada e aveludada
+        } else if (v === 'female_warm' || v === 'nova' || v === 'expressiva') {
+          openAiVoice = 'nova'; // Feminina expressiva, dinâmica e humana
+        } else if (v === 'female_clear' || v === 'shimmer' || v === 'suave') {
+          openAiVoice = 'shimmer'; // Feminina clara, calma e cristalina
+        } else if (['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'].includes(v)) {
+          openAiVoice = v;
+        }
+
+        const openAiSpeed = Math.max(0.85, Math.min(1.3, parseFloat(speed) || 1.05));
+
+        const oaiRes = await fetch('https://api.openai.com/v1/audio/speech', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'tts-1',
+            input: cleanText,
+            voice: openAiVoice,
+            speed: openAiSpeed,
+            response_format: 'mp3'
+          }),
+          signal: AbortSignal.timeout(4500)
+        });
+
+        if (oaiRes.ok) {
+          res.setHeader('Content-Type', 'audio/mpeg');
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          const buffer = Buffer.from(await oaiRes.arrayBuffer());
+          return res.send(buffer);
+        }
+      } catch (oaiErr) {
+        console.warn('[TTS OpenAI] Falha na síntese neural, usando contingência:', oaiErr.message);
+      }
+    }
+
+    // 2. ElevenLabs Multilingual (Se configurado no .env)
+    if (process.env.ELEVENLABS_API_KEY) {
+      try {
+        const v = (voice || '').toLowerCase();
+        // ID de voz masculina ou feminina padrão
+        const voiceId = (v.includes('female') || v === 'nova') 
+          ? '21m00Tcm4TlvDq8ikWAM' // Rachel
+          : 'ErXwobaYiN019PkySvjV'; // Antoni
+
+        const elRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+          method: 'POST',
+          headers: {
+            'xi-api-key': process.env.ELEVENLABS_API_KEY,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            text: cleanText,
+            model_id: 'eleven_multilingual_v2',
+            voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+          }),
+          signal: AbortSignal.timeout(4500)
+        });
+
+        if (elRes.ok) {
+          res.setHeader('Content-Type', 'audio/mpeg');
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          const buffer = Buffer.from(await elRes.arrayBuffer());
+          return res.send(buffer);
+        }
+      } catch (elErr) {}
+    }
+
+    // 3. Fallback Direto de Baixa Latência (Google TTS com cache persistente)
+    const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${encodeURIComponent(targetLang)}&client=tw-ob&q=${encodeURIComponent(cleanText)}`;
+    const response = await fetch(googleTtsUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+      },
+      signal: AbortSignal.timeout(3500)
+    });
+    if (response.ok) {
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      const buffer = Buffer.from(await response.arrayBuffer());
+      return res.send(buffer);
+    }
+    res.status(502).send('TTS Provider Error');
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
 // ----------------------------------------------------
 // WebSocket Server (Áudio Original + Tradução + Legendas)
 // ----------------------------------------------------
 const roomAudioMeta = new Map(); // roomId -> { type: 'audio_meta', format, sampleRate, kbps, profileName }
+const roomSpeakerProfile = new Map(); // roomId -> { voice, pitch, speed }
 const roomLastFinalTranscript = new Map(); // roomId -> { text, time }
 
 wss.on('connection', (ws, req) => {
-  const urlParams = new URLSearchParams(req.url.replace('/?', '?'));
-  const roomId = urlParams.get('roomId') || 'palco1';
-  const role = urlParams.get('role') || 'listener';
-  let channel = urlParams.get('channel') || 'original';
+  // Parse à prova de falhas com URL padrão Node.js e normalização de slug
+  const parsedUrl = new URL(req.url, 'http://localhost');
+  const rawRoom = parsedUrl.searchParams.get('roomId') || parsedUrl.searchParams.get('room') || 'palco1';
+  const roomId = decodeURIComponent(rawRoom).trim().toLowerCase();
+  const role = parsedUrl.searchParams.get('role') || 'listener';
+  let channel = parsedUrl.searchParams.get('channel') || 'original';
 
   const clientId = 'c_' + Math.random().toString(36).substring(2, 9);
   ws.clientId = clientId;
@@ -450,6 +559,16 @@ wss.on('connection', (ws, req) => {
   if (roomAudioMeta.has(roomId)) {
     try {
       ws.send(JSON.stringify(roomAudioMeta.get(roomId)));
+    } catch (e) {}
+  }
+
+  // Envia perfil de voz calibrado do palestrante
+  if (roomSpeakerProfile.has(roomId)) {
+    try {
+      ws.send(JSON.stringify({
+        type: 'speaker_voice_profile',
+        ...roomSpeakerProfile.get(roomId)
+      }));
     } catch (e) {}
   }
 
@@ -615,7 +734,8 @@ wss.on('connection', (ws, req) => {
               type: 'screen_config',
               screenMode: msg.screenMode,
               screenLogo: msg.screenLogo || 'vmp',
-              screenTheme: msg.screenTheme || 'theme-chroma',
+              screenTheme: msg.screenTheme || 'theme-lowerthird',
+              screenPosition: msg.screenPosition || 'pos-bottom',
               selectedLangs: msg.selectedLangs
             }));
           }
@@ -633,11 +753,28 @@ wss.on('connection', (ws, req) => {
             break;
           }
         }
+      } else if (msg.type === 'speaker_voice_profile') {
+        // Calibração de timbre do palestrante transmitida pelo host
+        roomSpeakerProfile.set(roomId, {
+          voice: msg.voice || 'male_deep',
+          pitch: msg.pitch || 0,
+          speed: msg.speed || 1.05
+        });
+        for (const client of roomClients) {
+          if (client !== ws && client.readyState === WebSocket.OPEN && client.roomId === roomId) {
+            client.send(JSON.stringify({
+              type: 'speaker_voice_profile',
+              voice: msg.voice,
+              pitch: msg.pitch,
+              speed: msg.speed
+            }));
+          }
+        }
       } else if (msg.type === 'p2p_find_peers') {
         // Retorna candidatos a pares na mesma sala e canal para mesh P2P
         const peers = [];
         for (const client of roomClients) {
-          if (client !== ws && client.readyState === WebSocket.OPEN && client.role === 'listener' && client.channel === ws.channel) {
+          if (client !== ws && client.readyState === WebSocket.OPEN && client.roomId === roomId && client.role === 'listener' && client.channel === ws.channel) {
             peers.push(client.clientId);
             if (peers.length >= 4) break; // Limita a 4 vizinhos por nó para topologia leve
           }
@@ -654,6 +791,12 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     roomClients.delete(ws);
+    if (roomClients.size === 0) {
+      roomsClients.delete(roomId);
+      roomAudioMeta.delete(roomId);
+      roomSpeakerProfile.delete(roomId);
+      roomLastFinalTranscript.delete(roomId);
+    }
     if (ws.role === 'host') {
       aiPipeline.closeSession(roomId);
     }

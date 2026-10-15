@@ -132,9 +132,10 @@
 
   <script>
     const urlParams = new URLSearchParams(window.location.search);
-    const roomId = urlParams.get('room') || 'palco1';
+    const roomId = decodeURIComponent(urlParams.get('room') || urlParams.get('roomId') || 'palco1').trim().toLowerCase();
     document.getElementById('currentRoomText').innerText = roomId;
 
+    let currentSpeakerProfile = { voice: 'male_deep', pitch: 0, speed: 1.05 };
     let currentChannel = 'original';
     let socket = null;
     let isPlaying = false;
@@ -432,7 +433,7 @@
 
     function connectWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}?roomId=${roomId}&role=listener&channel=${currentChannel}`;
+      const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=listener&channel=${currentChannel}`;
       
       socket = new WebSocket(wsUrl);
       socket.binaryType = 'arraybuffer';
@@ -459,6 +460,12 @@
           const data = JSON.parse(event.data);
           if (data.type === 'connected') {
             myClientId = data.clientId;
+          } else if (data.type === 'speaker_voice_profile') {
+            currentSpeakerProfile = {
+              voice: data.voice || 'male_deep',
+              pitch: data.pitch || 0,
+              speed: data.speed || 1.05
+            };
           } else if (data.type === 'p2p_peers') {
             handleP2PPeersList(data.peers || []);
           } else if (data.type === 'p2p_signal') {
@@ -480,9 +487,9 @@
           } else if (data.type === 'subtitle_translated') {
             // Legenda traduzida
             renderSubtitle(data.text, true, data.lang);
-            // Se o usuário estiver ouvindo este canal de idioma traduzido, sintetiza voz local instantânea
+            // Se o usuário estiver ouvindo este canal de idioma traduzido, reproduz áudio (funciona com tela bloqueada)
             if (currentChannel === data.lang) {
-              speakTranslatedText(data.text, data.lang);
+              playTranslatedAudio(data.text, data.lang);
             }
           } else if (data.type === 'pong') {
             if (lastPingTime > 0) {
@@ -538,12 +545,20 @@
       const text = document.getElementById('playText');
 
       if (isPlaying) {
+        armBackgroundAudioKeepAlive();
         btn.className = 'bg-rose-600 hover:bg-rose-500 text-white font-bold px-6 py-2.5 rounded-full shadow-lg transition active:scale-95 flex items-center gap-2';
         icon.innerText = '⏸';
         text.innerText = 'Pausar';
         document.getElementById('playerStatus').innerText = 'Ouvindo ao vivo (' + currentChannel + ')';
       } else {
+        if (bgKeepAliveAudio) {
+          try { bgKeepAliveAudio.pause(); } catch (e) {}
+        }
+        if ('mediaSession' in navigator) {
+          try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {}
+        }
         clearSpeechQueue();
+        clearTtsAudioQueue();
         btn.className = 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-6 py-2.5 rounded-full shadow-lg transition active:scale-95 flex items-center gap-2';
         icon.innerText = '▶';
         text.innerText = 'Ouvir Áudio';
@@ -668,6 +683,7 @@
 
     function selectChannel(channel) {
       clearSpeechQueue();
+      clearTtsAudioQueue();
       currentChannel = channel;
       document.querySelectorAll('.channel-btn').forEach(btn => {
         btn.classList.remove('active', 'border-cyan-500/50', 'bg-cyan-950/40');
@@ -686,8 +702,12 @@
       document.getElementById('playerStatus').innerText = 'Canal alterado para: ' + channel;
 
       // Se for canal de áudio e o player ainda não estiver ativo, arma automaticamente o áudio
-      if (channel !== 'text' && !isPlaying) {
-        toggleAudio();
+      if (channel !== 'text') {
+        if (!isPlaying) {
+          toggleAudio();
+        } else {
+          armBackgroundAudioKeepAlive();
+        }
       }
     }
 
@@ -699,6 +719,157 @@
       if (box) {
         box.innerHTML = `<p class="text-slate-500 italic text-sm text-center my-auto">Idioma de legendas: ${lang.toUpperCase()}. Aguardando falas...</p>`;
       }
+    }
+
+    // ----------------------------------------------------
+    // REPRODUÇÃO DE ÁUDIO EM SEGUNDO PLANO / TELA BLOQUEADA (LOCK-SCREEN AUDIO)
+    // ----------------------------------------------------
+    let bgKeepAliveAudio = null;
+
+    function armBackgroundAudioKeepAlive() {
+      try {
+        if (!bgKeepAliveAudio) {
+          bgKeepAliveAudio = document.createElement('audio');
+          bgKeepAliveAudio.id = 'bgKeepAliveAudio';
+          bgKeepAliveAudio.loop = true;
+          bgKeepAliveAudio.setAttribute('playsinline', '');
+          bgKeepAliveAudio.setAttribute('webkit-playsinline', '');
+          // WAV de silêncio de 1s para manter sessão de áudio ativa no iOS/Android
+          bgKeepAliveAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+          document.body.appendChild(bgKeepAliveAudio);
+        }
+        bgKeepAliveAudio.play().catch(() => {});
+
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: roomConfig?.name || 'Palestra Silenciosa',
+            artist: 'Videomappingtech Live',
+            album: 'Tradução Simultânea & Palco Silencioso'
+          });
+          navigator.mediaSession.playbackState = 'playing';
+          navigator.mediaSession.setActionHandler('play', () => {
+            if (!isPlaying) toggleAudio();
+          });
+          navigator.mediaSession.setActionHandler('pause', () => {
+            if (isPlaying) toggleAudio();
+          });
+        }
+      } catch (e) {
+        console.warn('[KeepAlive] Erro ao armar áudio em segundo plano:', e);
+      }
+    }
+
+    const ttsAudioQueue = [];
+    let isTtsPlaying = false;
+    let currentTtsAudioEl = null;
+    let ttsWatchdogTimer = null;
+
+    function clearTtsAudioQueue() {
+      ttsAudioQueue.length = 0;
+      isTtsPlaying = false;
+      if (ttsWatchdogTimer) {
+        clearTimeout(ttsWatchdogTimer);
+        ttsWatchdogTimer = null;
+      }
+      if (currentTtsAudioEl) {
+        try {
+          currentTtsAudioEl.pause();
+          currentTtsAudioEl.src = '';
+        } catch(e) {}
+        currentTtsAudioEl = null;
+      }
+    }
+
+    function playTranslatedAudio(text, lang) {
+      if (!text) return;
+      const clean = text.trim();
+      
+      // Guarda contra duplicação de frases idênticas em curto intervalo
+      if (clean.toLowerCase() === lastSpokenText.toLowerCase() && (Date.now() - lastSpokenTime) < 2500) {
+        return;
+      }
+      lastSpokenText = clean;
+      lastSpokenTime = Date.now();
+
+      if (!isPlaying) {
+        ensureAudioContext();
+        armBackgroundAudioKeepAlive();
+        isPlaying = true;
+        const btn = document.getElementById('togglePlayBtn');
+        const icon = document.getElementById('playIcon');
+        const txt = document.getElementById('playText');
+        if (btn) btn.className = 'bg-rose-600 hover:bg-rose-500 text-white font-bold px-6 py-2.5 rounded-full shadow-lg transition active:scale-95 flex items-center gap-2';
+        if (icon) icon.innerText = '⏸';
+        if (txt) txt.innerText = 'Pausar';
+        const st = document.getElementById('playerStatus');
+        if (st) st.innerText = 'Ouvindo ao vivo (' + currentChannel + ')';
+      }
+
+      ttsAudioQueue.push({ text: clean, lang });
+      if (!isTtsPlaying) {
+        playNextTtsAudio();
+      }
+    }
+
+    function playNextTtsAudio() {
+      if (ttsAudioQueue.length === 0) {
+        isTtsPlaying = false;
+        if (ttsWatchdogTimer) {
+          clearTimeout(ttsWatchdogTimer);
+          ttsWatchdogTimer = null;
+        }
+        currentTtsAudioEl = null;
+        return;
+      }
+
+      const item = ttsAudioQueue.shift();
+      if (!item || !item.text) {
+        playNextTtsAudio();
+        return;
+      }
+
+      isTtsPlaying = true;
+      const voice = currentSpeakerProfile?.voice || 'male_deep';
+      const speed = currentSpeakerProfile?.speed || 1.05;
+      const pitch = currentSpeakerProfile?.pitch || 0;
+      const url = `/api/tts?lang=${encodeURIComponent(item.lang)}&text=${encodeURIComponent(item.text)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}`;
+      const audio = new Audio(url);
+      currentTtsAudioEl = audio;
+      audio.setAttribute('playsinline', '');
+      audio.setAttribute('webkit-playsinline', '');
+      
+      // Se houver fila acumulada, aumenta ligeiramente a velocidade
+      audio.playbackRate = ttsAudioQueue.length > 1 ? (speed * 1.15) : speed;
+
+      const finishCurrent = () => {
+        if (ttsWatchdogTimer) {
+          clearTimeout(ttsWatchdogTimer);
+          ttsWatchdogTimer = null;
+        }
+        currentTtsAudioEl = null;
+        isTtsPlaying = false;
+        playNextTtsAudio();
+      };
+
+      audio.onended = finishCurrent;
+      audio.onerror = (err) => {
+        console.warn('[Audio TTS] Falha no stream do servidor, utilizando síntese local como contingência:', err);
+        speakTranslatedText(item.text, item.lang);
+        finishCurrent();
+      };
+
+      // Watchdog para destravar a fila caso o navegador suspenda o evento ended
+      const maxMs = Math.max(3000, (item.text.length * 100) + 2000);
+      ttsWatchdogTimer = setTimeout(() => {
+        console.warn('[Audio TTS Watchdog] Liberando fila de áudio');
+        finishCurrent();
+      }, maxMs);
+
+      audio.play().catch(playErr => {
+        console.warn('[Audio TTS] Play bloqueado, fallback para sintetizador:', playErr);
+        speakTranslatedText(item.text, item.lang);
+        finishCurrent();
+      });
     }
 
     const speechQueue = [];
@@ -800,11 +971,22 @@
         utterance.lang = item.lang === 'en' ? 'en-US' : (item.lang === 'es' ? 'es-ES' : item.lang);
 
         if (cachedVoices.length === 0) refreshVoices();
-        const voice = cachedVoices.find(v => v.lang.toLowerCase().startsWith(langPrefix));
+        const vProfile = currentSpeakerProfile?.voice || 'male_deep';
+        const isFemale = vProfile.includes('female') || vProfile === 'nova' || vProfile === 'shimmer';
+        
+        let voice = cachedVoices.find(v => {
+          const lMatch = v.lang.toLowerCase().startsWith(langPrefix);
+          if (!lMatch) return false;
+          const vName = v.name.toLowerCase();
+          return isFemale 
+            ? (vName.includes('female') || vName.includes('maria') || vName.includes('helena') || vName.includes('zira') || vName.includes('samantha') || vName.includes('luciana'))
+            : (vName.includes('male') || vName.includes('daniel') || vName.includes('david') || vName.includes('jorge') || vName.includes('antonio'));
+        }) || cachedVoices.find(v => v.lang.toLowerCase().startsWith(langPrefix));
         if (voice) utterance.voice = voice;
 
-        // Se houver frases acumuladas na fila, acelera ligeiramente para manter simultaneidade perfeita
-        utterance.rate = speechQueue.length > 1 ? 1.25 : 1.1;
+        utterance.pitch = Math.max(0.6, Math.min(1.6, 1 + ((currentSpeakerProfile?.pitch || 0) * 0.08)));
+        const baseRate = currentSpeakerProfile?.speed || 1.05;
+        utterance.rate = speechQueue.length > 1 ? baseRate * 1.15 : baseRate;
 
         if (gainNode) {
           utterance.volume = gainNode.gain.value;

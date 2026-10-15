@@ -6,7 +6,30 @@
   <title>Telão de Legendas ao Vivo | Videomappingtech Stage Screen</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body.theme-black { background-color: #000000; color: #ffffff; }
+    body.theme-transparent {
+      background: transparent !important;
+      background-color: transparent !important;
+      color: #ffffff;
+    }
+    body.theme-transparent .subtitle-line {
+      text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 4px 16px rgba(0,0,0,0.95);
+      -webkit-text-stroke: 1.5px rgba(0,0,0,0.9);
+    }
+    body.theme-lowerthird {
+      background: transparent !important;
+      background-color: transparent !important;
+      color: #ffffff;
+    }
+    body.theme-lowerthird .subtitle-line {
+      background: rgba(0, 0, 0, 0.78);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 18px;
+      padding: 10px 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      display: inline-flex;
+    }
     body.theme-chroma {
       background-color: #00ff00 !important;
       color: #ffffff !important;
@@ -24,6 +47,7 @@
       opacity: 0.6;
       font-weight: 600;
     }
+    body.theme-black { background-color: #000000; color: #ffffff; }
     body.theme-dark { background-color: #090d16; color: #e2e8f0; }
 
     .subtitle-line {
@@ -35,17 +59,33 @@
     }
   </style>
 </head>
-<body class="theme-chroma min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none">
+<body class="theme-lowerthird min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none">
 
   <!-- Barra de Configurações (Oculta automaticamente em apresentação) -->
-  <header id="controlsHeader" class="flex items-center justify-between opacity-40 hover:opacity-100 transition-opacity duration-300 bg-slate-900/60 backdrop-blur p-3 rounded-xl border border-slate-800">
+  <header id="controlsHeader" class="flex flex-wrap items-center justify-between opacity-40 hover:opacity-100 transition-opacity duration-300 bg-slate-900/60 backdrop-blur p-3 rounded-xl border border-slate-800 gap-2">
     <div class="flex items-center gap-3">
       <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">Videomappingtech Screen</span>
       <span id="roomTag" class="text-xs bg-slate-800 px-2.5 py-1 rounded-md text-slate-300 font-mono">Sala: demo</span>
       <span id="liveDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
     </div>
 
-    <div class="flex items-center gap-3">
+    <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+      <label class="text-xs text-slate-300">Posição:</label>
+      <select id="screenPositionSelect" onchange="changePosition(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
+        <option value="pos-bottom" selected>⬇️ Rodapé (Inferior)</option>
+        <option value="pos-top">⬆️ Topo (Superior)</option>
+        <option value="pos-center">⏺️ Centro da Tela</option>
+      </select>
+
+      <label class="text-xs text-slate-300">Fundo:</label>
+      <select id="screenThemeSelect" onchange="changeTheme(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
+        <option value="theme-transparent">🪟 100% Transparente (Sobreposição)</option>
+        <option value="theme-lowerthird" selected>⬛ Tarja Translúcida (Lower-Third)</option>
+        <option value="theme-chroma">🟢 Verde Chroma Key (vMix/OBS)</option>
+        <option value="theme-black">⚫ Preto (LED/Projetor)</option>
+        <option value="theme-dark">🔵 Azul Escuro</option>
+      </select>
+
       <label class="text-xs text-slate-300">Idioma:</label>
       <select id="screenLangSelect" onchange="changeScreenLang(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
         <option value="all">Todas / Tradução Ativa</option>
@@ -61,13 +101,6 @@
         <option value="none">Ocultar Marca</option>
       </select>
 
-      <label class="text-xs text-slate-300">Fundo:</label>
-      <select id="screenThemeSelect" onchange="changeTheme(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
-        <option value="theme-chroma" selected>Verde Chroma Key (vMix/OBS)</option>
-        <option value="theme-black">Preto (LED/Projetor)</option>
-        <option value="theme-dark">Azul Escuro</option>
-      </select>
-
       <div class="flex items-center gap-1">
         <button onclick="adjustFontSize(-4)" class="bg-slate-800 hover:bg-slate-700 text-xs px-2.5 py-1 rounded text-slate-200 font-bold">A-</button>
         <button onclick="adjustFontSize(4)" class="bg-slate-800 hover:bg-slate-700 text-xs px-2.5 py-1 rounded text-slate-200 font-bold">A+</button>
@@ -79,8 +112,8 @@
     </div>
   </header>
 
-  <!-- Área Central de Legendas -->
-  <main class="flex-1 flex flex-col justify-center items-center text-center px-6">
+  <!-- Área de Legendas com Posicionamento Dinâmico -->
+  <main id="screenMainArea" class="flex-1 flex flex-col items-center text-center px-6 transition-all duration-300 justify-end pb-10">
     <div id="subtitlesContainer" class="w-full max-w-5xl flex flex-col gap-4 text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-normal">
       <p class="text-slate-600 text-2xl font-normal italic">Aguardando início do áudio no palco...</p>
     </div>
@@ -99,7 +132,7 @@
 
   <script>
     const urlParams = new URLSearchParams(window.location.search);
-    const roomId = urlParams.get('room') || 'demo';
+    const roomId = decodeURIComponent(urlParams.get('room') || urlParams.get('roomId') || 'palco1').trim().toLowerCase();
     document.getElementById('roomTag').innerText = `Sala: ${roomId}`;
 
     let socket = null;
@@ -168,7 +201,7 @@
 
     function connectScreenWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}?roomId=${roomId}&role=screen`;
+      const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=screen`;
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
@@ -184,6 +217,9 @@
             screenMode = data.screenMode || 'single';
             if (data.screenTheme) {
               changeTheme(data.screenTheme);
+            }
+            if (data.screenPosition) {
+              changePosition(data.screenPosition);
             }
             if (data.screenLogo) {
               changeScreenLogo(data.screenLogo);
@@ -302,10 +338,32 @@
       }
     }
 
+    let currentTheme = urlParams.get('theme') || 'theme-lowerthird';
+    let currentPosition = urlParams.get('pos') || 'pos-bottom';
+
+    function changePosition(pos) {
+      currentPosition = pos || 'pos-bottom';
+      const main = document.getElementById('screenMainArea');
+      if (main) {
+        main.classList.remove('justify-end', 'justify-start', 'justify-center', 'pb-10', 'pb-12', 'pt-12', 'pt-4', 'py-6');
+        if (currentPosition === 'pos-top') {
+          main.classList.add('justify-start', 'pt-12', 'pb-4');
+        } else if (currentPosition === 'pos-center') {
+          main.classList.add('justify-center', 'py-6');
+        } else {
+          // pos-bottom (rodapé)
+          main.classList.add('justify-end', 'pb-12', 'pt-4');
+        }
+      }
+      const sel = document.getElementById('screenPositionSelect');
+      if (sel) sel.value = currentPosition;
+    }
+
     function changeTheme(themeName) {
-      document.body.className = `${themeName} min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none`;
+      currentTheme = themeName || 'theme-lowerthird';
+      document.body.className = `${currentTheme} min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none`;
       const sel = document.getElementById('screenThemeSelect');
-      if (sel) sel.value = themeName;
+      if (sel) sel.value = currentTheme;
     }
 
     function adjustFontSize(delta) {
@@ -323,8 +381,8 @@
       }
     }
 
-    const initialTheme = urlParams.get('theme') || 'theme-chroma';
-    changeTheme(initialTheme);
+    changePosition(currentPosition);
+    changeTheme(currentTheme);
     loadRoomDetails();
     connectScreenWS();
   </script>

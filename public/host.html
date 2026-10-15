@@ -167,7 +167,7 @@
             <span class="text-[11px] text-slate-400">Comando remoto em tempo real</span>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <div>
               <label class="block text-[11px] font-medium text-slate-400 mb-1">Modo de Exibição no Telão:</label>
               <select id="hostScreenModeSelect" onchange="broadcastScreenConfig()"
@@ -190,9 +190,21 @@
             </div>
 
             <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Posicionamento no Telão:</label>
+              <select id="hostScreenPositionSelect" onchange="broadcastScreenConfig()"
+                class="w-full bg-slate-900 border border-cyan-500/70 rounded-lg px-3 py-1.5 text-xs text-cyan-300 font-semibold focus:outline-none focus:border-cyan-400">
+                <option value="pos-bottom" selected>⬇️ Rodapé (Inferior)</option>
+                <option value="pos-top">⬆️ Topo (Superior)</option>
+                <option value="pos-center">⏺️ Centro da Tela</option>
+              </select>
+            </div>
+
+            <div>
               <label class="block text-[11px] font-medium text-slate-400 mb-1">Fundo da Legenda / Telão:</label>
               <select id="hostScreenThemeSelect" onchange="broadcastScreenConfig()"
                 class="w-full bg-slate-900 border border-emerald-500/70 rounded-lg px-3 py-1.5 text-xs text-emerald-300 font-semibold focus:outline-none focus:border-emerald-400">
+                <option value="theme-transparent">🪟 100% Transparente (Overlay)</option>
+                <option value="theme-lowerthird">⬛ Tarja Translúcida (Lower-Third)</option>
                 <option value="theme-chroma" selected>🟢 Verde Chroma Key (vMix/OBS)</option>
                 <option value="theme-black">⚫ Preto Puro (Painel LED/Projetor)</option>
                 <option value="theme-dark">🔵 Azul Escuro Stage</option>
@@ -207,6 +219,52 @@
                 <option value="client">Logo do Cliente / Evento</option>
                 <option value="none">Nenhuma (Sem Marca)</option>
               </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- CALIBRAÇÃO DE VOZ DO PALESTRANTE (TIMBRE IA & NATURALIDADE) -->
+        <div class="bg-slate-950 border border-purple-900/50 rounded-xl p-4 flex flex-col gap-3">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+            <span class="text-xs font-bold text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>🎙️</span> Calibração de Voz do Palestrante (Timbre IA)
+            </span>
+            <span id="detectedPitchBadge" class="text-[11px] bg-purple-950/80 text-purple-300 border border-purple-800/60 px-2.5 py-0.5 rounded-full font-mono">
+              Aguardando transmissão para analisar timbre...
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Perfil de Timbre / Voz:</label>
+              <select id="speakerTimbreSelect" onchange="broadcastSpeakerVoiceProfile()"
+                class="w-full bg-slate-900 border border-purple-500/60 rounded-lg px-3 py-1.5 text-xs text-purple-200 font-semibold focus:outline-none focus:border-purple-400">
+                <option value="auto_match" selected>🎯 Auto-Match (Clonar Timbre do Microfone)</option>
+                <option value="male_deep">👨 Masculino Profundo (Barítono / Tom Onyx)</option>
+                <option value="male_natural">👨 Masculino Natural (Orador / Tom Echo)</option>
+                <option value="female_warm">👩 Feminino Envolvente (Expressivo / Tom Nova)</option>
+                <option value="female_clear">👩 Feminino Claro (Suave / Tom Shimmer)</option>
+              </select>
+            </div>
+
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="text-[11px] font-medium text-slate-400">Ajuste de Tom (Pitch):</label>
+                <span id="pitchValueText" class="text-[10px] text-purple-300 font-mono">0 st</span>
+              </div>
+              <input type="range" id="speakerPitchRange" min="-5" max="5" value="0" step="1"
+                oninput="document.getElementById('pitchValueText').innerText = (this.value > 0 ? '+' : '') + this.value + ' st'; broadcastSpeakerVoiceProfile();"
+                class="w-full accent-purple-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg">
+            </div>
+
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="text-[11px] font-medium text-slate-400">Cadência / Velocidade:</label>
+                <span id="speedValueText" class="text-[10px] text-purple-300 font-mono">1.05x</span>
+              </div>
+              <input type="range" id="speakerSpeedRange" min="0.85" max="1.30" value="1.05" step="0.05"
+                oninput="document.getElementById('speedValueText').innerText = parseFloat(this.value).toFixed(2) + 'x'; broadcastSpeakerVoiceProfile();"
+                class="w-full accent-purple-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg">
             </div>
           </div>
         </div>
@@ -416,7 +474,7 @@
 
   <script>
     const urlParams = new URLSearchParams(window.location.search);
-    let roomId = urlParams.get('room') || 'palco1';
+    let roomId = decodeURIComponent(urlParams.get('room') || urlParams.get('roomId') || 'palco1').trim().toLowerCase();
     document.getElementById('roomIdInput').value = roomId;
 
     let isBroadcasting = false;
@@ -691,7 +749,8 @@
     }
 
     function updateRoom(newId) {
-      roomId = newId.trim();
+      roomId = decodeURIComponent(newId || 'palco1').trim().toLowerCase();
+      document.getElementById('roomIdInput').value = roomId;
       renderQRCode();
       loadRoomDetails();
       if (socket) {
@@ -705,14 +764,35 @@
       navigator.clipboard.writeText(url).then(() => alert('Link copiado para a área de transferência!'));
     }
 
+    function broadcastSpeakerVoiceProfile() {
+      const timbreSelect = document.getElementById('speakerTimbreSelect');
+      let voice = timbreSelect ? timbreSelect.value : 'auto_match';
+      if (voice === 'auto_match') {
+        voice = window.autoDetectedSpeakerVoice || 'male_deep';
+      }
+      const pitch = parseFloat(document.getElementById('speakerPitchRange')?.value || 0);
+      const speed = parseFloat(document.getElementById('speakerSpeedRange')?.value || 1.05);
+
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'speaker_voice_profile',
+          voice,
+          pitch,
+          speed
+        }));
+      }
+    }
+
     function connectHostWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}?roomId=${roomId}&role=host`;
+      const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=host`;
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
         document.getElementById('connStatus').className = 'text-xs bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 px-3 py-1 rounded-full font-medium';
         document.getElementById('connStatus').innerText = '● Online (Sala ' + roomId + ')';
+        broadcastAudioMeta();
+        broadcastSpeakerVoiceProfile();
       };
 
       socket.onmessage = (event) => {
@@ -743,7 +823,7 @@
           const audioConstraints = {
             echoCancellation: false,
             noiseSuppression: false,
-            autoGainControl: false
+            autoGainControl: true
           };
           if (selectedDeviceId) {
             audioConstraints.deviceId = { ideal: selectedDeviceId };
@@ -764,12 +844,38 @@
 
           const source = audioContext.createMediaStreamSource(audioStream);
           const analyser = audioContext.createAnalyser();
-          analyser.fftSize = 256;
+          analyser.fftSize = 512;
           analyser.smoothingTimeConstant = 0.3;
           source.connect(analyser);
 
-          // VU Meter com cálculo RMS real de onda no domínio do tempo
+          // VU Meter com cálculo RMS e estimador de pitch F0 para Auto-Match de Timbre
           const dataArray = new Uint8Array(analyser.fftSize);
+          let lastPitchCalcTime = 0;
+          let pitchSum = 0;
+          let pitchSamplesCount = 0;
+
+          function estimatePitch(buf, sampleRate) {
+            const minPeriod = Math.floor(sampleRate / 340);
+            const maxPeriod = Math.floor(sampleRate / 75);
+            let bestCorr = 0;
+            let bestPeriod = -1;
+
+            for (let period = minPeriod; period < maxPeriod; period++) {
+              let corr = 0;
+              for (let i = 0; i < buf.length - period; i++) {
+                corr += (buf[i] - 128) * (buf[i + period] - 128);
+              }
+              if (corr > bestCorr) {
+                bestCorr = corr;
+                bestPeriod = period;
+              }
+            }
+            if (bestCorr > 35000 && bestPeriod > 0) {
+              return Math.round(sampleRate / bestPeriod);
+            }
+            return 0;
+          }
+
           function updateVU() {
             if (!isBroadcasting) return;
             analyser.getByteTimeDomainData(dataArray);
@@ -779,12 +885,36 @@
               sum += val * val;
             }
             const rms = Math.sqrt(sum / dataArray.length);
-            // Multiplicador calibrado para resposta visual rápida e precisa da voz
             const pct = Math.min(100, Math.round(rms * 400));
             const vuBar = document.getElementById('vuBar');
             const vuText = document.getElementById('vuLevelText');
             if (vuBar) vuBar.style.width = pct + '%';
             if (vuText) vuText.innerText = pct + '%';
+
+            // Calibração em tempo real do tom de voz do palestrante
+            const now = Date.now();
+            if (rms > 0.035 && (now - lastPitchCalcTime) > 300) {
+              lastPitchCalcTime = now;
+              const f0 = estimatePitch(dataArray, audioContext.sampleRate);
+              if (f0 >= 75 && f0 <= 320) {
+                pitchSum += f0;
+                pitchSamplesCount++;
+                const avgPitch = Math.round(pitchSum / pitchSamplesCount);
+                const isMale = avgPitch < 160;
+                window.autoDetectedSpeakerVoice = isMale ? 'male_deep' : 'female_warm';
+
+                const badge = document.getElementById('detectedPitchBadge');
+                if (badge) {
+                  const sel = document.getElementById('speakerTimbreSelect')?.value;
+                  const profileLabel = isMale ? `Masculino Barítono (~${avgPitch}Hz • Tom Onyx)` : `Feminino Expressivo (~${avgPitch}Hz • Tom Nova)`;
+                  badge.innerText = `🎯 Timbre Detectado: ${profileLabel}`;
+                  if (sel === 'auto_match') {
+                    broadcastSpeakerVoiceProfile();
+                  }
+                }
+              }
+            }
+
             requestAnimationFrame(updateVU);
           }
           requestAnimationFrame(updateVU);
@@ -892,7 +1022,7 @@
 
               let currentInterimEl = null;
               const finalizedIndices = new Set();
-              const committedPerIndex = {};
+              const committedCharsPerIndex = {};
               let pauseDebounceTimer = null;
               let lastCommittedClause = '';
               let lastCommittedTime = 0;
@@ -934,7 +1064,7 @@
                 const trimmed = (clauseText || '').trim();
                 if (!trimmed) return;
 
-                // Proteção contra duplicação de frases/palavras idênticas em curto intervalo
+                // Proteção contra duplicação de frases idênticas em curto intervalo
                 if (trimmed.toLowerCase() === lastCommittedClause.toLowerCase() && (Date.now() - lastCommittedTime) < 1800) {
                   return;
                 }
@@ -955,7 +1085,6 @@
 
               window.speechRecognizer.onresult = (evt) => {
                 for (let i = evt.resultIndex; i < evt.results.length; ++i) {
-                  // Se este bloco de fala já foi finalizado e despachado anteriormente, ignora totalmente
                   if (finalizedIndices.has(i)) continue;
 
                   const item = evt.results[i];
@@ -963,86 +1092,78 @@
                   const fullTranscript = (item[0] && item[0].transcript) ? item[0].transcript.trim() : '';
                   if (!fullTranscript) continue;
 
-                  if (committedPerIndex[i] === undefined) {
-                    committedPerIndex[i] = 0;
-                  }
+                  const charStart = committedCharsPerIndex[i] || 0;
+                  const safeStart = Math.min(charStart, fullTranscript.length);
+                  let uncommitted = fullTranscript.slice(safeStart).trim();
 
-                  const allWords = fullTranscript.split(/\s+/).filter(Boolean);
-                  const startIdx = committedPerIndex[i] || 0;
-                  const uncommittedWords = allWords.slice(startIdx);
-                  const uncommitted = uncommittedWords.join(' ');
-
-                  // Exibe em itálico provisório apenas o trecho que ainda não virou legenda final
-                  updateInterimTranscript(uncommitted);
-
-                  // 1. O navegador sinalizou conclusão definitiva deste bloco de fala
+                  // Se a fala finalizou pelo motor do navegador, despacha o texto restante integralmente
                   if (isSpeechFinal) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    const pendingWords = allWords.slice(committedPerIndex[i] || 0);
-                    if (pendingWords.length > 0) {
-                      commitClause(pendingWords.join(' '));
+                    if (uncommitted && uncommitted.length > 0) {
+                      commitClause(uncommitted);
                     }
                     finalizedIndices.add(i);
-                    delete committedPerIndex[i];
+                    delete committedCharsPerIndex[i];
                     updateInterimTranscript('');
                     continue;
                   }
 
-                  // 2. Quebra por pontuação natural (. ! ? , ; :) com pelo menos 3 palavras
-                  let punctIndex = -1;
-                  for (let w = 0; w < uncommittedWords.length; w++) {
-                    if (/[.!?]$/.test(uncommittedWords[w])) {
-                      punctIndex = w;
-                      break;
-                    } else if (/[,;:]$/.test(uncommittedWords[w]) && w >= 2) {
-                      punctIndex = w;
-                      break;
+                  // Exibe provisoriamente em itálico para feedback instantâneo sem cortar o início
+                  updateInterimTranscript(uncommitted);
+
+                  // 1. Quebra por pontuação natural (. ! ? , ; :)
+                  const punctMatch = uncommitted.match(/([.!?]|[,;:])(\s+|$)/);
+                  if (punctMatch && punctMatch.index !== undefined) {
+                    const punctEndIndex = punctMatch.index + punctMatch[1].length;
+                    const wordsBefore = uncommitted.slice(0, punctEndIndex).split(/\s+/).filter(Boolean);
+
+                    // Só quebra vírgula se houver pelo menos 3 palavras antes para manter a frase com contexto
+                    if (wordsBefore.length >= 3 || /[.!?]/.test(punctMatch[1])) {
+                      if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
+                      const clause = uncommitted.slice(0, punctEndIndex).trim();
+                      committedCharsPerIndex[i] = safeStart + punctEndIndex;
+                      commitClause(clause);
+
+                      const remaining = fullTranscript.slice(committedCharsPerIndex[i]).trim();
+                      updateInterimTranscript(remaining);
+                      continue;
                     }
                   }
 
-                  if (punctIndex >= 0) {
+                  // 2. Cadência simultânea para orações contínuas longas (>= 8 palavras sem pontuação)
+                  const words = uncommitted.split(/\s+/).filter(Boolean);
+                  if (words.length >= 8) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    const wordsToCommit = uncommittedWords.slice(0, punctIndex + 1);
-                    const clause = wordsToCommit.join(' ');
-                    committedPerIndex[i] = (committedPerIndex[i] || 0) + wordsToCommit.length;
-                    commitClause(clause);
+                    const chunkWords = words.slice(0, 6);
+                    const chunkText = chunkWords.join(' ');
+                    const matchIndex = uncommitted.indexOf(chunkText);
+                    const chunkEnd = (matchIndex >= 0 ? matchIndex : 0) + chunkText.length;
 
-                    const remaining = allWords.slice(committedPerIndex[i]).join(' ');
+                    committedCharsPerIndex[i] = safeStart + chunkEnd;
+                    commitClause(chunkText);
+
+                    const remaining = fullTranscript.slice(committedCharsPerIndex[i]).trim();
                     updateInterimTranscript(remaining);
                     continue;
                   }
 
-                  // 3. Cadência simultânea para orações longas contínuas (>= 7 palavras sem pontuação)
-                  if (uncommittedWords.length >= 7) {
-                    if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    const wordsToCommit = uncommittedWords.slice(0, 6);
-                    const clause = wordsToCommit.join(' ');
-                    committedPerIndex[i] = (committedPerIndex[i] || 0) + wordsToCommit.length;
-                    commitClause(clause);
-
-                    const remaining = allWords.slice(committedPerIndex[i]).join(' ');
-                    updateInterimTranscript(remaining);
-                    continue;
-                  }
-
-                  // 4. Cadência de pausa / respiração natural do orador (350ms)
-                  if (uncommittedWords.length > 0) {
+                  // 3. Cadência de pausa / respiração natural do orador (380ms de silêncio)
+                  if (words.length >= 2) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
                     const targetIdx = i;
                     pauseDebounceTimer = setTimeout(() => {
                       if (finalizedIndices.has(targetIdx)) return;
                       const curItem = evt.results[targetIdx];
                       if (!curItem || !curItem[0]) return;
-                      const curWords = curItem[0].transcript.trim().split(/\s+/).filter(Boolean);
-                      const curStart = committedPerIndex[targetIdx] || 0;
-                      const pending = curWords.slice(curStart);
+                      const curFull = curItem[0].transcript.trim();
+                      const curStart = committedCharsPerIndex[targetIdx] || 0;
+                      const pending = curFull.slice(curStart).trim();
                       if (pending.length > 0) {
-                        const clause = pending.join(' ');
-                        committedPerIndex[targetIdx] = curStart + pending.length;
-                        commitClause(clause);
+                        committedCharsPerIndex[targetIdx] = curFull.length;
+                        commitClause(pending);
                         updateInterimTranscript('');
                       }
-                    }, 350);
+                    }, 380);
                   }
                 }
               };
@@ -1461,7 +1582,8 @@
       const mode = document.getElementById('hostScreenModeSelect').value;
       const lang = document.getElementById('hostScreenLangSelect').value;
       const logo = document.getElementById('hostScreenLogoSelect') ? document.getElementById('hostScreenLogoSelect').value : 'vmp';
-      const theme = document.getElementById('hostScreenThemeSelect') ? document.getElementById('hostScreenThemeSelect').value : 'theme-chroma';
+      const theme = document.getElementById('hostScreenThemeSelect') ? document.getElementById('hostScreenThemeSelect').value : 'theme-lowerthird';
+      const position = document.getElementById('hostScreenPositionSelect') ? document.getElementById('hostScreenPositionSelect').value : 'pos-bottom';
       
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
@@ -1469,6 +1591,7 @@
           screenMode: mode,
           screenLogo: logo,
           screenTheme: theme,
+          screenPosition: position,
           selectedLangs: lang === 'all' ? ['original', 'en', 'es'] : (mode === 'bilingual' ? ['original', lang] : [lang])
         }));
       }
