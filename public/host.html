@@ -308,15 +308,16 @@
           
           let icon = '🎙️';
           let category = 'Mic';
-          if (lower.includes('usb') || lower.includes('codec') || lower.includes('scarlett') || 
-              lower.includes('behringer') || lower.includes('focusrite') || lower.includes('yamaha') || 
-              lower.includes('interface') || lower.includes('asio') || lower.includes('line') || 
-              lower.includes('linha') || lower.includes('mix') || lower.includes('soundcraft') ||
-              lower.includes('presonus') || lower.includes('komplete') || lower.includes('roland') ||
-              lower.includes('stereo mix') || lower.includes('cable') || lower.includes('virtual')) {
+          if (lower.includes('elgato') || lower.includes('wave') || lower.includes('usb') || lower.includes('codec') || 
+              lower.includes('scarlett') || lower.includes('behringer') || lower.includes('focusrite') || 
+              lower.includes('yamaha') || lower.includes('interface') || lower.includes('asio') || 
+              lower.includes('line') || lower.includes('linha') || lower.includes('mix') || 
+              lower.includes('soundcraft') || lower.includes('presonus') || lower.includes('komplete') || 
+              lower.includes('roland') || lower.includes('stereo mix') || lower.includes('cable') || 
+              lower.includes('virtual') || lower.includes('shure') || lower.includes('rode')) {
             icon = '🎛️';
-            category = 'Interface / Mesa';
-          } else if (lower.includes('headset') || lower.includes('fone')) {
+            category = 'Interface / USB';
+          } else if (lower.includes('headset') || lower.includes('headphone')) {
             icon = '🎧';
             category = 'Headset';
           }
@@ -415,8 +416,8 @@
           audioStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
 
           const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          // Abre na taxa nativa de hardware da interface/mic (ex: 48kHz na Elgato) para evitar silêncio no Windows
           audioContext = new AudioCtx({
-            sampleRate: 16000,
             latencyHint: 'interactive'
           });
 
@@ -427,19 +428,27 @@
 
           const source = audioContext.createMediaStreamSource(audioStream);
           const analyser = audioContext.createAnalyser();
-          analyser.fftSize = 128;
+          analyser.fftSize = 256;
+          analyser.smoothingTimeConstant = 0.3;
           source.connect(analyser);
 
-          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          // VU Meter com cálculo RMS real de onda no domínio do tempo
+          const dataArray = new Uint8Array(analyser.fftSize);
           function updateVU() {
             if (!isBroadcasting) return;
-            analyser.getByteFrequencyData(dataArray);
+            analyser.getByteTimeDomainData(dataArray);
             let sum = 0;
-            for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-            const avg = sum / dataArray.length;
-            const pct = Math.min(100, Math.round((avg / 128) * 100));
-            document.getElementById('vuBar').style.width = pct + '%';
-            document.getElementById('vuLevelText').innerText = pct + '%';
+            for (let i = 0; i < dataArray.length; i++) {
+              const val = (dataArray[i] - 128) / 128;
+              sum += val * val;
+            }
+            const rms = Math.sqrt(sum / dataArray.length);
+            // Multiplicador calibrado para resposta visual rápida e precisa da voz
+            const pct = Math.min(100, Math.round(rms * 400));
+            const vuBar = document.getElementById('vuBar');
+            const vuText = document.getElementById('vuLevelText');
+            if (vuBar) vuBar.style.width = pct + '%';
+            if (vuText) vuText.innerText = pct + '%';
             requestAnimationFrame(updateVU);
           }
           requestAnimationFrame(updateVU);
@@ -487,7 +496,7 @@
           if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({
               type: 'audio_meta',
-              sampleRate: audioContext.sampleRate
+              sampleRate: 16000
             }));
           }
 
@@ -501,13 +510,13 @@
               window.speechRecognizer.lang = document.getElementById('sourceLang').value || 'pt-BR';
 
               let currentInterimEl = null;
-              let committedWordCount = 0;
-              let currentResultIndex = -1;
+              let committedText = '';
+              let activeResultIndex = -1;
               let pauseDebounceTimer = null;
 
               function appendConfirmedTranscript(chunkText) {
                 const box = document.getElementById('hostTranscriptBox');
-                if (!box) return;
+                if (!box || !chunkText) return;
                 if (currentInterimEl && currentInterimEl.parentNode) {
                   currentInterimEl.remove();
                   currentInterimEl = null;
@@ -538,18 +547,18 @@
                 box.scrollTop = box.scrollHeight;
               }
 
-              function commitChunk(wordsToCommit) {
-                if (!wordsToCommit || wordsToCommit.length === 0) return;
-                const chunkText = wordsToCommit.join(' ').trim();
-                if (!chunkText) return;
+              function commitClause(clauseText) {
+                const trimmed = (clauseText || '').trim();
+                if (!trimmed) return;
 
-                committedWordCount += wordsToCommit.length;
-                appendConfirmedTranscript(chunkText);
+                // Registra o trecho comitado para JAMAIS repetir no final
+                committedText += (committedText ? ' ' : '') + trimmed;
+                appendConfirmedTranscript(trimmed);
 
                 if (socket && socket.readyState === WebSocket.OPEN) {
                   socket.send(JSON.stringify({
                     type: 'speech_transcript',
-                    text: chunkText,
+                    text: trimmed,
                     isFinal: true,
                     sourceLang: window.speechRecognizer.lang
                   }));
@@ -560,79 +569,76 @@
                 for (let i = evt.resultIndex; i < evt.results.length; ++i) {
                   const item = evt.results[i];
                   const isSpeechFinal = item.isFinal;
-                  const fullTranscript = item[0]?.transcript || '';
+                  const fullTranscript = (item[0] && item[0].transcript) ? item[0].transcript.trim() : '';
 
-                  if (i !== currentResultIndex) {
-                    currentResultIndex = i;
-                    committedWordCount = 0;
+                  // Se o navegador iniciou um novo bloco de fala
+                  if (i !== activeResultIndex) {
+                    activeResultIndex = i;
+                    committedText = '';
                   }
 
-                  const allWords = fullTranscript.trim().split(/\s+/).filter(Boolean);
-                  const uncommittedWords = allWords.slice(committedWordCount);
+                  // Obtém com precisão matemática apenas o que ainda NÃO foi comitado
+                  let uncommitted = fullTranscript;
+                  if (committedText && uncommitted.startsWith(committedText)) {
+                    uncommitted = uncommitted.substring(committedText.length).trim();
+                  }
 
-                  // Preview em tempo real da fala em formação para o monitor e telão
-                  const uncommittedText = uncommittedWords.join(' ');
-                  updateInterimTranscript(uncommittedText);
+                  // Mostra o texto ao vivo se formando sem quebrar palavras
+                  updateInterimTranscript(uncommitted);
 
-                  if (socket && socket.readyState === WebSocket.OPEN && uncommittedText) {
+                  if (socket && socket.readyState === WebSocket.OPEN && uncommitted) {
                     socket.send(JSON.stringify({
                       type: 'speech_transcript',
-                      text: uncommittedText,
+                      text: uncommitted,
                       isFinal: false,
                       sourceLang: window.speechRecognizer.lang
                     }));
                   }
 
+                  // Se o navegador finalizou este bloco de fala por completo
                   if (isSpeechFinal) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    if (uncommittedWords.length > 0) {
-                      commitChunk(uncommittedWords);
+                    if (uncommitted) {
+                      commitClause(uncommitted);
                     }
-                    committedWordCount = 0;
+                    committedText = '';
                     updateInterimTranscript('');
                     continue;
                   }
 
-                  // 1. Quebra imediata por pontuação natural (vírgula, ponto, exclamação, dois pontos)
-                  let punctuationBreakIdx = -1;
-                  for (let w = 0; w < uncommittedWords.length; w++) {
-                    if (/[.,!?;:]$/.test(uncommittedWords[w])) {
-                      punctuationBreakIdx = w;
+                  // 1. Quebra apenas em pontuação natural de fim de oração (. ! ?) ou vírgula após ideia longa
+                  const words = uncommitted.split(/\s+/).filter(Boolean);
+                  let punctIndex = -1;
+                  for (let w = 0; w < words.length; w++) {
+                    if (/[.!?]$/.test(words[w])) {
+                      punctIndex = w;
+                      break;
+                    } else if (/[,;:]$/.test(words[w]) && w >= 5) {
+                      punctIndex = w;
                       break;
                     }
                   }
 
-                  if (punctuationBreakIdx >= 1) {
+                  if (punctIndex >= 0) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    const chunk = uncommittedWords.slice(0, punctuationBreakIdx + 1);
-                    commitChunk(chunk);
-                    const remaining = allWords.slice(committedWordCount).join(' ');
+                    const clause = words.slice(0, punctIndex + 1).join(' ');
+                    commitClause(clause);
+                    const remaining = words.slice(punctIndex + 1).join(' ');
                     updateInterimTranscript(remaining);
                     continue;
                   }
 
-                  // 2. Quebra por bloco de tradução simultânea (3 a 4 palavras)
-                  // Dispara imediatamente para traduzir enquanto o orador ainda está falando!
-                  if (uncommittedWords.length >= 4) {
+                  // 2. Cadência de respiração / silêncio natural do orador (750ms)
+                  // Quando o locutor termina a frase e respira, despacha a oração completa com sentido gramatical
+                  if (uncommitted) {
                     if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    const chunk = uncommittedWords.slice(0, 4);
-                    commitChunk(chunk);
-                    const remaining = allWords.slice(committedWordCount).join(' ');
-                    updateInterimTranscript(remaining);
-                    continue;
-                  }
-
-                  // 3. Cadência por pausa de respiração / silêncio curto (450ms)
-                  // Se o locutor disse 1, 2 ou 3 palavras e pausou, traduz na hora sem esperar!
-                  if (uncommittedWords.length > 0) {
-                    if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-                    const wordsSnapshot = uncommittedWords.slice();
+                    const textSnapshot = uncommitted;
                     pauseDebounceTimer = setTimeout(() => {
-                      if (wordsSnapshot.length > 0) {
-                        commitChunk(wordsSnapshot);
+                      if (textSnapshot) {
+                        commitClause(textSnapshot);
                         updateInterimTranscript('');
                       }
-                    }, 450);
+                    }, 750);
                   }
                 }
               };
