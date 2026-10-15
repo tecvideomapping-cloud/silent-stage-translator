@@ -534,6 +534,7 @@
         text.innerText = 'Pausar';
         document.getElementById('playerStatus').innerText = 'Ouvindo ao vivo (' + currentChannel + ')';
       } else {
+        clearSpeechQueue();
         btn.className = 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-6 py-2.5 rounded-full shadow-lg transition active:scale-95 flex items-center gap-2';
         icon.innerText = '▶';
         text.innerText = 'Ouvir Áudio';
@@ -573,6 +574,7 @@
     }
 
     function selectChannel(channel) {
+      clearSpeechQueue();
       currentChannel = channel;
       document.querySelectorAll('.channel-btn').forEach(btn => {
         btn.classList.remove('active', 'border-cyan-500/50', 'bg-cyan-950/40');
@@ -597,19 +599,58 @@
       selectedSubtitleLang = lang;
     }
 
+    const speechQueue = [];
+    let isSpeaking = false;
+
+    function clearSpeechQueue() {
+      speechQueue.length = 0;
+      isSpeaking = false;
+      if ('speechSynthesis' in window) {
+        try { window.speechSynthesis.cancel(); } catch (e) {}
+      }
+    }
+
     function speakTranslatedText(text, lang) {
-      if (!isPlaying || !('speechSynthesis' in window)) return;
+      if (!isPlaying || !('speechSynthesis' in window) || !text) return;
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang === 'en' ? 'en-US' : (lang === 'es' ? 'es-ES' : lang);
+      utterance.rate = 1.1; // Ritmo ligeiramente acelerado para cadência simultânea sem atraso
+      if (gainNode) {
+        utterance.volume = gainNode.gain.value;
+      }
+
+      utterance.onend = () => {
+        isSpeaking = false;
+        playNextSpeech();
+      };
+
+      utterance.onerror = () => {
+        isSpeaking = false;
+        playNextSpeech();
+      };
+
+      speechQueue.push(utterance);
+      if (!isSpeaking) {
+        playNextSpeech();
+      }
+    }
+
+    function playNextSpeech() {
+      if (speechQueue.length === 0) {
+        isSpeaking = false;
+        return;
+      }
+      // Se acumular mais de 2 frases, acelera o ritmo para desovar e acompanhar o palestrante
+      if (speechQueue.length > 2) {
+        speechQueue.forEach(u => u.rate = 1.25);
+      }
+      isSpeaking = true;
+      const nextUtterance = speechQueue.shift();
       try {
-        window.speechSynthesis.cancel(); // Evita acúmulo de falas
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = lang === 'en' ? 'en-US' : (lang === 'es' ? 'es-ES' : lang);
-        utterance.rate = 1.05;
-        if (gainNode) {
-          utterance.volume = gainNode.gain.value;
-        }
-        window.speechSynthesis.speak(utterance);
+        window.speechSynthesis.speak(nextUtterance);
       } catch (e) {
-        console.warn('Erro na síntese de voz local:', e);
+        isSpeaking = false;
       }
     }
 

@@ -243,8 +243,8 @@
           screenInterimEl = null;
         }
 
-        // Mantém blocos adequados para visualização sem poluir o telão
-        const maxLines = allowedLangs.length > 1 ? 4 : 2;
+        // Mantém blocos adequados para cadência simultânea contínua
+        const maxLines = allowedLangs.length > 1 ? 5 : 3;
         const existing = container.querySelectorAll('.subtitle-line-final');
         if (existing.length >= maxLines) {
           existing[0].remove();

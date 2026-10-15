@@ -429,61 +429,139 @@
               window.speechRecognizer.lang = document.getElementById('sourceLang').value || 'pt-BR';
 
               let currentInterimEl = null;
+              let committedWordCount = 0;
+              let currentResultIndex = -1;
+              let pauseDebounceTimer = null;
 
-              window.speechRecognizer.onresult = (evt) => {
-                let interimTranscript = '';
-                let finalTranscript = '';
-
-                for (let i = evt.resultIndex; i < evt.results.length; ++i) {
-                  const item = evt.results[i];
-                  if (item.isFinal) {
-                    finalTranscript += item[0].transcript;
-                  } else {
-                    interimTranscript += item[0].transcript;
-                  }
-                }
-
+              function appendConfirmedTranscript(chunkText) {
                 const box = document.getElementById('hostTranscriptBox');
+                if (!box) return;
+                if (currentInterimEl && currentInterimEl.parentNode) {
+                  currentInterimEl.remove();
+                  currentInterimEl = null;
+                }
+                const p = document.createElement('p');
+                p.className = 'text-slate-100 mb-1.5 font-medium border-l-2 border-cyan-400 pl-2 bg-slate-900/40 py-0.5 rounded';
+                p.innerText = chunkText;
+                box.appendChild(p);
+                box.scrollTop = box.scrollHeight;
+              }
 
-                if (finalTranscript.trim()) {
-                  // Se tínhamos linha interim temporária, removemos
+              function updateInterimTranscript(interimText) {
+                const box = document.getElementById('hostTranscriptBox');
+                if (!box) return;
+                if (!interimText) {
                   if (currentInterimEl && currentInterimEl.parentNode) {
                     currentInterimEl.remove();
                     currentInterimEl = null;
                   }
+                  return;
+                }
+                if (!currentInterimEl || !currentInterimEl.parentNode) {
+                  currentInterimEl = document.createElement('p');
+                  currentInterimEl.className = 'text-cyan-400 italic mb-1.5 opacity-80';
+                  box.appendChild(currentInterimEl);
+                }
+                currentInterimEl.innerText = interimText + '...';
+                box.scrollTop = box.scrollHeight;
+              }
 
-                  const p = document.createElement('p');
-                  p.className = 'text-slate-100 mb-1.5 font-medium border-l-2 border-cyan-400 pl-2 bg-slate-900/40 py-0.5 rounded';
-                  p.innerText = finalTranscript.trim();
-                  box.appendChild(p);
-                  box.scrollTop = box.scrollHeight;
+              function commitChunk(wordsToCommit) {
+                if (!wordsToCommit || wordsToCommit.length === 0) return;
+                const chunkText = wordsToCommit.join(' ').trim();
+                if (!chunkText) return;
 
-                  if (socket && socket.readyState === WebSocket.OPEN) {
+                committedWordCount += wordsToCommit.length;
+                appendConfirmedTranscript(chunkText);
+
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                  socket.send(JSON.stringify({
+                    type: 'speech_transcript',
+                    text: chunkText,
+                    isFinal: true,
+                    sourceLang: window.speechRecognizer.lang
+                  }));
+                }
+              }
+
+              window.speechRecognizer.onresult = (evt) => {
+                for (let i = evt.resultIndex; i < evt.results.length; ++i) {
+                  const item = evt.results[i];
+                  const isSpeechFinal = item.isFinal;
+                  const fullTranscript = item[0]?.transcript || '';
+
+                  if (i !== currentResultIndex) {
+                    currentResultIndex = i;
+                    committedWordCount = 0;
+                  }
+
+                  const allWords = fullTranscript.trim().split(/\s+/).filter(Boolean);
+                  const uncommittedWords = allWords.slice(committedWordCount);
+
+                  // Preview em tempo real da fala em formação para o monitor e telão
+                  const uncommittedText = uncommittedWords.join(' ');
+                  updateInterimTranscript(uncommittedText);
+
+                  if (socket && socket.readyState === WebSocket.OPEN && uncommittedText) {
                     socket.send(JSON.stringify({
                       type: 'speech_transcript',
-                      text: finalTranscript.trim(),
-                      isFinal: true,
-                      sourceLang: window.speechRecognizer.lang
-                    }));
-                  }
-                } else if (interimTranscript.trim()) {
-                  // Atualiza a linha temporária no mesmo lugar sem duplicar
-                  if (!currentInterimEl || !currentInterimEl.parentNode) {
-                    currentInterimEl = document.createElement('p');
-                    currentInterimEl.className = 'text-cyan-400 italic mb-1.5 opacity-80';
-                    box.appendChild(currentInterimEl);
-                  }
-                  currentInterimEl.innerText = interimTranscript.trim() + '...';
-                  box.scrollTop = box.scrollHeight;
-
-                  // Envia interim para preview em tempo real (isFinal: false)
-                  if (socket && socket.readyState === WebSocket.OPEN) {
-                    socket.send(JSON.stringify({
-                      type: 'speech_transcript',
-                      text: interimTranscript.trim(),
+                      text: uncommittedText,
                       isFinal: false,
                       sourceLang: window.speechRecognizer.lang
                     }));
+                  }
+
+                  if (isSpeechFinal) {
+                    if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
+                    if (uncommittedWords.length > 0) {
+                      commitChunk(uncommittedWords);
+                    }
+                    committedWordCount = 0;
+                    updateInterimTranscript('');
+                    continue;
+                  }
+
+                  // 1. Quebra imediata por pontuação natural (vírgula, ponto, exclamação, dois pontos)
+                  let punctuationBreakIdx = -1;
+                  for (let w = 0; w < uncommittedWords.length; w++) {
+                    if (/[.,!?;:]$/.test(uncommittedWords[w])) {
+                      punctuationBreakIdx = w;
+                      break;
+                    }
+                  }
+
+                  if (punctuationBreakIdx >= 1) {
+                    if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
+                    const chunk = uncommittedWords.slice(0, punctuationBreakIdx + 1);
+                    commitChunk(chunk);
+                    const remaining = allWords.slice(committedWordCount).join(' ');
+                    updateInterimTranscript(remaining);
+                    continue;
+                  }
+
+                  // 2. Quebra por bloco de tradução simultânea (5 a 6 palavras)
+                  // Dispara imediatamente para traduzir enquanto o orador ainda está falando!
+                  if (uncommittedWords.length >= 6) {
+                    if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
+                    const chunk = uncommittedWords.slice(0, 6);
+                    commitChunk(chunk);
+                    const remaining = allWords.slice(committedWordCount).join(' ');
+                    updateInterimTranscript(remaining);
+                    continue;
+                  }
+
+                  // 3. Cadência por pausa de respiração / silêncio curto (800ms)
+                  // Se o locutor disse 2, 3 ou 4 palavras e pausou, traduz na hora sem esperar!
+                  if (uncommittedWords.length > 0) {
+                    if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
+                    pauseDebounceTimer = setTimeout(() => {
+                      const latestWords = (item[0]?.transcript || '').trim().split(/\s+/).filter(Boolean);
+                      const pending = latestWords.slice(committedWordCount);
+                      if (pending.length > 0) {
+                        commitChunk(pending);
+                        updateInterimTranscript('');
+                      }
+                    }, 800);
                   }
                 }
               };
