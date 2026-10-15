@@ -7,7 +7,23 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body.theme-black { background-color: #000000; color: #ffffff; }
-    body.theme-chroma { background-color: #00ff00; color: #ffffff; text-shadow: 2px 2px 8px #000000; }
+    body.theme-chroma {
+      background-color: #00ff00 !important;
+      color: #ffffff !important;
+    }
+    body.theme-chroma .subtitle-line {
+      text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 4px 12px rgba(0,0,0,0.95);
+      -webkit-text-stroke: 1.5px rgba(0,0,0,0.85);
+    }
+    body.theme-chroma #controlsHeader {
+      background-color: rgba(0, 0, 0, 0.85);
+      border-color: rgba(0, 255, 0, 0.4);
+    }
+    body.theme-chroma footer {
+      color: #000000;
+      opacity: 0.6;
+      font-weight: 600;
+    }
     body.theme-dark { background-color: #090d16; color: #e2e8f0; }
 
     .subtitle-line {
@@ -19,7 +35,7 @@
     }
   </style>
 </head>
-<body class="theme-black min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none">
+<body class="theme-chroma min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none">
 
   <!-- Barra de Configurações (Oculta automaticamente em apresentação) -->
   <header id="controlsHeader" class="flex items-center justify-between opacity-40 hover:opacity-100 transition-opacity duration-300 bg-slate-900/60 backdrop-blur p-3 rounded-xl border border-slate-800">
@@ -46,9 +62,9 @@
       </select>
 
       <label class="text-xs text-slate-300">Fundo:</label>
-      <select onchange="changeTheme(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
+      <select id="screenThemeSelect" onchange="changeTheme(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
+        <option value="theme-chroma" selected>Verde Chroma Key (vMix/OBS)</option>
         <option value="theme-black">Preto (LED/Projetor)</option>
-        <option value="theme-chroma">Verde Chroma Key (vMix/OBS)</option>
         <option value="theme-dark">Azul Escuro</option>
       </select>
 
@@ -166,6 +182,9 @@
           if (data.type === 'screen_config') {
             // Comando vindo do Administrador pelo painel do Host
             screenMode = data.screenMode || 'single';
+            if (data.screenTheme) {
+              changeTheme(data.screenTheme);
+            }
             if (data.screenLogo) {
               changeScreenLogo(data.screenLogo);
             }
@@ -256,6 +275,8 @@
 
     function changeTheme(themeName) {
       document.body.className = `${themeName} min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none`;
+      const sel = document.getElementById('screenThemeSelect');
+      if (sel) sel.value = themeName;
     }
 
     function adjustFontSize(delta) {
@@ -273,6 +294,8 @@
       }
     }
 
+    const initialTheme = urlParams.get('theme') || 'theme-chroma';
+    changeTheme(initialTheme);
     loadRoomDetails();
     connectScreenWS();
   </script>

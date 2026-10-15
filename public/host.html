@@ -108,7 +108,7 @@
             <span class="text-[11px] text-slate-400">Comando remoto em tempo real</span>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <label class="block text-[11px] font-medium text-slate-400 mb-1">Modo de Exibição no Telão:</label>
               <select id="hostScreenModeSelect" onchange="broadcastScreenConfig()"
@@ -131,7 +131,17 @@
             </div>
 
             <div>
-              <label class="block text-[11px] font-medium text-slate-400 mb-1">Logo / Marca d'água (Canto Inferior Direito):</label>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Fundo da Legenda / Telão:</label>
+              <select id="hostScreenThemeSelect" onchange="broadcastScreenConfig()"
+                class="w-full bg-slate-900 border border-emerald-500/70 rounded-lg px-3 py-1.5 text-xs text-emerald-300 font-semibold focus:outline-none focus:border-emerald-400">
+                <option value="theme-chroma" selected>🟢 Verde Chroma Key (vMix/OBS)</option>
+                <option value="theme-black">⚫ Preto Puro (Painel LED/Projetor)</option>
+                <option value="theme-dark">🔵 Azul Escuro Stage</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Marca d'água / Logo:</label>
               <select id="hostScreenLogoSelect" onchange="broadcastScreenConfig()"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
                 <option value="vmp" selected>Video Mapping (Padrão)</option>
@@ -584,12 +594,14 @@
       const mode = document.getElementById('hostScreenModeSelect').value;
       const lang = document.getElementById('hostScreenLangSelect').value;
       const logo = document.getElementById('hostScreenLogoSelect') ? document.getElementById('hostScreenLogoSelect').value : 'vmp';
+      const theme = document.getElementById('hostScreenThemeSelect') ? document.getElementById('hostScreenThemeSelect').value : 'theme-chroma';
       
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
           type: 'set_screen_lang',
           screenMode: mode,
           screenLogo: logo,
+          screenTheme: theme,
           selectedLangs: lang === 'all' ? ['original', 'en', 'es'] : (mode === 'bilingual' ? ['original', lang] : [lang])
         }));
       }
