@@ -22,7 +22,7 @@ class AIPipeline {
     if (this.sttSockets.has(roomId)) return this.sttSockets.get(roomId);
 
     const langCode = sourceLang || 'pt-BR';
-    const dgUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&language=${langCode}&smart_format=true&interim_results=true&encoding=linear16&sample_rate=16000&endpointing=250&utterance_end_ms=800`;
+    const dgUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&language=${langCode}&smart_format=true&interim_results=true&encoding=linear16&sample_rate=16000`;
 
     try {
       const dgSocket = new WebSocket(dgUrl, {

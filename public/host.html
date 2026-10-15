@@ -402,15 +402,14 @@
     async function toggleBroadcast() {
       if (!isBroadcasting) {
         try {
-          const selectedDeviceId = document.getElementById('audioDeviceSelect').value;
+          const selectedDeviceId = document.getElementById('audioDeviceSelect')?.value;
           const audioConstraints = {
-            channelCount: 2, // Suporta estéreo para placas de som e mesas
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false
           };
           if (selectedDeviceId) {
-            audioConstraints.deviceId = { exact: selectedDeviceId };
+            audioConstraints.deviceId = { ideal: selectedDeviceId };
           }
 
           audioStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
@@ -420,6 +419,12 @@
             sampleRate: 16000,
             latencyHint: 'interactive'
           });
+
+          // Garante que o AudioContext está em execução (evita política de autoplay do Chrome)
+          if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+          }
+
           const source = audioContext.createMediaStreamSource(audioStream);
           const analyser = audioContext.createAnalyser();
           analyser.fftSize = 128;
@@ -439,32 +444,18 @@
           }
           requestAnimationFrame(updateVU);
 
-          // Buffer otimizado de 1024 amostras com suporte a 2 canais de entrada da interface
-          scriptProcessor = audioContext.createScriptProcessor(1024, 2, 1);
+          // Buffer padrão de 1024 amostras = ~64ms por bloco (universal para mic e mesas)
+          scriptProcessor = audioContext.createScriptProcessor(1024, 1, 1);
           source.connect(scriptProcessor);
           scriptProcessor.connect(audioContext.destination);
 
+          // Referência global contra Garbage Collector do navegador
+          window.__activeAudioProcessor = scriptProcessor;
+          window.__activeAudioSource = source;
+
           scriptProcessor.onaudioprocess = (e) => {
             if (!isBroadcasting || !socket || socket.readyState !== WebSocket.OPEN) return;
-            
-            const numChannels = e.inputBuffer.numberOfChannels;
-            const channelMode = document.getElementById('audioChannelSelect')?.value || 'mix';
-            let inputData;
-
-            if (numChannels >= 2 && channelMode === 'left') {
-              inputData = e.inputBuffer.getChannelData(0); // Canal 1 (L)
-            } else if (numChannels >= 2 && channelMode === 'right') {
-              inputData = e.inputBuffer.getChannelData(1); // Canal 2 (R)
-            } else if (numChannels >= 2 && channelMode === 'mix') {
-              const ch0 = e.inputBuffer.getChannelData(0);
-              const ch1 = e.inputBuffer.getChannelData(1);
-              inputData = new Float32Array(ch0.length);
-              for (let i = 0; i < ch0.length; i++) {
-                inputData[i] = (ch0[i] + ch1[i]) * 0.5;
-              }
-            } else {
-              inputData = e.inputBuffer.getChannelData(0);
-            }
+            const inputData = e.inputBuffer.getChannelData(0);
             
             // Reamostragem precisa para 16000 Hz estrito
             const sourceRate = audioContext.sampleRate;
