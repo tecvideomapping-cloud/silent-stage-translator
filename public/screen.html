@@ -114,7 +114,7 @@
 <body class="vmt-app vmt-screen theme-lowerthird min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none">
 
   <!-- Barra de Configurações (Oculta automaticamente em apresentação) -->
-  <header class="vmt-screen-masthead"><div class="vmt-brand"><span class="vmt-icon" data-icon="audio-lines"></span><span>Silent Stage AI<small>VIDEOMAPPINGTECH</small></span></div><div class="vmt-screen-actions">      <span id="roomTag" class="text-xs bg-slate-800 px-2.5 py-1 rounded-md text-slate-300 font-mono">Sala: demo</span>      <span id="liveDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>      <button type="button" class="vmt-btn" data-theme-toggle aria-label="Alternar tema dos controles"><span data-icon="sun-moon"></span></button>      <button onclick="toggleFullScreen()" class="bg-cyan-600 hover:bg-cyan-500 text-white text-xs px-3 py-1 rounded font-semibold transition">
+  <header class="vmt-screen-masthead"><div class="vmt-brand"><span class="vmt-icon" data-icon="audio-lines"></span><span>Silent Stage AI<small>VIDEOMAPPINGTECH</small></span></div><div class="vmt-screen-actions">      <span id="roomTag" class="text-xs bg-slate-800 px-2.5 py-1 rounded-md text-slate-300 font-mono">Sala: demo</span>      <span id="liveDot" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>      <button type="button" class="vmt-btn" data-theme-toggle aria-label="Alternar tema dos controles"><span data-icon="sun-moon"></span></button>      <button onclick="toggleFullScreen()" class="bg-cyan-600 hover:bg-cyan-500 text-white text-xs px-3 py-1 rounded font-semibold transition">
         <span data-icon="maximize"></span> Tela Cheia
       </button></div></header>
   <div class="vmt-screen-editorial"><p class="vmt-screen-eyebrow">TELÃO AO VIVO</p><h1>Voz em palavras.<br>Em qualquer palco.</h1><p>Legendas em tempo real, com a composição ideal para sua apresentação.</p></div>
@@ -180,7 +180,10 @@
 
     let currentScreenLang = urlParams.get('lang') || 'all';
     let screenMode = 'single';
-    let allowedLangs = [currentScreenLang];
+    let allowedLangs = currentScreenLang === 'all' ? ['original', 'en', 'es'] : [currentScreenLang];
+
+    let currentTheme = urlParams.get('theme') || 'theme-lowerthird';
+    let currentPosition = urlParams.get('pos') || 'pos-bottom';
 
     let currentScreenLogo = 'vmp';
     let clientLogoUrl = '';
@@ -245,7 +248,7 @@
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
-        document.getElementById('liveDot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+        const dot = document.getElementById('liveDot'); if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
       };
 
       socket.onmessage = (event) => {
@@ -285,12 +288,19 @@
             if (currentScreenLang === 'all' || allowedLangs.includes(data.lang) || allowedLangs.includes('all')) {
               displaySubtitle(data.text, isFinalSub, data.lang);
             }
+          } else if (data.type === 'subtitle_catchup') {
+            if (Array.isArray(data.items) && data.items.length > 0) {
+              const lastItem = data.items[data.items.length - 1];
+              if (lastItem && lastItem.text) {
+                displaySubtitle(lastItem.text, true, lastItem.lang || 'original');
+              }
+            }
           }
         } catch (e) {}
       };
 
       socket.onclose = () => {
-        document.getElementById('liveDot').className = 'w-2.5 h-2.5 rounded-full bg-red-500';
+        const dot = document.getElementById('liveDot'); if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-red-500';
         setTimeout(connectScreenWS, 2500);
       };
     }
@@ -401,6 +411,9 @@
         if (document.exitFullscreen) document.exitFullscreen();
       }
     }
+
+    const langSel = document.getElementById('screenLangSelect');
+    if (langSel) langSel.value = currentScreenLang;
 
     changePosition(currentPosition);
     changeTheme(currentTheme);

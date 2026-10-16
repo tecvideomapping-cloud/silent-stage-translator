@@ -1001,10 +1001,10 @@ wss.on('connection', (ws, req) => {
   }
 
   // Se o ouvinte reconectou após oscilação de rede, envia imediatamente os trechos recentes perdidos
-  if (role === 'listener' && roomCatchupHistory.has(roomId)) {
+  if ((role === 'listener' || role === 'screen') && roomCatchupHistory.has(roomId)) {
     const now = Date.now();
     const recentItems = roomCatchupHistory.get(roomId).filter(
-      item => item.seqId > lastSeenSeq && (now - item.timestamp) <= 30000
+      item => (role === 'screen' ? true : item.seqId > lastSeenSeq) && (now - item.timestamp) <= 30000
     );
     if (recentItems.length > 0) {
       try {
