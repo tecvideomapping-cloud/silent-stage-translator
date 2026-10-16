@@ -507,7 +507,10 @@ app.get('/api/config/tts-keys', (req, res) => {
 
 app.post('/api/config/tts-keys', (req, res) => {
   const { openAiKey, elevenLabsKey } = req.body || {};
-  if (typeof openAiKey === 'string') customOpenAiKey = openAiKey.trim();
+  if (typeof openAiKey === 'string') {
+    customOpenAiKey = openAiKey.trim();
+    aiPipeline.setApiKeys({ openaiKey: customOpenAiKey });
+  }
   if (typeof elevenLabsKey === 'string') customElevenLabsKey = elevenLabsKey.trim();
   ttsMemoryCache.clear();
   const activeOai = !!(customOpenAiKey || process.env.OPENAI_API_KEY);
@@ -525,7 +528,8 @@ const ttsMemoryCache = new Map();
 const ttsInFlightRequests = new Map();
 
 async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
-  const cacheKey = `${targetLang}_${voice || 'male_deep'}_${speed || 1.05}_${pitch || 0}_${cleanText}`;
+  const sanitizedText = String(cleanText || '').replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
+  const cacheKey = `${targetLang}_${voice || 'male_deep'}_${speed || 1.05}_${pitch || 0}_${sanitizedText}`;
   if (ttsMemoryCache.has(cacheKey)) {
     return ttsMemoryCache.get(cacheKey);
   }
@@ -566,7 +570,7 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
           },
           body: JSON.stringify({
             model: 'tts-1',
-            input: cleanText,
+            input: sanitizedText,
             voice: openAiVoice,
             speed: openAiSpeed,
             response_format: 'mp3'
@@ -597,7 +601,7 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            text: cleanText,
+            text: sanitizedText,
             model_id: 'eleven_multilingual_v2',
             voice_settings: { stability: 0.5, similarity_boost: 0.75 }
           }),
@@ -611,7 +615,7 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
     }
 
     // 3. Fallback Direto de Baixa Latência (Google TTS)
-    const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${encodeURIComponent(targetLang)}&client=tw-ob&q=${encodeURIComponent(cleanText)}`;
+    const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${encodeURIComponent(targetLang)}&client=tw-ob&q=${encodeURIComponent(sanitizedText)}`;
     const response = await fetch(googleTtsUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
@@ -645,7 +649,8 @@ app.get('/api/tts', async (req, res) => {
     const { lang, text, voice, speed, pitch } = req.query;
     if (!text) return res.status(400).send('Text required');
     const targetLang = (lang || 'en').split('-')[0].toLowerCase();
-    const cleanText = text.trim();
+    const cleanText = String(text).replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
+    if (!cleanText) return res.status(400).send('Empty text');
 
     const buffer = await getOrGenerateTts(targetLang, cleanText, voice, speed, pitch);
     res.setHeader('Content-Type', 'audio/mpeg');

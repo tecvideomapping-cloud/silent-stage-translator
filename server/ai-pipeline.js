@@ -12,6 +12,22 @@ class AIPipeline {
     
     // Conexões ativas do Deepgram por sala
     this.sttSockets = new Map();
+    // Cache LRU em memória para traduções instantâneas (evita chamadas repetidas e rate-limit)
+    this.translationCache = new Map();
+  }
+
+  setApiKeys({ openaiKey, groqKey } = {}) {
+    if (typeof openaiKey === 'string') {
+      this.openaiKey = openaiKey.trim() || process.env.OPENAI_API_KEY;
+    }
+    if (typeof groqKey === 'string') {
+      this.groqKey = groqKey.trim() || process.env.GROQ_API_KEY;
+    }
+  }
+
+  stripLanguagePrefixTag(str) {
+    if (!str || typeof str !== 'string') return '';
+    return str.replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
   }
 
   /**
@@ -92,18 +108,28 @@ class AIPipeline {
    */
   async translateText(text, targetLangs, glossary = {}, onLanguageTranslated = null) {
     const translations = {};
-    if (!text || !text.trim()) return translations;
+    const cleanInput = this.stripLanguagePrefixTag(text);
+    if (!cleanInput) return translations;
 
-    // Helper para aplicar termos de glossário pós-tradução quando aplicável
-    const applyGlossary = (rawText) => {
-      if (!glossary || Object.keys(glossary).length === 0) return rawText;
-      let output = rawText;
-      for (const [term, replacement] of Object.entries(glossary)) {
-        if (!term || !replacement) continue;
-        const regex = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
-        output = output.replace(regex, replacement);
+    // Helper para aplicar termos de glossário pós-tradução e remover qualquer tag [EN]/[ES]
+    const finalizeOutput = (rawText) => {
+      let output = this.stripLanguagePrefixTag(rawText);
+      if (glossary && Object.keys(glossary).length > 0) {
+        for (const [term, replacement] of Object.entries(glossary)) {
+          if (!term || !replacement) continue;
+          const regex = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+          output = output.replace(regex, replacement);
+        }
       }
       return output;
+    };
+
+    const cacheResult = (cacheKey, val) => {
+      if (this.translationCache.size > 1500) {
+        const oldest = this.translationCache.keys().next().value;
+        this.translationCache.delete(oldest);
+      }
+      this.translationCache.set(cacheKey, val);
     };
 
     // Dicionário de termos para substituição de glossário via prompt LLM
@@ -130,9 +156,21 @@ class AIPipeline {
     };
 
     const translateSingleLanguage = async (targetLang) => {
+      const normalizedLang = (targetLang || 'en').split('-')[0].toLowerCase();
+      const cacheKey = `${normalizedLang}:${cleanInput.toLowerCase()}`;
+
+      // 0. Cache em memória instantâneo (0ms)
+      if (this.translationCache.has(cacheKey)) {
+        const cached = finalizeOutput(this.translationCache.get(cacheKey));
+        translations[targetLang] = cached;
+        if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, cached);
+        return cached;
+      }
+
       // 1. Dicionário estático instantâneo (0ms)
-      if (mockTranslationDict[targetLang]?.[text]) {
-        const res = applyGlossary(mockTranslationDict[targetLang][text]);
+      if (mockTranslationDict[normalizedLang]?.[cleanInput]) {
+        const res = finalizeOutput(mockTranslationDict[normalizedLang][cleanInput]);
+        cacheResult(cacheKey, res);
         translations[targetLang] = res;
         if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, res);
         return res;
@@ -145,12 +183,11 @@ class AIPipeline {
             ? 'https://api.groq.com/openai/v1/chat/completions' 
             : 'https://api.openai.com/v1/chat/completions';
           const key = this.groqKey || this.openaiKey;
-          // llama-3.1-8b-instant alcança 800+ tokens/segundo com inferência ultra-rápida (<100ms)
           const model = this.groqKey ? 'llama-3.1-8b-instant' : 'gpt-4o-mini';
 
           const res = await fetch(endpoint, {
             method: 'POST',
-            signal: AbortSignal.timeout(1800), // Timeout rígido de 1.8s para nunca travar a fila
+            signal: AbortSignal.timeout(2200),
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${key}`
@@ -160,15 +197,15 @@ class AIPipeline {
               messages: [
                 {
                   role: 'system',
-                  content: `Você é um tradutor simultâneo profissional. Traduza o texto para o idioma ISO '${targetLang}'. Retorne APENAS o texto traduzido, sem explicações. ${glossaryInstructions}`
+                  content: `Você é um intérprete de tradução simultânea. Traduza o texto para o idioma '${normalizedLang}'. Retorne SOMENTE a frase traduzida pura, NUNCA inclua prefixos como [EN], [ES] ou explicações. ${glossaryInstructions}`
                 },
                 {
                   role: 'user',
-                  content: text
+                  content: cleanInput
                 }
               ],
               temperature: 0.1,
-              max_tokens: 150
+              max_tokens: 180
             })
           });
 
@@ -179,10 +216,13 @@ class AIPipeline {
               if (translated.startsWith('"') && translated.endsWith('"')) {
                 translated = translated.slice(1, -1).trim();
               }
-              translated = applyGlossary(translated);
-              translations[targetLang] = translated;
-              if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, translated);
-              return translated;
+              translated = finalizeOutput(translated);
+              if (translated) {
+                cacheResult(cacheKey, translated);
+                translations[targetLang] = translated;
+                if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, translated);
+                return translated;
+              }
             }
           }
         } catch (e) {
@@ -190,52 +230,89 @@ class AIPipeline {
         }
       }
 
-      // 3. Fallback de altíssima velocidade (<50ms): Google GTX Engine
+      // 3. Motor Primário Gratuito de Altíssima Velocidade (<50ms): Google GTX Engine
       try {
-        const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(targetLang)}&dt=t&q=${encodeURIComponent(text)}`;
+        const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(normalizedLang)}&dt=t&q=${encodeURIComponent(cleanInput)}`;
         const gtxRes = await fetch(gtxUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-          signal: AbortSignal.timeout(2000)
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          signal: AbortSignal.timeout(3000)
         });
         if (gtxRes.ok) {
-          const contentType = gtxRes.headers.get('content-type') || '';
-          if (contentType.includes('json')) {
-            const gtxData = await gtxRes.json();
-            if (Array.isArray(gtxData?.[0])) {
-              let translated = gtxData[0].map(chunk => chunk[0] || '').join('').trim();
-              if (translated) {
-                translated = applyGlossary(translated);
-                translations[targetLang] = translated;
-                if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, translated);
-                return translated;
-              }
+          const gtxData = await gtxRes.json();
+          if (Array.isArray(gtxData?.[0])) {
+            let translated = gtxData[0].map(chunk => chunk[0] || '').join('').trim();
+            translated = finalizeOutput(translated);
+            if (translated) {
+              cacheResult(cacheKey, translated);
+              translations[targetLang] = translated;
+              if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, translated);
+              return translated;
             }
           }
         }
       } catch (gtxErr) {
-        console.warn(`[AI-Translate] Google GTX fallback falhou para ${targetLang}:`, gtxErr.message);
+        console.warn(`[AI-Translate] Google GTX primário falhou para ${targetLang}:`, gtxErr.message);
       }
 
-      // 4. Fallback secundário (MyMemory)
+      // 4. Mirror Secundário Independente (<60ms): Google Clients5 Dict API
       try {
-        const langPair = `pt|${targetLang}`;
-        const freeRes = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`, {
-          signal: AbortSignal.timeout(1200)
+        const c5Url = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=${encodeURIComponent(normalizedLang)}&q=${encodeURIComponent(cleanInput)}`;
+        const c5Res = await fetch(c5Url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          signal: AbortSignal.timeout(3000)
+        });
+        if (c5Res.ok) {
+          const c5Data = await c5Res.json();
+          let rawCandidate = '';
+          if (Array.isArray(c5Data)) {
+            if (typeof c5Data[0] === 'string') {
+              rawCandidate = c5Data[0];
+            } else if (Array.isArray(c5Data[0]) && typeof c5Data[0][0] === 'string') {
+              rawCandidate = c5Data.map(item => item[0] || '').join(' ');
+            }
+          } else if (c5Data && Array.isArray(c5Data.sentences)) {
+            rawCandidate = c5Data.sentences.map(s => s.trans || '').join(' ');
+          }
+          const translated = finalizeOutput(rawCandidate);
+          if (translated) {
+            cacheResult(cacheKey, translated);
+            translations[targetLang] = translated;
+            if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, translated);
+            return translated;
+          }
+        }
+      } catch (c5Err) {
+        console.warn(`[AI-Translate] Google Clients5 mirror falhou para ${targetLang}:`, c5Err.message);
+      }
+
+      // 5. Fallback Terciário (MyMemory com filtro contra avisos de cota)
+      try {
+        const langPair = `pt|${normalizedLang}`;
+        const freeRes = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(cleanInput)}&langpair=${langPair}`, {
+          signal: AbortSignal.timeout(2500)
         });
         if (freeRes.ok) {
           const freeData = await freeRes.json();
           const translatedText = freeData?.responseData?.translatedText;
-          if (translatedText && !translatedText.includes('QUERY LENGTH LIMIT')) {
-            const clean = applyGlossary(translatedText);
-            translations[targetLang] = clean;
-            if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, clean);
-            return clean;
+          if (
+            translatedText &&
+            !translatedText.includes('QUERY LENGTH LIMIT') &&
+            !translatedText.includes('MYMEMORY WARNING') &&
+            !translatedText.includes('PLEASE SELECT TWO DISTINCT')
+          ) {
+            const clean = finalizeOutput(translatedText);
+            if (clean) {
+              cacheResult(cacheKey, clean);
+              translations[targetLang] = clean;
+              if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, clean);
+              return clean;
+            }
           }
         }
       } catch (freeErr) {}
 
-      // 5. Último recurso se offline
-      const fallback = `[${targetLang.toUpperCase()}] ${text}`;
+      // 6. Último recurso se todos os motores estiverem sem internet: retorna o texto limpo SEM prefixos [EN]/[ES]
+      const fallback = finalizeOutput(cleanInput);
       translations[targetLang] = fallback;
       if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, fallback);
       return fallback;

@@ -90,7 +90,7 @@
         <div>
           <span class="text-xs text-slate-400">Status:</span>
           <p id="playerStatus" class="text-sm font-semibold text-slate-300">Pronto para iniciar</p>
-          <span id="audioQualityBadge" class="inline-block mt-0.5 text-[10px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full font-mono">🎵 96 kbps • Qualidade Padrão</span>
+          <span id="audioQualityBadge" class="inline-block mt-0.5 text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2 py-0.5 rounded-full font-mono">⚡ 256 kbps • Linear PCM Sem Compressão</span>
         </div>
         <button id="togglePlayBtn" onclick="toggleAudio()"
           class="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-6 py-2.5 rounded-full shadow-lg transition active:scale-95 flex items-center gap-2">
@@ -525,8 +525,8 @@
     function ensureAudioContext() {
       if (!audioContext) {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        // Abre na taxa nativa de hardware (48kHz/44.1kHz) para fidelidade cristalina sem reamostragem destrutiva do driver
         audioContext = new AudioCtx({
-          sampleRate: 16000,
           latencyHint: 'interactive'
         });
         gainNode = audioContext.createGain();
@@ -639,7 +639,7 @@
       if (!audioContext) return;
       const u8 = new Uint8Array(arrayBuffer);
       let float32Data = null;
-      let targetSampleRate = 16000;
+      let targetSampleRate = window.hostSampleRate || 16000;
 
       // Verifica se o pacote possui cabeçalho de compressão dinâmica (0xAA)
       if (u8.length >= 4 && u8[0] === 0xAA) {
@@ -664,18 +664,20 @@
             float32Data[i * 2 + 1] = decodeAdpcmNibble((byte >> 4) & 0x0F);
           }
         } else {
-          // PCM16 Linear
-          const int16View = new Int16Array(arrayBuffer, 4);
-          float32Data = new Float32Array(int16View.length);
-          for (let i = 0; i < int16View.length; i++) {
+          // PCM16 Linear Sem Compressão
+          const sampleCount = Math.floor((arrayBuffer.byteLength - 4) / 2);
+          const int16View = new Int16Array(arrayBuffer, 4, sampleCount);
+          float32Data = new Float32Array(sampleCount);
+          for (let i = 0; i < sampleCount; i++) {
             float32Data[i] = int16View[i] / 32768;
           }
         }
       } else {
         // Legado / PCM16 puro sem cabeçalho
-        const int16View = new Int16Array(arrayBuffer);
-        float32Data = new Float32Array(int16View.length);
-        for (let i = 0; i < int16View.length; i++) {
+        const sampleCount = Math.floor(arrayBuffer.byteLength / 2);
+        const int16View = new Int16Array(arrayBuffer, 0, sampleCount);
+        float32Data = new Float32Array(sampleCount);
+        for (let i = 0; i < sampleCount; i++) {
           float32Data[i] = int16View[i] / 32768;
         }
       }
@@ -690,8 +692,12 @@
       source.connect(gainNode);
 
       const now = audioContext.currentTime;
-      if (nextAudioTime < now || nextAudioTime > now + 0.045) {
-        nextAudioTime = now;
+      if (nextAudioTime < now) {
+        // Almofada de jitter de 65ms para reprodução contínua e limpa, sem sobrepor blocos
+        nextAudioTime = now + 0.065;
+      } else if (nextAudioTime > now + 0.45) {
+        // Corrige atraso acumulado apenas se ultrapassar 450ms (evita atropelar pacotes da rede)
+        nextAudioTime = now + 0.08;
       }
       source.start(nextAudioTime);
       nextAudioTime += audioBuffer.duration;
@@ -864,9 +870,14 @@
       }
     }
 
+    function stripLangPrefix(str) {
+      return String(str || '').replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
+    }
+
     function playTranslatedAudio(text, lang) {
       if (!text) return;
-      const clean = text.trim();
+      const clean = stripLangPrefix(text);
+      if (!clean) return;
       
       // Guarda contra duplicação de frases idênticas em curto intervalo
       if (clean.toLowerCase() === lastSpokenText.toLowerCase() && (Date.now() - lastSpokenTime) < 2500) {
@@ -1029,7 +1040,8 @@
     function speakTranslatedText(text, lang) {
       if (!text || !('speechSynthesis' in window)) return;
       
-      const clean = text.trim();
+      const clean = stripLangPrefix(text);
+      if (!clean) return;
       // Não repete exatamente a mesma frase falada nos últimos 2.5 segundos
       if (clean.toLowerCase() === lastSpokenText.toLowerCase() && (Date.now() - lastSpokenTime) < 2500) {
         return;
@@ -1158,7 +1170,8 @@
 
     function renderSubtitle(text, isFinal, lang = 'original') {
       const box = document.getElementById('subtitlesBox');
-      if (!box || !text) return;
+      const cleanText = stripLangPrefix(text);
+      if (!box || !cleanText) return;
 
       // Limpa mensagem de aguardando se houver
       if (box.querySelector('.text-slate-500')) {
@@ -1185,12 +1198,12 @@
 
         // Se a última legenda adicionada for idêntica, evita repetição visual
         const lastEl = box.lastElementChild;
-        if (lastEl && lastEl.innerText.trim().toLowerCase() === text.trim().toLowerCase()) {
+        if (lastEl && lastEl.innerText.trim().toLowerCase() === cleanText.toLowerCase()) {
           return;
         }
         const p = document.createElement('p');
         p.className = 'text-slate-100 font-medium mb-2 border-l-2 border-cyan-400 pl-2 bg-slate-900/40 py-1 rounded';
-        p.innerText = text;
+        p.innerText = cleanText;
         box.appendChild(p);
 
         while (box.children.length > 50) {
@@ -1202,7 +1215,7 @@
           currentInterimSubtitleEl.className = 'text-cyan-400 italic mb-2 opacity-85';
           box.appendChild(currentInterimSubtitleEl);
         }
-        currentInterimSubtitleEl.innerText = text + '...';
+        currentInterimSubtitleEl.innerText = cleanText + '...';
       }
       box.scrollTop = box.scrollHeight;
     }

@@ -154,12 +154,12 @@
                 <span class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
                   <span>🎧</span> Compressão & Taxa de Bits (kbps)
                 </span>
-                <span id="compressionBadge" class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2.5 py-0.5 rounded-full font-semibold">96 kbps • Qualidade Padrão</span>
+                <span id="compressionBadge" class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2.5 py-0.5 rounded-full font-semibold">256 kbps • Linear PCM Sem Compressão</span>
               </div>
-              <p class="text-[11px] text-slate-400 mt-0.5">Defina a taxa de bits da transmissão para economizar banda ou entregar áudio de alta fidelidade.</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Padrão em Linear PCM 16-bit puro (áudio original cristalino sem perdas). Use compressão apenas em redes móveis lentas.</p>
             </div>
             <div id="bandwidthEstimate" class="text-[11px] text-emerald-300 font-mono bg-emerald-950/40 border border-emerald-800/50 px-2.5 py-1 rounded-lg shrink-0">
-              ~12 KB/s por ouvinte (-62% banda)
+              ~32 KB/s por ouvinte (Broadcast Direto)
             </div>
           </div>
 
@@ -168,22 +168,22 @@
               <label class="block text-[11px] font-medium text-slate-400 mb-1">Qualidade & Taxa de Bits:</label>
               <select id="audioBitrateSelect" onchange="updateAudioProfile(this.value)"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-medium">
-                <option value="24">🎙️ 24 kbps • Ultra Econômico (Wi-Fi Lotado / 4G Fraco)</option>
-                <option value="48">📻 48 kbps • Voz Otimizada (Conferências & Palestras)</option>
-                <option value="96" selected>🎵 96 kbps • Qualidade Padrão (Equilíbrio Recomendado)</option>
-                <option value="160">🎧 160 kbps • Alta Fidelidade (Música e Dinâmica)</option>
-                <option value="320">💎 320 kbps • Qualidade de Estúdio / Hi-Fi (Grau de Master)</option>
-                <option value="pcm256">⚡ 256 kbps • Linear PCM Sem Compressão (Mesa Direta)</option>
+                <option value="pcm256" selected>⚡ 256 kbps • Linear PCM Sem Compressão (Áudio Original Limpo)</option>
+                <option value="320">💎 384 kbps • Estúdio Master Hi-Fi 24kHz (Linear PCM Puro)</option>
+                <option value="160">🎧 160 kbps • Alta Fidelidade (G.711 20kHz)</option>
+                <option value="96">🎵 96 kbps • Econômico Balanceado (G.711)</option>
+                <option value="48">📻 48 kbps • Voz Compacta (ADPCM)</option>
+                <option value="24">🎙️ 24 kbps • Ultra Econômico (Rede Lenta)</option>
               </select>
             </div>
 
             <div>
-              <label class="block text-[11px] font-medium text-slate-400 mb-1">Algoritmo de Compressão:</label>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Algoritmo de Codificação:</label>
               <select id="audioCodecSelect" onchange="updateCustomCodec(this.value)"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-medium">
-                <option value="mulaw" selected>Compressão Acústica Dinâmica (G.711 μ-law)</option>
+                <option value="pcm16" selected>Linear PCM 16-bit (Sem Compressão • Som Limpo Original)</option>
+                <option value="mulaw">Compressão Acústica Dinâmica (G.711 μ-law)</option>
                 <option value="adpcm">ADPCM Adaptativo 4:1 (Ultra Econômico em Banda)</option>
-                <option value="pcm16">Linear PCM 16-bit (Sem Compressão Acústica)</option>
               </select>
             </div>
           </div>
@@ -708,12 +708,12 @@
         bandwidthText: '~6 KB/s por ouvinte (-81% banda)'
       },
       '96': {
-        name: 'Qualidade Padrão',
-        kbps: 96,
+        name: 'Econômico Balanceado',
+        kbps: 128,
         codec: 'mulaw',
-        sampleRate: 12000,
-        badgeText: '96 kbps • Qualidade Padrão',
-        bandwidthText: '~12 KB/s por ouvinte (-62% banda)'
+        sampleRate: 16000,
+        badgeText: '128 kbps • Econômico Balanceado',
+        bandwidthText: '~16 KB/s por ouvinte (-50% banda)'
       },
       '160': {
         name: 'Alta Fidelidade',
@@ -724,12 +724,12 @@
         bandwidthText: '~20 KB/s por ouvinte (-38% banda)'
       },
       '320': {
-        name: 'Qualidade de Estúdio / Hi-Fi',
-        kbps: 320,
+        name: 'Estúdio Master Hi-Fi (24kHz PCM)',
+        kbps: 384,
         codec: 'pcm16',
-        sampleRate: 20000,
-        badgeText: '320 kbps • Estúdio / Hi-Fi',
-        bandwidthText: '~40 KB/s por ouvinte (Hi-Fi Master)'
+        sampleRate: 24000,
+        badgeText: '384 kbps • Estúdio Master Hi-Fi',
+        bandwidthText: '~48 KB/s por ouvinte (Hi-Fi Master)'
       },
       'pcm256': {
         name: 'Linear PCM Sem Compressão',
@@ -742,8 +742,8 @@
     };
 
     let currentAudioProfile = {
-      id: '96',
-      ...AUDIO_PROFILES['96']
+      id: 'pcm256',
+      ...AUDIO_PROFILES['pcm256']
     };
 
     function updateAudioProfile(profileKey) {
@@ -1249,7 +1249,7 @@
           const audioConstraints = {
             echoCancellation: false,
             noiseSuppression: false,
-            autoGainControl: true
+            autoGainControl: false
           };
           if (selectedDeviceId) {
             audioConstraints.deviceId = { ideal: selectedDeviceId };
@@ -1365,9 +1365,13 @@
         }
         requestAnimationFrame(updateVU);
 
-        scriptProcessor = audioContext.createScriptProcessor(1024, 1, 1);
+        // Buffer de 2048 amostras (~42ms em 48kHz) com nó de ganho zero para eliminar vazamento acústico e micro-cortes de CPU
+        scriptProcessor = audioContext.createScriptProcessor(2048, 2, 1);
+        const silentSinkGain = audioContext.createGain();
+        silentSinkGain.gain.value = 0;
         source.connect(scriptProcessor);
-        scriptProcessor.connect(audioContext.destination);
+        scriptProcessor.connect(silentSinkGain);
+        silentSinkGain.connect(audioContext.destination);
 
         window.__activeAudioProcessor = scriptProcessor;
         window.__activeAudioSource = source;
@@ -1379,23 +1383,51 @@
 
         scriptProcessor.onaudioprocess = (e) => {
           if (!isBroadcasting || !socket || socket.readyState !== WebSocket.OPEN) return;
-          const inputData = e.inputBuffer.getChannelData(0);
+          const numInputChannels = e.inputBuffer.numberOfChannels;
+          const ch0 = e.inputBuffer.getChannelData(0);
+          const ch1 = numInputChannels > 1 ? e.inputBuffer.getChannelData(1) : ch0;
+          const channelMode = document.getElementById('audioChannelSelect')?.value || 'mix';
+
+          let inputData = ch0;
+          if (numInputChannels > 1) {
+            if (channelMode === 'right') {
+              inputData = ch1;
+            } else if (channelMode === 'mix') {
+              inputData = new Float32Array(ch0.length);
+              for (let i = 0; i < ch0.length; i++) {
+                inputData[i] = (ch0[i] + ch1[i]) * 0.5;
+              }
+            }
+          }
+
           const sourceRate = audioContext.sampleRate;
           const targetRate = currentAudioProfile.sampleRate;
           const codec = currentAudioProfile.codec;
 
           let targetFloats = inputData;
           if (sourceRate !== targetRate) {
+            // Filtro Passa-Baixas Anti-Aliasing por Integração de Janela (Boxcar Averaging Decimation)
+            // Evita ruído metálico de aliasing ao converter 48kHz (YouTube/Windows) para 16kHz/24kHz
             const ratio = sourceRate / targetRate;
             const newLen = Math.round(inputData.length / ratio);
             targetFloats = new Float32Array(newLen);
             for (let i = 0; i < newLen; i++) {
-              const srcPos = i * ratio;
-              const idx = Math.floor(srcPos);
-              const frac = srcPos - idx;
-              const s1 = inputData[idx] || 0;
-              const s2 = inputData[idx + 1] !== undefined ? inputData[idx + 1] : s1;
-              targetFloats[i] = s1 + frac * (s2 - s1);
+              const startPos = i * ratio;
+              const endPos = startPos + ratio;
+              const startIdx = Math.floor(startPos);
+              const endIdx = Math.min(inputData.length - 1, Math.ceil(endPos));
+              let acc = 0;
+              let weightSum = 0;
+              for (let j = startIdx; j <= endIdx; j++) {
+                let w = 1.0;
+                if (j < startPos) w -= (startPos - j);
+                if (j + 1 > endPos) w -= ((j + 1) - endPos);
+                if (w > 0) {
+                  acc += inputData[j] * w;
+                  weightSum += w;
+                }
+              }
+              targetFloats[i] = weightSum > 0 ? (acc / weightSum) : (inputData[startIdx] || 0);
             }
           }
 
