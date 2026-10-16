@@ -171,9 +171,8 @@
                 <option value="pcm256" selected>⚡ 256 kbps • Linear PCM Sem Compressão (Áudio Original Limpo)</option>
                 <option value="320">💎 384 kbps • Estúdio Master Hi-Fi 24kHz (Linear PCM Puro)</option>
                 <option value="160">🎧 160 kbps • Alta Fidelidade (G.711 20kHz)</option>
-                <option value="96">🎵 96 kbps • Econômico Balanceado (G.711)</option>
-                <option value="48">📻 48 kbps • Voz Compacta (ADPCM)</option>
-                <option value="24">🎙️ 24 kbps • Ultra Econômico (Rede Lenta)</option>
+                <option value="96">🎵 128 kbps • Econômico Balanceado (G.711 16kHz)</option>
+                <option value="48">📻 48 kbps • Voz Compacta (ADPCM 12kHz)</option>
               </select>
             </div>
 
@@ -691,20 +690,12 @@
     // COMPRESSÃO & TAXA DE BITS (kbps)
     // ----------------------------------------------------
     const AUDIO_PROFILES = {
-      '24': {
-        name: 'Voz Ultra Econômica',
-        kbps: 24,
-        codec: 'adpcm',
-        sampleRate: 6000,
-        badgeText: '24 kbps • Ultra Econômico',
-        bandwidthText: '~3 KB/s por ouvinte (-90% banda)'
-      },
       '48': {
-        name: 'Voz Otimizada',
+        name: 'Voz Compacta',
         kbps: 48,
         codec: 'adpcm',
         sampleRate: 12000,
-        badgeText: '48 kbps • Voz Otimizada',
+        badgeText: '48 kbps • Voz Compacta',
         bandwidthText: '~6 KB/s por ouvinte (-81% banda)'
       },
       '96': {
