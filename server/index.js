@@ -810,7 +810,7 @@ wss.on('connection', (ws, req) => {
         });
 
         for (const client of roomClients) {
-          if (client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener' || client.channel === 'original' || client.channel === 'text')) {
+          if (client !== ws && client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener' || client.channel === 'original' || client.channel === 'text')) {
             client.send(subPayload);
           }
         }
@@ -820,8 +820,8 @@ wss.on('connection', (ws, req) => {
           if (!cleanText) return;
 
           const lastObj = roomLastFinalTranscript.get(roomId);
-          if (lastObj && lastObj.text.toLowerCase() === cleanText.toLowerCase() && (Date.now() - lastObj.time) < 1500) {
-            // Ignora disparo duplicado idêntico recebido em menos de 1.5s
+          if (lastObj && lastObj.text.toLowerCase() === cleanText.toLowerCase() && (Date.now() - lastObj.time) < 400) {
+            // Ignora apenas disparo duplicado instantâneo de rede (< 400ms)
             return;
           }
           roomLastFinalTranscript.set(roomId, { text: cleanText, time: Date.now() });
