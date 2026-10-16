@@ -757,16 +757,53 @@
       return sharedTtsAudioPlayer;
     }
 
+    let ttsMediaSource = null;
+    let ttsBassFilter = null;
+    let ttsTrebleFilter = null;
+
+    function setupTtsAudioGraph() {
+      if (!audioContext || ttsMediaSource) return;
+      try {
+        const player = ensureSharedTtsPlayer();
+        ttsMediaSource = audioContext.createMediaElementSource(player);
+        ttsBassFilter = audioContext.createBiquadFilter();
+        ttsBassFilter.type = 'lowshelf';
+        ttsBassFilter.frequency.value = 220; // Encorpamento e ressonância de peito (barítono)
+
+        ttsTrebleFilter = audioContext.createBiquadFilter();
+        ttsTrebleFilter.type = 'highshelf';
+        ttsTrebleFilter.frequency.value = 3200; // Presença harmônica e brilho cristalino (feminino/claridade)
+
+        ttsMediaSource.connect(ttsBassFilter);
+        ttsBassFilter.connect(ttsTrebleFilter);
+        if (gainNode) {
+          ttsTrebleFilter.connect(gainNode);
+        } else {
+          ttsTrebleFilter.connect(audioContext.destination);
+        }
+      } catch (e) {
+        console.warn('[WebAudio] Falha ao conectar player no grafo acústico:', e);
+      }
+    }
+
     function unlockAudioForMobile() {
       ensureAudioContext();
       armBackgroundAudioKeepAlive();
       const player = ensureSharedTtsPlayer();
+      setupTtsAudioGraph();
       if (player) {
         // Tenta destrave imediato de áudio no iOS Safari através do gesto do usuário
         player.play().then(() => player.pause()).catch(() => {});
       }
       const banner = document.getElementById('audioUnlockBanner');
       if (banner) banner.classList.add('hidden');
+
+      // Se há áudio na fila retido antes do toque do usuário, inicia reprodução imediatamente
+      if (currentChannel && currentChannel !== 'original' && currentChannel !== 'text') {
+        if (!isTtsPlaying && ttsAudioQueue.length > 0) {
+          playNextTtsAudio();
+        }
+      }
     }
 
     document.addEventListener('touchstart', unlockAudioForMobile, { once: true, passive: true });
@@ -878,14 +915,43 @@
       isTtsPlaying = true;
       const voice = currentSpeakerProfile?.voice || 'male_deep';
       const speed = currentSpeakerProfile?.speed || 1.05;
-      const pitch = currentSpeakerProfile?.pitch || 0;
+      const pitch = parseFloat(currentSpeakerProfile?.pitch || 0);
       const url = `/api/tts?lang=${encodeURIComponent(item.lang)}&text=${encodeURIComponent(item.text)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}`;
       
       // Utiliza o player compartilhado pré-desbloqueado no DOM para garantir compatibilidade com iOS Safari e Android
       const audio = ensureSharedTtsPlayer();
+      setupTtsAudioGraph();
       currentTtsAudioEl = audio;
       audio.src = url;
-      audio.playbackRate = ttsAudioQueue.length > 1 ? (speed * 1.15) : speed;
+
+      // Equalização acústica de frequência para esculpir o timbre humano
+      if (ttsBassFilter && ttsTrebleFilter) {
+        if (voice === 'male_deep') {
+          ttsBassFilter.gain.value = 6;   // Reforço encorpado de barítono (220Hz)
+          ttsTrebleFilter.gain.value = -2;
+        } else if (voice === 'male_natural') {
+          ttsBassFilter.gain.value = 2;
+          ttsTrebleFilter.gain.value = 0;
+        } else if (voice === 'female_warm') {
+          ttsBassFilter.gain.value = -1;
+          ttsTrebleFilter.gain.value = 4;  // Presença dinâmica e envolvente
+        } else if (voice === 'female_clear') {
+          ttsBassFilter.gain.value = -3;
+          ttsTrebleFilter.gain.value = 7;  // Claridade e brilho cristalino (3.2kHz)
+        } else {
+          ttsBassFilter.gain.value = 0;
+          ttsTrebleFilter.gain.value = 0;
+        }
+      }
+
+      // Transposição física de afinação (Pitch em semitons) e cadência
+      const pitchFactor = Math.pow(2, pitch / 12);
+      audio.preservesPitch = false;
+      audio.mozPreservesPitch = false;
+      audio.webkitPreservesPitch = false;
+      const dynamicRate = ttsAudioQueue.length > 1 ? (speed * 1.15) : speed;
+      audio.playbackRate = Math.max(0.75, Math.min(1.5, dynamicRate * pitchFactor));
+
       if (gainNode) {
         audio.volume = gainNode.gain.value;
       }
@@ -1027,13 +1093,23 @@
           const lMatch = v.lang.toLowerCase().startsWith(langPrefix);
           if (!lMatch) return false;
           const vName = v.name.toLowerCase();
+          const isHighQuality = vName.includes('natural') || vName.includes('neural') || vName.includes('google') || vName.includes('siri') || vName.includes('premium') || vName.includes('online');
+          if (!isHighQuality) return false;
+          return isFemale 
+            ? (vName.includes('female') || vName.includes('maria') || vName.includes('helena') || vName.includes('zira') || vName.includes('samantha') || vName.includes('luciana') || vName.includes('jenny'))
+            : (vName.includes('male') || vName.includes('daniel') || vName.includes('david') || vName.includes('jorge') || vName.includes('antonio') || vName.includes('guy'));
+        }) || cachedVoices.find(v => {
+          const lMatch = v.lang.toLowerCase().startsWith(langPrefix);
+          if (!lMatch) return false;
+          const vName = v.name.toLowerCase();
           return isFemale 
             ? (vName.includes('female') || vName.includes('maria') || vName.includes('helena') || vName.includes('zira') || vName.includes('samantha') || vName.includes('luciana'))
             : (vName.includes('male') || vName.includes('daniel') || vName.includes('david') || vName.includes('jorge') || vName.includes('antonio'));
         }) || cachedVoices.find(v => v.lang.toLowerCase().startsWith(langPrefix));
         if (voice) utterance.voice = voice;
 
-        utterance.pitch = Math.max(0.6, Math.min(1.6, 1 + ((currentSpeakerProfile?.pitch || 0) * 0.08)));
+        const pitchSemitones = parseFloat(currentSpeakerProfile?.pitch || 0);
+        utterance.pitch = Math.max(0.5, Math.min(1.8, Math.pow(2, pitchSemitones / 12)));
         const baseRate = currentSpeakerProfile?.speed || 1.05;
         utterance.rate = speechQueue.length > 1 ? baseRate * 1.15 : baseRate;
 

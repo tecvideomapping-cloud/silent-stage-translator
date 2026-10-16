@@ -415,6 +415,36 @@ app.post('/api/leads', async (req, res) => {
   }
 });
 
+// Chaves dinâmicas configuradas pelo Painel do Host ou variáveis de ambiente
+let customOpenAiKey = process.env.OPENAI_API_KEY || '';
+let customElevenLabsKey = process.env.ELEVENLABS_API_KEY || '';
+
+// Endpoints de Configuração de Chaves de Voz IA (OpenAI / ElevenLabs)
+app.get('/api/config/tts-keys', (req, res) => {
+  const activeOai = !!(customOpenAiKey || process.env.OPENAI_API_KEY);
+  const activeEl = !!(customElevenLabsKey || process.env.ELEVENLABS_API_KEY);
+  res.json({
+    hasOpenAi: activeOai,
+    hasElevenLabs: activeEl,
+    provider: activeOai ? 'OpenAI Neural (tts-1)' : (activeEl ? 'ElevenLabs Multilingual' : 'WebAudio Dinâmico / Google Fallback')
+  });
+});
+
+app.post('/api/config/tts-keys', (req, res) => {
+  const { openAiKey, elevenLabsKey } = req.body || {};
+  if (typeof openAiKey === 'string') customOpenAiKey = openAiKey.trim();
+  if (typeof elevenLabsKey === 'string') customElevenLabsKey = elevenLabsKey.trim();
+  ttsMemoryCache.clear();
+  const activeOai = !!(customOpenAiKey || process.env.OPENAI_API_KEY);
+  const activeEl = !!(customElevenLabsKey || process.env.ELEVENLABS_API_KEY);
+  res.json({
+    success: true,
+    hasOpenAi: activeOai,
+    hasElevenLabs: activeEl,
+    provider: activeOai ? 'OpenAI Neural (tts-1)' : (activeEl ? 'ElevenLabs Multilingual' : 'WebAudio Dinâmico / Google Fallback')
+  });
+});
+
 // Cache em memória de alta performance para TTS (LRU 800 itens) & Deduplicação de requisições concorrentes
 const ttsMemoryCache = new Map();
 const ttsInFlightRequests = new Map();
@@ -431,8 +461,11 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
   }
 
   const generatePromise = (async () => {
+    const activeOpenAiKey = customOpenAiKey || process.env.OPENAI_API_KEY;
+    const activeElevenLabsKey = customElevenLabsKey || process.env.ELEVENLABS_API_KEY;
+
     // 1. OpenAI Neural TTS (Vozes de altíssima fidelidade humana, entonação e respiração natural)
-    if (process.env.OPENAI_API_KEY) {
+    if (activeOpenAiKey) {
       try {
         let openAiVoice = 'alloy';
         const v = (voice || '').toLowerCase();
@@ -453,7 +486,7 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
         const oaiRes = await fetch('https://api.openai.com/v1/audio/speech', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Authorization': `Bearer ${activeOpenAiKey}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -474,8 +507,8 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
       }
     }
 
-    // 2. ElevenLabs Multilingual (Se configurado no .env)
-    if (process.env.ELEVENLABS_API_KEY) {
+    // 2. ElevenLabs Multilingual (Se configurado via painel ou .env)
+    if (activeElevenLabsKey) {
       try {
         const v = (voice || '').toLowerCase();
         const voiceId = (v.includes('female') || v === 'nova') 
@@ -485,7 +518,7 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
         const elRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
           method: 'POST',
           headers: {
-            'xi-api-key': process.env.ELEVENLABS_API_KEY,
+            'xi-api-key': activeElevenLabsKey,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
