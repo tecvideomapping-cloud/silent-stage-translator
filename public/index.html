@@ -107,6 +107,19 @@
           oninput="adjustVolume(this.value)">
         <span class="text-sm text-slate-400">🔊</span>
       </div>
+
+      <!-- Resiliência de Rede: Buffer Elástico Anti-Corte + Degrade Quality Individual -->
+      <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/80 text-xs">
+        <div class="flex items-center gap-1.5">
+          <span class="text-slate-400 font-medium">Proteção de Sinal:</span>
+          <span id="bufferStatusBadge" class="text-[10px] font-mono bg-slate-950 text-cyan-400 border border-slate-800 px-2 py-0.5 rounded-full">Buffer: 65ms</span>
+        </div>
+        <select id="abrModeSelect" onchange="changeAbrMode(this.value)" class="bg-slate-950 text-[11px] text-slate-200 px-2.5 py-1 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-500">
+          <option value="auto" selected>🛡️ Auto Adaptativo (Anti-Corte Inteligente)</option>
+          <option value="saver">📶 Estabilizar Sinal Fraco (-75% Dados + Buffer Amplo)</option>
+          <option value="high">⚡ Forçar Qualidade Máxima (PCM Puro)</option>
+        </select>
+      </div>
     </section>
 
     <!-- Área de Legendas e Transcrição Simultânea em Tempo Real -->
@@ -447,9 +460,58 @@
       } catch (e) {}
     }
 
+    // Estado de Resiliência de Rede, Buffer Elástico e Catch-Up
+    let lastReceivedSeqId = 0;
+    let currentAbrMode = 'auto'; // 'auto' | 'saver' | 'high'
+    let currentServerAbrTier = 0;
+    let hostDefaultQualityLabel = '⚡ 256 kbps • Linear PCM Sem Compressão';
+    let targetJitterBufferSec = 0.065; // Inicia em 65ms (baixa latência) e expande até 600ms se a rede oscilar
+    let windowUnderrunCount = 0;
+    let lastPacketArrivalPerfMs = 0;
+    let packetJitterEwmaMs = 0;
+
+    function updateQualityAndBufferBadges() {
+      const bufBadge = document.getElementById('bufferStatusBadge');
+      if (bufBadge) {
+        const ms = Math.round(targetJitterBufferSec * 1000);
+        bufBadge.innerText = `Buffer: ${ms}ms`;
+        if (ms >= 220) {
+          bufBadge.className = 'text-[10px] font-mono bg-amber-950/80 text-amber-300 border border-amber-700/60 px-2 py-0.5 rounded-full';
+        } else {
+          bufBadge.className = 'text-[10px] font-mono bg-slate-950 text-cyan-400 border border-slate-800 px-2 py-0.5 rounded-full';
+        }
+      }
+
+      const qBadge = document.getElementById('audioQualityBadge');
+      if (!qBadge) return;
+      if (currentServerAbrTier === 2) {
+        qBadge.innerText = '🛡️ 64 kbps • Resiliência Anti-Corte (-75% Dados)';
+        qBadge.className = 'inline-block mt-0.5 text-[10px] bg-amber-950 text-amber-300 border border-amber-700/80 px-2 py-0.5 rounded-full font-semibold';
+      } else if (currentServerAbrTier === 1) {
+        qBadge.innerText = '🛡️ 128 kbps • Adaptação Anti-Falha (-50% Dados)';
+        qBadge.className = 'inline-block mt-0.5 text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-700/80 px-2 py-0.5 rounded-full font-semibold';
+      } else {
+        qBadge.innerText = hostDefaultQualityLabel;
+        qBadge.className = 'inline-block mt-0.5 text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2 py-0.5 rounded-full font-semibold';
+      }
+    }
+
+    function changeAbrMode(mode) {
+      currentAbrMode = mode || 'auto';
+      if (currentAbrMode === 'saver') {
+        targetJitterBufferSec = Math.max(targetJitterBufferSec, 0.28);
+      } else if (currentAbrMode === 'high') {
+        targetJitterBufferSec = 0.065;
+      }
+      updateQualityAndBufferBadges();
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'set_abr_mode', mode: currentAbrMode }));
+      }
+    }
+
     function connectWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=listener&channel=${currentChannel}`;
+      const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=listener&channel=${currentChannel}&lastSeq=${lastReceivedSeqId}`;
       
       socket = new WebSocket(wsUrl);
       socket.binaryType = 'arraybuffer';
@@ -458,6 +520,11 @@
         document.getElementById('statusIndicator').className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
         document.getElementById('statusIndicator').title = 'Conectado ao vivo';
         document.getElementById('playerStatus').innerText = 'Conectado ao canal ' + currentChannel;
+        if (currentAbrMode !== 'auto') {
+          try {
+            socket.send(JSON.stringify({ type: 'set_abr_mode', mode: currentAbrMode }));
+          } catch (e) {}
+        }
         // Inicia busca por pares P2P na mesma sala
         setTimeout(initP2PMesh, 1500);
       };
@@ -490,17 +557,20 @@
             window.hostSampleRate = data.sampleRate;
             window.hostAudioFormat = data.format;
             window.hostAudioKbps = data.kbps;
-            const badge = document.getElementById('audioQualityBadge');
-            if (badge) {
-              const label = data.profileName || (data.kbps ? `${data.kbps} kbps` : 'Qualidade Otimizada');
-              badge.innerText = `🎵 ${label}`;
-              badge.className = 'inline-block mt-0.5 text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2 py-0.5 rounded-full font-semibold';
-            }
+            const label = data.profileName || (data.kbps ? `${data.kbps} kbps` : 'Qualidade Otimizada');
+            hostDefaultQualityLabel = `🎵 ${label}`;
+            updateQualityAndBufferBadges();
             console.log('[Áudio] Formato e taxa de bits recebidos do transmissor:', data);
           } else if (data.type === 'subtitle') {
+            if (data.seqId && data.seqId > lastReceivedSeqId) {
+              lastReceivedSeqId = data.seqId;
+            }
             // Legenda original
             renderSubtitle(data.text, data.isFinal, 'original');
           } else if (data.type === 'subtitle_translated') {
+            if (data.seqId && data.seqId > lastReceivedSeqId) {
+              lastReceivedSeqId = data.seqId;
+            }
             const isFinalSub = data.isFinal !== false;
             // Legenda traduzida (exibe simultaneamente durante a fala e confirma ao fechar o trecho lógico)
             renderSubtitle(data.text, isFinalSub, data.lang);
@@ -508,11 +578,28 @@
             if (isFinalSub && currentChannel === data.lang) {
               playTranslatedAudio(data.text, data.lang);
             }
+          } else if (data.type === 'subtitle_catchup' && Array.isArray(data.items)) {
+            // Recupera automaticamente todas as frases perdidas durante uma micro-queda de internet
+            let recoveredTranslatedCount = 0;
+            for (const item of data.items) {
+              if (item.seqId && item.seqId > lastReceivedSeqId) {
+                lastReceivedSeqId = item.seqId;
+              }
+              renderSubtitle(item.text, true, item.lang);
+              if (item.type === 'subtitle_translated' && currentChannel === item.lang && recoveredTranslatedCount < 2) {
+                recoveredTranslatedCount++;
+                playTranslatedAudio(item.text, item.lang);
+              }
+            }
           } else if (data.type === 'pong') {
             if (lastPingTime > 0) {
               measuredLatencyMs = Math.round(performance.now() - lastPingTime);
               const el = document.getElementById('latencyValue');
               if (el) el.innerText = measuredLatencyMs;
+            }
+            if (typeof data.abrTier === 'number' && data.abrTier !== currentServerAbrTier) {
+              currentServerAbrTier = data.abrTier;
+              updateQualityAndBufferBadges();
             }
           }
         } catch (e) {}
@@ -521,7 +608,7 @@
       socket.onclose = () => {
         document.getElementById('statusIndicator').className = 'w-2.5 h-2.5 rounded-full bg-red-500';
         document.getElementById('playerStatus').innerText = 'Reconectando...';
-        setTimeout(connectWS, 2500);
+        setTimeout(connectWS, 2000);
       };
     }
 
@@ -539,7 +626,7 @@
         gainNode.connect(audioContext.destination);
         nextAudioTime = audioContext.currentTime;
 
-        // Inicia medição periódica de latência com o servidor (Ping/Pong a cada 2.5s)
+        // Inicia medição periódica de latência e telemetria ABR com o servidor (a cada 2.5s)
         setInterval(measureLatency, 2500);
       }
       if (audioContext.state === 'suspended') {
@@ -550,7 +637,14 @@
     function measureLatency() {
       if (socket && socket.readyState === WebSocket.OPEN) {
         lastPingTime = performance.now();
-        socket.send(JSON.stringify({ type: 'ping', t: lastPingTime }));
+        socket.send(JSON.stringify({
+          type: 'ping',
+          t: lastPingTime,
+          underruns: windowUnderrunCount,
+          jitterMs: Math.round(packetJitterEwmaMs),
+          abrMode: currentAbrMode
+        }));
+        windowUnderrunCount = 0;
       }
     }
 
@@ -647,6 +741,16 @@
       let float32Data = null;
       let targetSampleRate = window.hostSampleRate || 16000;
 
+      // Medição contínua de Jitter entre pacotes
+      const perfNow = performance.now();
+      if (lastPacketArrivalPerfMs > 0) {
+        const deltaMs = perfNow - lastPacketArrivalPerfMs;
+        // Pacotes chegam tipicamente a cada ~128ms; desvios grandes indicam jitter da rede
+        const dev = Math.abs(deltaMs - 128);
+        packetJitterEwmaMs = (packetJitterEwmaMs * 0.85) + (dev * 0.15);
+      }
+      lastPacketArrivalPerfMs = perfNow;
+
       // Verifica se o pacote possui cabeçalho de compressão dinâmica (0xAA)
       if (u8.length >= 4 && u8[0] === 0xAA) {
         const codecId = u8[1];
@@ -654,14 +758,14 @@
         if (targetSampleRate < 4000 || targetSampleRate > 48000) targetSampleRate = 16000;
 
         if (codecId === 1) {
-          // G.711 μ-law (Compressão Acústica 96k / 160k)
+          // G.711 μ-law (Compressão Acústica / Degrade Quality Stateless)
           const numSamples = u8.length - 4;
           float32Data = new Float32Array(numSamples);
           for (let i = 0; i < numSamples; i++) {
             float32Data[i] = MULAW_DECODE_TABLE[u8[4 + i]];
           }
         } else if (codecId === 2) {
-          // IMA ADPCM (24k / 48k)
+          // IMA ADPCM
           const numBytes = u8.length - 4;
           float32Data = new Float32Array(numBytes * 2);
           for (let i = 0; i < numBytes; i++) {
@@ -698,15 +802,40 @@
       source.connect(gainNode);
 
       const now = audioContext.currentTime;
+      const minBufSec = currentAbrMode === 'saver' ? 0.28 : 0.065;
+      const maxBufSec = currentAbrMode === 'high' ? 0.18 : 0.65;
+
       if (nextAudioTime < now) {
-        // Almofada de jitter de 65ms para reprodução contínua e limpa, sem sobrepor blocos
-        nextAudioTime = now + 0.065;
-      } else if (nextAudioTime > now + 0.45) {
-        // Corrige atraso acumulado apenas se ultrapassar 450ms (evita atropelar pacotes da rede)
-        nextAudioTime = now + 0.08;
+        // Ocorreu um underrun (a fila secou por oscilação da internet):
+        // Expande automaticamente o Buffer Elástico para absorver as próximas oscilações sem picotar a voz
+        windowUnderrunCount++;
+        targetJitterBufferSec = Math.min(maxBufSec, Math.max(minBufSec, targetJitterBufferSec + 0.075));
+        nextAudioTime = now + targetJitterBufferSec;
+        updateQualityAndBufferBadges();
+      } else {
+        // Rede fluindo sem falhas: reduz suavemente o buffer de volta ao mínimo de baixa latência
+        if (targetJitterBufferSec > minBufSec) {
+          targetJitterBufferSec = Math.max(minBufSec, targetJitterBufferSec - 0.0015);
+          if (Math.random() < 0.12) updateQualityAndBufferBadges();
+        }
       }
+
+      const bufferedAhead = nextAudioTime - now;
+      let playbackRate = 1.0;
+
+      if (bufferedAhead > 5.0) {
+        // Apenas se o navegador ficou congelado por mais de 5 segundos inteiros, ressincroniza mantendo os últimos 600ms
+        nextAudioTime = now + 0.60;
+      } else if (bufferedAhead > targetJitterBufferSec + 0.30) {
+        // Time-Scaling Catch-Up Suave (1.07x a 1.12x):
+        // Quando a internet trava por 1–3s e entrega os pacotes acumulados de uma vez,
+        // NUNCA descartamos palavras! Reproduzimos todas as sílabas levemente aceleradas até alcançar o tempo real.
+        playbackRate = bufferedAhead > 1.35 ? 1.12 : 1.07;
+      }
+
+      source.playbackRate.value = playbackRate;
       source.start(nextAudioTime);
-      nextAudioTime += audioBuffer.duration;
+      nextAudioTime += (audioBuffer.duration / playbackRate);
     }
 
     function selectChannel(channel) {

@@ -732,6 +732,89 @@ const roomAudioMeta = new Map(); // roomId -> { type: 'audio_meta', format, samp
 const roomSpeakerProfile = new Map(); // roomId -> { voice, pitch, speed }
 const roomLastFinalTranscript = new Map(); // roomId -> { text, time }
 const roomLastInterimTranslate = new Map(); // roomId -> { text, time, seq }
+const roomCatchupHistory = new Map(); // roomId -> Array<{ seqId, type, lang, text, timestamp }>
+let globalCatchupSeqId = 1;
+
+function appendToCatchupHistory(roomId, entry) {
+  if (!roomCatchupHistory.has(roomId)) {
+    roomCatchupHistory.set(roomId, []);
+  }
+  const list = roomCatchupHistory.get(roomId);
+  const now = Date.now();
+  list.push({
+    seqId: globalCatchupSeqId++,
+    timestamp: now,
+    ...entry
+  });
+  // Mantém janela dos últimos 40 segundos (máx 25 trechos) para recuperação de quedas de rede
+  while (list.length > 25 || (list.length > 0 && (now - list[0].timestamp) > 40000)) {
+    list.shift();
+  }
+}
+
+// Codificador G.711 μ-law stateless para Degrade Quality individual por ouvinte no servidor
+function encodeMuLawServerSample(sample) {
+  const BIAS = 0x84;
+  const CLIP = 32635;
+  let sign = (sample >> 8) & 0x80;
+  if (sign !== 0) sample = -sample;
+  if (sample > CLIP) sample = CLIP;
+  sample = sample + BIAS;
+  let exponent = 7;
+  for (let expMask = 0x4000; (sample & expMask) === 0 && exponent > 0; exponent--, expMask >>= 1) {}
+  let mantissa = (sample >> (exponent + 3)) & 0x0F;
+  return ~(sign | (exponent << 4) | mantissa) & 0xFF;
+}
+
+/**
+ * Converte sob demanda um pacote PCM16 para um ouvinte específico com conexão ruim:
+ * - tier 1: G.711 μ-law na taxa original (-50% de consumo de banda, 100% stateless)
+ * - tier 2: G.711 μ-law com decimação passa-baixas 2:1 (-75% de consumo de banda, 100% stateless)
+ */
+function buildDegradedAudioPacket(rawBuffer, targetTier) {
+  const buf = Buffer.isBuffer(rawBuffer) ? rawBuffer : Buffer.from(rawBuffer);
+  if (buf.length < 6 || buf[0] !== 0xAA) return buf;
+  const codecId = buf[1];
+  const sampleRate = buf[2] | (buf[3] << 8);
+
+  // Se o Host já estiver enviando comprimido (mulaw/adpcm), mantém ou reduz taxa no Tier 2
+  if (codecId !== 0) {
+    return buf;
+  }
+
+  const numSamples = Math.floor((buf.length - 4) / 2);
+  if (numSamples <= 0) return buf;
+
+  if (targetTier === 1) {
+    // Tier 1: Reduz 50% da banda (PCM 16-bit -> G.711 8-bit na mesma frequência)
+    const out = Buffer.allocUnsafe(4 + numSamples);
+    out[0] = 0xAA;
+    out[1] = 1; // G.711 μ-law
+    out[2] = sampleRate & 0xFF;
+    out[3] = (sampleRate >> 8) & 0xFF;
+    for (let i = 0; i < numSamples; i++) {
+      const s = buf.readInt16LE(4 + i * 2);
+      out[4 + i] = encodeMuLawServerSample(s);
+    }
+    return out;
+  } else {
+    // Tier 2: Reduz 75% da banda (Filtro anti-aliasing 2:1 + G.711 8-bit para conexões críticas)
+    const halfSamples = Math.floor(numSamples / 2);
+    const halfRate = Math.max(6000, Math.round(sampleRate / 2));
+    const out = Buffer.allocUnsafe(4 + halfSamples);
+    out[0] = 0xAA;
+    out[1] = 1; // G.711 μ-law
+    out[2] = halfRate & 0xFF;
+    out[3] = (halfRate >> 8) & 0xFF;
+    for (let i = 0; i < halfSamples; i++) {
+      const s0 = buf.readInt16LE(4 + (i * 2) * 2);
+      const s1 = buf.readInt16LE(4 + (i * 2 + 1) * 2);
+      const avg = (s0 + s1) >> 1;
+      out[4 + i] = encodeMuLawServerSample(avg);
+    }
+    return out;
+  }
+}
 
 wss.on('connection', (ws, req) => {
   // Parse à prova de falhas com URL padrão Node.js e normalização de slug
@@ -740,6 +823,7 @@ wss.on('connection', (ws, req) => {
   const roomId = decodeURIComponent(rawRoom).trim().toLowerCase();
   const role = parsedUrl.searchParams.get('role') || 'listener';
   let channel = parsedUrl.searchParams.get('channel') || 'original';
+  const lastSeenSeq = parseInt(parsedUrl.searchParams.get('lastSeq') || '0', 10);
 
   const clientId = 'c_' + Math.random().toString(36).substring(2, 9);
   ws.clientId = clientId;
@@ -747,6 +831,9 @@ wss.on('connection', (ws, req) => {
   ws.role = role;
   ws.channel = channel;
   ws.isAlive = true;
+  ws.abrMode = 'auto'; // 'auto' | 'high' | 'saver'
+  ws.abrTier = 0;      // 0 = Original PCM 256k, 1 = Degrade -50% (128k), 2 = Degrade -75% (64k)
+  ws.lastAbrChangeTime = Date.now();
 
   const roomClients = getRoomClients(roomId);
   roomClients.add(ws);
@@ -777,6 +864,22 @@ wss.on('connection', (ws, req) => {
     } catch (e) {}
   }
 
+  // Se o ouvinte reconectou após oscilação de rede, envia imediatamente os trechos recentes perdidos
+  if (role === 'listener' && roomCatchupHistory.has(roomId)) {
+    const now = Date.now();
+    const recentItems = roomCatchupHistory.get(roomId).filter(
+      item => item.seqId > lastSeenSeq && (now - item.timestamp) <= 30000
+    );
+    if (recentItems.length > 0) {
+      try {
+        ws.send(JSON.stringify({
+          type: 'subtitle_catchup',
+          items: recentItems
+        }));
+      } catch (e) {}
+    }
+  }
+
   // Notifica imediatamente anfitrião e telões sobre métricas de ouvintes online
   broadcastRoomStats(roomId);
 
@@ -785,10 +888,49 @@ wss.on('connection', (ws, req) => {
     if (isBinary) {
       if (ws.role !== 'host') return;
 
-      // Broadcast direto do Áudio Original com baixíssima latência (Palestra Silenciosa)
+      // Cache sob demanda para pacotes degradados neste frame (só calcula se algum ouvinte precisar)
+      let cachedTier1Packet = null;
+      let cachedTier2Packet = null;
+
+      // Broadcast inteligente do Áudio Original com Degrade Quality individual por ouvinte
       for (const client of roomClients) {
         if (client !== ws && client.readyState === WebSocket.OPEN && client.channel === 'original') {
-          client.send(data, { binary: true });
+          const backpressureBytes = client.bufferedAmount || 0;
+
+          // Proteção contra congelamento total de TCP (se acumular >192KB na fila do sistema operacional, aguarda esvaziar)
+          if (backpressureBytes > 196608) {
+            client.abrTier = 2;
+            client.lastAbrChangeTime = Date.now();
+            continue;
+          }
+
+          // Adaptação automática por fila de congestão TCP individual daquele ouvinte
+          let effectiveTier = client.abrTier || 0;
+          if (client.abrMode === 'saver') {
+            effectiveTier = 2;
+          } else if (client.abrMode === 'high') {
+            effectiveTier = backpressureBytes > 65536 ? 1 : 0;
+          } else {
+            if (backpressureBytes > 32768) {
+              effectiveTier = 2;
+              client.abrTier = 2;
+              client.lastAbrChangeTime = Date.now();
+            } else if (backpressureBytes > 12288 && effectiveTier < 1) {
+              effectiveTier = 1;
+              client.abrTier = 1;
+              client.lastAbrChangeTime = Date.now();
+            }
+          }
+
+          if (effectiveTier === 0) {
+            client.send(data, { binary: true });
+          } else if (effectiveTier === 1) {
+            if (!cachedTier1Packet) cachedTier1Packet = buildDegradedAudioPacket(data, 1);
+            client.send(cachedTier1Packet, { binary: true });
+          } else {
+            if (!cachedTier2Packet) cachedTier2Packet = buildDegradedAudioPacket(data, 2);
+            client.send(cachedTier2Packet, { binary: true });
+          }
         }
       }
 
@@ -871,8 +1013,10 @@ wss.on('connection', (ws, req) => {
       } else if (msg.type === 'speech_transcript') {
         ws.hasHostSpeechSTT = true;
         const { text, isFinal, sourceLang } = msg;
+        const currentSeqId = isFinal ? globalCatchupSeqId : undefined;
         const subPayload = JSON.stringify({
           type: 'subtitle',
+          seqId: currentSeqId,
           text,
           isFinal,
           sourceLang: sourceLang || 'pt-BR',
@@ -888,6 +1032,12 @@ wss.on('connection', (ws, req) => {
         if (isFinal) {
           const cleanText = (text || '').trim();
           if (!cleanText) return;
+
+          // Registra fala original no buffer de recuperação de quedas de rede
+          appendToCatchupHistory(roomId, {
+            lang: 'original',
+            text: cleanText
+          });
 
           // Invalida qualquer tradução parcial (interim) anterior que ainda esteja em trânsito
           const prevInterim = roomLastInterimTranslate.get(roomId);
@@ -906,8 +1056,16 @@ wss.on('connection', (ws, req) => {
 
             // Callback disparado instantaneamente no momento em que a tradução de cada idioma fica pronta (<100ms)
             const onLangReady = (lang, translatedText) => {
+              const transSeqId = globalCatchupSeqId;
+              appendToCatchupHistory(roomId, {
+                lang,
+                text: translatedText,
+                sourceText: text
+              });
+
               const transPayload = JSON.stringify({
                 type: 'subtitle_translated',
+                seqId: transSeqId,
                 lang,
                 text: translatedText,
                 isFinal: true,
@@ -1034,8 +1192,46 @@ wss.on('connection', (ws, req) => {
           type: 'p2p_peers',
           peers
         }));
+      } else if (msg.type === 'set_abr_mode') {
+        ws.abrMode = msg.mode || 'auto';
+        if (ws.abrMode === 'high') ws.abrTier = 0;
+        else if (ws.abrMode === 'saver') ws.abrTier = 2;
+        ws.lastAbrChangeTime = Date.now();
+        ws.send(JSON.stringify({
+          type: 'pong',
+          abrTier: ws.abrTier,
+          abrMode: ws.abrMode
+        }));
       } else if (msg.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong' }));
+        if (msg.abrMode) ws.abrMode = msg.abrMode;
+        const underruns = Number(msg.underruns || 0);
+        const jitterMs = Number(msg.jitterMs || 0);
+        const now = Date.now();
+
+        if (ws.abrMode === 'saver') {
+          ws.abrTier = 2;
+        } else if (ws.abrMode === 'high') {
+          ws.abrTier = 0;
+        } else {
+          // Modo Automático Inteligente por Ouvinte:
+          if (underruns >= 2 || jitterMs > 140 || (ws.bufferedAmount || 0) > 24576) {
+            ws.abrTier = 2; // Reduz 75% da banda imediatamente para estancar cortes
+            ws.lastAbrChangeTime = now;
+          } else if (underruns === 1 || jitterMs > 75 || (ws.bufferedAmount || 0) > 8192) {
+            if (ws.abrTier < 1) ws.abrTier = 1; // Reduz 50% da banda preventivamente
+            ws.lastAbrChangeTime = now;
+          } else if (underruns === 0 && jitterMs < 45 && (ws.bufferedAmount || 0) < 2048 && ws.abrTier > 0 && (now - ws.lastAbrChangeTime) > 8000) {
+            // Conexão do ouvinte estabilizou por >8s: restaura gradualmente até Linear PCM 100% puro
+            ws.abrTier = Math.max(0, ws.abrTier - 1);
+            ws.lastAbrChangeTime = now;
+          }
+        }
+
+        ws.send(JSON.stringify({
+          type: 'pong',
+          abrTier: ws.abrTier,
+          abrMode: ws.abrMode
+        }));
       }
     } catch (e) {}
   });
@@ -1048,6 +1244,7 @@ wss.on('connection', (ws, req) => {
       roomAudioMeta.delete(roomId);
       roomSpeakerProfile.delete(roomId);
       roomLastFinalTranscript.delete(roomId);
+      roomCatchupHistory.delete(roomId);
     }
     if (ws.role === 'host') {
       aiPipeline.closeSession(roomId);
