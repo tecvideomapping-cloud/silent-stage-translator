@@ -6,21 +6,26 @@
   <title>Transmissor de Palco & Mesa de Som | Videomappingtech Host</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <link rel="stylesheet" href="/design-system.css">
+  <link rel="stylesheet" href="/host-v2.css">
+  <script src="/design-system.js" defer></script>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-cyan-500 selection:text-white pb-12">
+<body class="vmt-app vmt-host">
 
+<aside class="host-sidebar"><a href="/admin.html" class="vmt-brand"><span class="host-brand-mark" data-icon="waves"></span><span>videomapping<small>SILENT TRANSLATOR</small></span></a><div class="host-nav-caption">WORKSPACE</div><nav aria-label="Navegação do estúdio"><a href="/admin.html"><span data-icon="layout-grid"></span> Visão geral</a><a href="#" class="is-active" aria-current="page"><span data-icon="radio"></span> Estúdio ao vivo</a><a href="#host-monitor"><span data-icon="captions"></span> Transcrição</a><a href="#host-settings"><span data-icon="sliders-horizontal"></span> Configurações</a><a href="#host-glossary"><span data-icon="book-open"></span> Glossário</a></nav><div class="host-sidebar-bottom"><span class="host-eyebrow">VIDEOMAPPINGTECH</span><p>Tradução que conecta.<br>Experiência sem barreiras.</p></div></aside>
   <!-- Header -->
-  <header class="border-b border-slate-800 bg-slate-900/90 px-6 py-4 flex items-center justify-between sticky top-0 z-30">
+  <header class="host-topbar border-b border-slate-800 bg-slate-900/90 px-6 py-4 flex items-center justify-between sticky top-0 z-30">
     <div class="flex items-center gap-3">
       <img src="/logo_VMP.svg" alt="Video Mapping Logo" class="h-8 w-auto filter drop-shadow">
       <div>
         <h1 class="font-bold text-lg bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-          Videomappingtech • Host Transmitter
+          Workspace / Estúdio ao vivo
         </h1>
         <p id="eventSubtitle" class="text-xs text-slate-400">Carregando informações da sessão...</p>
       </div>
     </div>
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-3"><button class="vmt-btn host-theme-btn" type="button" data-theme-toggle aria-label="Alternar tema"><span data-icon="sun-moon"></span> Alternar tema</button>
       <div id="hostLiveListenersPill" class="flex items-center gap-1.5 text-xs bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 px-3 py-1 rounded-full font-semibold shadow-sm">
         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
         <span id="hostOnlineCountText">0 ouvintes online</span>
@@ -38,16 +43,10 @@
     </div>
   </header>
 
-  <main class="flex-1 max-w-6xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-    <!-- Coluna Esquerda: Controle de Transmissão e Áudio -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      
-      <!-- Card de Transmissão & Dispositivo de Entrada de Áudio -->
-      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
+  <main class="host-main"><div class="host-page-heading"><div><span class="host-eyebrow">CONTROLE DO PALCO</span><h1>Estúdio de transmissão<span>.</span></h1><p>Áudio, tradução e projeção em uma só mesa de operação.</p></div></div><div class="host-live-grid"><section class="host-studio vmt-glass bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
         <div class="flex items-center justify-between">
           <div>
-            <h2 class="text-base font-bold text-white">Transmissão da Mesa de Som / Palco</h2>
+            <h2 class="text-base font-bold text-white">Estúdio de transmissão</h2>
             <p class="text-xs text-slate-400">O som selecionado vai direto para o fone dos ouvintes (Palestra Silenciosa) e alimenta a IA</p>
           </div>
           <button id="broadcastBtn" onclick="toggleBroadcast()"
@@ -55,6 +54,36 @@
             <span id="btnIcon">🎙️</span>
             <span id="btnText">Iniciar Transmissão</span>
           </button>
+        </div>
+
+<div class="host-signal-stage"><span class="host-eyebrow">SINAL DE ENTRADA</span>        <!-- VU Meter de Volume -->
+        <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-2">
+          <div class="flex justify-between text-xs text-slate-400">
+            <span>Nível de Sinal de Entrada:</span>
+            <span id="vuLevelText">0%</span>
+          </div>
+          <div class="w-full h-4 bg-slate-900 rounded-full overflow-hidden border border-slate-800 p-0.5">
+            <div id="vuBar" class="h-full bg-gradient-to-r from-emerald-500 via-yellow-500 to-rose-500 rounded-full transition-all duration-75 w-0"></div>
+          </div>
+        </div>
+
+</div>        <!-- Configurações de Sala e Idioma -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-800">
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Idioma Falado no Palco:</label>
+            <select id="sourceLang" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500">
+              <option value="pt-BR" selected>🇧🇷 Português (Brasil)</option>
+              <option value="en-US">🇺🇸 Inglês (EUA)</option>
+              <option value="es-ES">🇪🇸 Espanhol</option>
+              <option value="fr-FR">🇫🇷 Francês</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">ID da Sala do Evento:</label>
+            <input type="text" id="roomIdInput" value="palco1"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+              onchange="updateRoom(this.value)">
+          </div>
         </div>
 
         <!-- SELETOR DE DISPOSITIVO DE ENTRADA DE ÁUDIO & INTERFACES -->
@@ -146,7 +175,132 @@
           </div>
         </div>
 
-        <!-- Compressão & Taxa de Bits (kbps) da Transmissão -->
+</section><aside class="host-live-aside"><section class="host-audience vmt-glass bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <h2 class="text-sm font-bold text-white uppercase tracking-wider">Audiência ao Vivo</h2>
+          </div>
+          <span id="hostTotalOnlineBadge" class="text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-2.5 py-0.5 rounded-full font-bold font-mono">
+            0 ouvintes
+          </span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col">
+            <span class="text-[10px] text-slate-400 flex items-center gap-1">🎧 Áudio Original</span>
+            <span id="channelCountOriginal" class="text-base font-bold text-cyan-400 font-mono mt-0.5">0</span>
+            <span class="text-[10px] text-slate-500">Palestra Silenciosa</span>
+          </div>
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col">
+            <span class="text-[10px] text-slate-400 flex items-center gap-1">🇺🇸 Inglês</span>
+            <span id="channelCountEn" class="text-base font-bold text-purple-400 font-mono mt-0.5">0</span>
+            <span class="text-[10px] text-slate-500">Tradução Simultânea</span>
+          </div>
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col">
+            <span class="text-[10px] text-slate-400 flex items-center gap-1">🇪🇸 Espanhol</span>
+            <span id="channelCountEs" class="text-base font-bold text-amber-400 font-mono mt-0.5">0</span>
+            <span class="text-[10px] text-slate-500">Tradução Simultânea</span>
+          </div>
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col">
+            <span class="text-[10px] text-slate-400 flex items-center gap-1">📺 Telões Ativos</span>
+            <span id="channelCountScreens" class="text-base font-bold text-emerald-400 font-mono mt-0.5">0</span>
+            <span class="text-[10px] text-slate-500">Receptores Palco</span>
+          </div>
+        </div>
+      </section><section class="host-access vmt-glass bg-slate-900/90 border border-slate-800 rounded-2xl p-6 flex flex-col items-center text-center shadow-xl">
+        <h2 class="text-sm font-bold text-white uppercase tracking-wider mb-1">Acesso dos Participantes</h2>
+        <p class="text-xs text-slate-400 mb-4">Aponte a câmera do celular para ouvir a palestra ou ver legendas</p>
+        
+        <div class="p-3 bg-white rounded-xl shadow-inner mb-4">
+          <div id="qrcode"></div>
+        </div>
+
+        <div class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between text-left">
+          <span id="shareUrlText" class="text-xs text-slate-300 font-mono truncate mr-2">...</span>
+          <button onclick="copyShareUrl()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1 rounded transition whitespace-nowrap">
+            Copiar
+          </button>
+        </div>
+      </section></aside></div><section id="host-monitor" class="host-monitor vmt-glass bg-slate-900/90 border border-slate-800 rounded-2xl p-5 flex-1 flex flex-col shadow-xl min-h-[300px]">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div class="flex items-center gap-2">
+            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Monitor da Transcrição ao Vivo</h2>
+            <span id="transcriptionIntegrityBadge" class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2 py-0.5 rounded-full font-mono">
+              ● 100% Íntegro
+            </span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <div class="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-0.5">
+              <button type="button" onclick="changeHostTranscriptFontSize(-2)" title="Diminuir fonte" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-2 py-0.5 rounded transition">A-</button>
+              <span id="hostFontSizeBadge" class="text-[10px] font-mono text-cyan-400 px-1">18px</span>
+              <button type="button" onclick="changeHostTranscriptFontSize(2)" title="Aumentar fonte" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-2 py-0.5 rounded transition">A+</button>
+            </div>
+            <button type="button" onclick="clearHostTranscriptBox()" title="Limpar texto do monitor" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded-md transition">
+              Limpar
+            </button>
+            <button onclick="toggleSpeechTestPanel()" class="text-[11px] bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 border border-cyan-500/40 px-2.5 py-1 rounded-md transition font-medium flex items-center gap-1">
+              <span>🧪</span> Testar
+            </button>
+          </div>
+        </div>
+
+        <!-- Painel de Testes Interativos de Fala & Tradução -->
+        <div id="speechTestPanel" class="hidden mb-3 p-3 bg-slate-950 border border-cyan-500/40 rounded-xl flex flex-col gap-2.5 text-xs">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-cyan-300 flex items-center gap-1.5">
+              <span>🔬</span> Validador de Integridade de Fala
+            </span>
+            <span class="text-[10px] text-slate-400">Verifica se alguma palavra é cortada ou esquecida</span>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[11px] text-slate-400">Escolha um cenário ou digite uma frase para testar:</label>
+            <div class="flex flex-wrap gap-1.5">
+              <button type="button" onclick="setTestPreset(0)" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded border border-slate-700">
+                1. Frase Longa (20 palavras)
+              </button>
+              <button type="button" onclick="setTestPreset(1)" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded border border-slate-700">
+                2. Primeira Palavra & Conectivo
+              </button>
+              <button type="button" onclick="setTestPreset(2)" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded border border-slate-700">
+                3. Vírgulas & Pausas
+              </button>
+            </div>
+            <div class="flex gap-2 mt-1">
+              <input type="text" id="customTestSpeechInput" placeholder="Digite uma frase para testar..."
+                class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+              <button type="button" id="runTestSpeechBtn" onclick="runSpeechIntegrityTest()"
+                class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-4 py-1.5 rounded-lg text-xs transition active:scale-95 whitespace-nowrap flex items-center gap-1">
+                <span>▶️</span> Testar Agora
+              </button>
+            </div>
+          </div>
+
+          <!-- Relatório do Último Teste -->
+          <div id="testDiagnosticBox" class="hidden p-2.5 bg-slate-900 rounded-lg border border-slate-800 text-[11px] flex flex-col gap-1.5">
+            <div class="flex items-center justify-between font-mono">
+              <span id="diagnosticStatusText" class="text-emerald-400 font-bold"></span>
+              <span id="diagnosticWordCount" class="text-slate-400"></span>
+            </div>
+            <div class="text-slate-300">
+              <strong>🇺🇸 Tradução EN:</strong> <span id="diagnosticEnText" class="text-purple-300">Aguardando...</span>
+            </div>
+            <div class="text-slate-300">
+              <strong>🇪🇸 Tradução ES:</strong> <span id="diagnosticEsText" class="text-amber-300">Aguardando...</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="hostTranscriptBox" style="font-size: 18px;" class="flex-1 overflow-y-auto bg-slate-950 rounded-xl border border-slate-800 p-4 text-slate-100 leading-relaxed max-h-72 min-h-[200px] scroll-smooth">
+          <p id="hostPlaceholderMsg" class="text-slate-600 italic text-sm">O áudio capturado será escrito aqui simultaneamente em tempo real...</p>
+          <div id="hostLiveStreamFlow" class="hidden leading-relaxed tracking-wide break-words">
+            <span id="hostConfirmedStream" class="text-slate-100 font-medium"></span>
+            <span id="hostInterimStream" class="text-cyan-300 font-semibold transition-all"></span>
+            <span id="hostLiveCursor" class="hidden inline-block w-2 h-5 bg-cyan-400 ml-1 animate-pulse align-middle rounded-sm"></span>
+          </div>
+        </div>
+      </section><div class="host-preparation-head"><span class="host-eyebrow">CONFIGURAÇÕES DO EVENTO</span><h2>Prepare cada detalhe</h2></div><div id="host-settings" class="host-settings-grid"><section class="vmt-glass host-settings-card"><h2><span data-icon="sliders-horizontal"></span> Qualidade do áudio</h2>        <!-- Compressão & Taxa de Bits (kbps) da Transmissão -->
         <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
@@ -188,37 +342,7 @@
           </div>
         </div>
 
-        <!-- VU Meter de Volume -->
-        <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-2">
-          <div class="flex justify-between text-xs text-slate-400">
-            <span>Nível de Sinal de Entrada:</span>
-            <span id="vuLevelText">0%</span>
-          </div>
-          <div class="w-full h-4 bg-slate-900 rounded-full overflow-hidden border border-slate-800 p-0.5">
-            <div id="vuBar" class="h-full bg-gradient-to-r from-emerald-500 via-yellow-500 to-rose-500 rounded-full transition-all duration-75 w-0"></div>
-          </div>
-        </div>
-
-        <!-- Configurações de Sala e Idioma -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-800">
-          <div>
-            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Idioma Falado no Palco:</label>
-            <select id="sourceLang" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500">
-              <option value="pt-BR" selected>🇧🇷 Português (Brasil)</option>
-              <option value="en-US">🇺🇸 Inglês (EUA)</option>
-              <option value="es-ES">🇪🇸 Espanhol</option>
-              <option value="fr-FR">🇫🇷 Francês</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">ID da Sala do Evento:</label>
-            <input type="text" id="roomIdInput" value="palco1"
-              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
-              onchange="updateRoom(this.value)">
-          </div>
-        </div>
-
-        <!-- CONTROLE DO TELÃO (SELEÇÃO DE IDIOMA PELO ADMINISTRADOR) -->
+</section><section class="vmt-glass host-settings-card"><h2><span data-icon="scan-line"></span> Projeção</h2>        <!-- CONTROLE DO TELÃO (SELEÇÃO DE IDIOMA PELO ADMINISTRADOR) -->
         <div class="bg-slate-950 border border-cyan-900/50 rounded-xl p-4 flex flex-col gap-3">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
@@ -283,7 +407,7 @@
           </div>
         </div>
 
-        <!-- CALIBRAÇÃO DE VOZ DO PALESTRANTE (TIMBRE IA & NATURALIDADE) -->
+</section><section class="vmt-glass host-settings-card host-voice"><h2><span data-icon="audio-lines"></span> Voz do palestrante</h2>        <!-- CALIBRAÇÃO DE VOZ DO PALESTRANTE (TIMBRE IA & NATURALIDADE) -->
         <div class="bg-slate-950 border border-purple-900/50 rounded-xl p-4 flex flex-col gap-3">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span class="text-xs font-bold text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
@@ -392,10 +516,7 @@
             </div>
           </div>
         </div>
-      </section>
-
-      <!-- Glossário de IA & Biblioteca Reutilizável -->
-      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-4">
+      </section></div><section id="host-glossary" class="host-glossary vmt-glass bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-4">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <div class="flex items-center gap-2">
@@ -417,15 +538,15 @@
         </div>
 
         <!-- Barra de Carregamento & Gestão de Modelos Reutilizáveis -->
-        <div class="p-3 bg-slate-950/80 border border-slate-800/90 rounded-xl flex flex-col md:flex-row flex-wrap items-stretch md:items-center justify-between gap-3">
-          <div class="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
+        <div class="host-glossary-library p-3 bg-slate-950/80 border border-slate-800/90 rounded-xl flex flex-col md:flex-row flex-wrap items-stretch md:items-center justify-between gap-3">
+          <div class="host-glossary-picker flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
             <span class="text-xs font-semibold text-cyan-400 whitespace-nowrap flex items-center gap-1 shrink-0">
               <span>📚</span> Modelos Salvos:
             </span>
             <select id="savedGlossarySelect" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 min-w-[160px]">
               <option value="">Carregando biblioteca...</option>
             </select>
-            <div class="flex items-center gap-1.5 shrink-0">
+            <div class="host-glossary-apply flex items-center gap-1.5 shrink-0">
               <button type="button" onclick="applySelectedSavedGlossary('merge')" title="Adiciona os termos do modelo aos termos atuais do evento" class="text-xs bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 border border-cyan-500/40 px-3 py-1.5 rounded-lg transition font-medium flex items-center gap-1 whitespace-nowrap">
                 <span>➕</span> Mesclar
               </button>
@@ -435,7 +556,7 @@
             </div>
           </div>
 
-          <div class="flex items-center gap-2 shrink-0">
+          <div class="host-glossary-actions flex items-center gap-2 shrink-0">
             <button type="button" onclick="openSaveAsTemplateModal()" title="Salvar lista de termos atual como um novo modelo reutilizável" class="text-xs bg-emerald-700/40 hover:bg-emerald-600/60 text-emerald-300 border border-emerald-500/40 px-3 py-1.5 rounded-lg transition font-semibold flex items-center gap-1.5 shadow-sm whitespace-nowrap">
               <span>💾</span> Salvar como Novo Modelo
             </button>
@@ -460,148 +581,7 @@
         <div id="glossaryList" class="flex flex-wrap gap-2 min-h-[40px] max-h-48 overflow-y-auto p-2.5 bg-slate-950 rounded-lg border border-slate-800">
           <!-- Renderizado via JS -->
         </div>
-      </section>
-
-    </div>
-
-    <!-- Coluna Direita: Audiência Online, QR Code e Monitoramento -->
-    <div class="flex flex-col gap-6">
-      
-      <!-- Card de Audiência Online em Tempo Real -->
-      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col gap-3">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            <h2 class="text-sm font-bold text-white uppercase tracking-wider">Audiência ao Vivo</h2>
-          </div>
-          <span id="hostTotalOnlineBadge" class="text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-2.5 py-0.5 rounded-full font-bold font-mono">
-            0 ouvintes
-          </span>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2 text-xs">
-          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col">
-            <span class="text-[10px] text-slate-400 flex items-center gap-1">🎧 Áudio Original</span>
-            <span id="channelCountOriginal" class="text-base font-bold text-cyan-400 font-mono mt-0.5">0</span>
-            <span class="text-[10px] text-slate-500">Palestra Silenciosa</span>
-          </div>
-          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col">
-            <span class="text-[10px] text-slate-400 flex items-center gap-1">🇺🇸 Inglês</span>
-            <span id="channelCountEn" class="text-base font-bold text-purple-400 font-mono mt-0.5">0</span>
-            <span class="text-[10px] text-slate-500">Tradução Simultânea</span>
-          </div>
-          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col">
-            <span class="text-[10px] text-slate-400 flex items-center gap-1">🇪🇸 Espanhol</span>
-            <span id="channelCountEs" class="text-base font-bold text-amber-400 font-mono mt-0.5">0</span>
-            <span class="text-[10px] text-slate-500">Tradução Simultânea</span>
-          </div>
-          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col">
-            <span class="text-[10px] text-slate-400 flex items-center gap-1">📺 Telões Ativos</span>
-            <span id="channelCountScreens" class="text-base font-bold text-emerald-400 font-mono mt-0.5">0</span>
-            <span class="text-[10px] text-slate-500">Receptores Palco</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- Card do QR Code -->
-      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 flex flex-col items-center text-center shadow-xl">
-        <h2 class="text-sm font-bold text-white uppercase tracking-wider mb-1">Acesso dos Participantes</h2>
-        <p class="text-xs text-slate-400 mb-4">Aponte a câmera do celular para ouvir a palestra ou ver legendas</p>
-        
-        <div class="p-3 bg-white rounded-xl shadow-inner mb-4">
-          <div id="qrcode"></div>
-        </div>
-
-        <div class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between text-left">
-          <span id="shareUrlText" class="text-xs text-slate-300 font-mono truncate mr-2">...</span>
-          <button onclick="copyShareUrl()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1 rounded transition whitespace-nowrap">
-            Copiar
-          </button>
-        </div>
-      </section>
-
-      <!-- Transcrição do Monitor de Palco & Validador de Integridade -->
-      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 flex-1 flex flex-col shadow-xl min-h-[300px]">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <div class="flex items-center gap-2">
-            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Monitor da Transcrição ao Vivo</h2>
-            <span id="transcriptionIntegrityBadge" class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2 py-0.5 rounded-full font-mono">
-              ● 100% Íntegro
-            </span>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <div class="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-0.5">
-              <button type="button" onclick="changeHostTranscriptFontSize(-2)" title="Diminuir fonte" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-2 py-0.5 rounded transition">A-</button>
-              <span id="hostFontSizeBadge" class="text-[10px] font-mono text-cyan-400 px-1">18px</span>
-              <button type="button" onclick="changeHostTranscriptFontSize(2)" title="Aumentar fonte" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-2 py-0.5 rounded transition">A+</button>
-            </div>
-            <button type="button" onclick="clearHostTranscriptBox()" title="Limpar texto do monitor" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded-md transition">
-              Limpar
-            </button>
-            <button onclick="toggleSpeechTestPanel()" class="text-[11px] bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 border border-cyan-500/40 px-2.5 py-1 rounded-md transition font-medium flex items-center gap-1">
-              <span>🧪</span> Testar
-            </button>
-          </div>
-        </div>
-
-        <!-- Painel de Testes Interativos de Fala & Tradução -->
-        <div id="speechTestPanel" class="hidden mb-3 p-3 bg-slate-950 border border-cyan-500/40 rounded-xl flex flex-col gap-2.5 text-xs">
-          <div class="flex items-center justify-between">
-            <span class="font-bold text-cyan-300 flex items-center gap-1.5">
-              <span>🔬</span> Validador de Integridade de Fala
-            </span>
-            <span class="text-[10px] text-slate-400">Verifica se alguma palavra é cortada ou esquecida</span>
-          </div>
-
-          <div class="flex flex-col gap-1.5">
-            <label class="text-[11px] text-slate-400">Escolha um cenário ou digite uma frase para testar:</label>
-            <div class="flex flex-wrap gap-1.5">
-              <button type="button" onclick="setTestPreset(0)" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded border border-slate-700">
-                1. Frase Longa (20 palavras)
-              </button>
-              <button type="button" onclick="setTestPreset(1)" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded border border-slate-700">
-                2. Primeira Palavra & Conectivo
-              </button>
-              <button type="button" onclick="setTestPreset(2)" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded border border-slate-700">
-                3. Vírgulas & Pausas
-              </button>
-            </div>
-            <div class="flex gap-2 mt-1">
-              <input type="text" id="customTestSpeechInput" placeholder="Digite uma frase para testar..."
-                class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
-              <button type="button" id="runTestSpeechBtn" onclick="runSpeechIntegrityTest()"
-                class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-4 py-1.5 rounded-lg text-xs transition active:scale-95 whitespace-nowrap flex items-center gap-1">
-                <span>▶️</span> Testar Agora
-              </button>
-            </div>
-          </div>
-
-          <!-- Relatório do Último Teste -->
-          <div id="testDiagnosticBox" class="hidden p-2.5 bg-slate-900 rounded-lg border border-slate-800 text-[11px] flex flex-col gap-1.5">
-            <div class="flex items-center justify-between font-mono">
-              <span id="diagnosticStatusText" class="text-emerald-400 font-bold"></span>
-              <span id="diagnosticWordCount" class="text-slate-400"></span>
-            </div>
-            <div class="text-slate-300">
-              <strong>🇺🇸 Tradução EN:</strong> <span id="diagnosticEnText" class="text-purple-300">Aguardando...</span>
-            </div>
-            <div class="text-slate-300">
-              <strong>🇪🇸 Tradução ES:</strong> <span id="diagnosticEsText" class="text-amber-300">Aguardando...</span>
-            </div>
-          </div>
-        </div>
-
-        <div id="hostTranscriptBox" style="font-size: 18px;" class="flex-1 overflow-y-auto bg-slate-950 rounded-xl border border-slate-800 p-4 text-slate-100 leading-relaxed max-h-72 min-h-[200px] scroll-smooth">
-          <p id="hostPlaceholderMsg" class="text-slate-600 italic text-sm">O áudio capturado será escrito aqui simultaneamente em tempo real...</p>
-          <div id="hostLiveStreamFlow" class="hidden leading-relaxed tracking-wide break-words">
-            <span id="hostConfirmedStream" class="text-slate-100 font-medium"></span>
-            <span id="hostInterimStream" class="text-cyan-300 font-semibold transition-all"></span>
-            <span id="hostLiveCursor" class="hidden inline-block w-2 h-5 bg-cyan-400 ml-1 animate-pulse align-middle rounded-sm"></span>
-          </div>
-        </div>
-      </section>
-
-  </main>
+      </section></main>
 
   <!-- Modal: Salvar Glossário Atual como Modelo Reutilizável -->
   <div id="saveTemplateModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
@@ -3131,3 +3111,4 @@
   </script>
 </body>
 </html>
+

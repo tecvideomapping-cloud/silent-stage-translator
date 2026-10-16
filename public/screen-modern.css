@@ -1,0 +1,19 @@
+/* Projection controls stay separate from the clean output canvas. */
+body { font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased; padding:24px; }
+body.theme-dark { background-color:#0b1120; color:#eaf0fb; }
+#controlsHeader { background:rgba(17,27,46,.94); border:1px solid #33435d; border-radius:16px; padding:16px 18px; gap:18px; box-shadow:0 12px 30px #00000020; opacity:.7; }
+#controlsHeader:hover,#controlsHeader:focus-within { opacity:1; }
+#controlsHeader > div:first-child { gap:12px; }
+#controlsHeader > div:first-child > span:first-child { color:#5eead4; font-size:10px; letter-spacing:.13em; }
+#roomTag { background:#1c2b43; border:1px solid #33435d; border-radius:8px; padding:6px 10px; }
+#controlsHeader label { color:#aebdd2; font-size:11px; }
+#controlsHeader select { min-height:36px; padding:6px 10px; border-radius:8px; background:#0b1424; border:1px solid #3a4b65; color:#eaf0fb; font-size:11px; max-width:100%; }
+#controlsHeader button { min-height:36px; border-radius:8px; padding:7px 12px; background:#22334e; color:#eaf0fb; }
+#controlsHeader button:last-child[onclick="toggleFullScreen()"] { background:#2dd4bf; color:#082724; font-weight:700; }
+#controlsHeader select:focus-visible,#controlsHeader button:focus-visible { outline:2px solid #60a5fa; outline-offset:3px; }
+body.theme-lowerthird .subtitle-line { border-radius:16px; border-color:rgba(255,255,255,.18); }
+#subtitlesContainer > p { color:#94a3b8; font-style:normal; font-size:22px; font-weight:400; letter-spacing:-.02em; }
+body.theme-chroma #subtitlesContainer > p { color:#111827; }
+footer { letter-spacing:.03em; }
+@media(max-width:760px) { body { padding:14px; } #controlsHeader { padding:14px; gap:14px; } #controlsHeader > div:last-child { gap:8px; } #controlsHeader select { max-width:235px; } #screenMainArea { padding-left:0; padding-right:0; } }
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }

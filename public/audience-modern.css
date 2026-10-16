@@ -1,0 +1,65 @@
+/* Audience experience: a quiet, focused listening desk. */
+:root { color-scheme: dark; --audience-surface:#111b2e; --audience-border:#26334b; }
+body { background:#0b1120; color:#eaf0fb; font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased; }
+body > header { min-height:76px; padding:18px max(24px,calc((100vw - 1160px)/2)); background:rgba(11,17,32,.94); border-color:#26334b; gap:20px; }
+#headerTitle { font-size:16px; letter-spacing:-.02em; max-width:260px; background:none; color:#eaf0fb; }
+body > header > div:last-child { flex-wrap:wrap; justify-content:flex-end; }
+#roomBadge { background:#172239; border-color:#2b3a53; padding:6px 12px; }
+#audioUnlockBanner { background:#153a48; border-bottom:1px solid #25616a; color:#b5fff0; padding:13px 20px; font-size:12px; animation:none; box-shadow:none; }
+#audioUnlockBanner:hover { background:#1b4a56; }
+#bannerContainer { max-width:1100px; margin:24px auto 0; border-radius:16px; border:1px solid #26334b; }
+body > main { max-width:1160px; padding:38px 24px 24px; gap:22px; }
+#eventWelcomeCard { background:transparent; border:0; text-align:left; padding:0 0 8px; }
+#eventWelcomeCard::before { content:"SUA EXPERIÊNCIA AO VIVO"; display:block; color:#2dd4bf; font-size:10px; letter-spacing:.19em; font-weight:700; margin-bottom:10px; }
+#eventTitle { font-size:32px; letter-spacing:-.04em; line-height:1.2; }
+#eventWelcomeCard > p { margin-top:10px; font-size:14px; line-height:1.6; color:#94a3b8; }
+main > section { background:#111b2e; border:1px solid #26334b; padding:24px; border-radius:18px; box-shadow:0 12px 36px #00000017; }
+main > section > h2 { color:#c3cfe1; font-size:11px; letter-spacing:.11em; margin-bottom:18px; }
+#channelsContainer { gap:10px; }
+.channel-btn { background:#0d1627; border:1px solid #2a3750; padding:16px; border-radius:12px; min-height:76px; }
+.channel-btn:hover { border-color:#6a85a5; background:#17243a; }
+.channel-btn.active { background:linear-gradient(120deg,#12353d,#142b3c); border-color:var(--primary-color,#2dd4bf); box-shadow:inset 3px 0 0 var(--primary-color,#2dd4bf); }
+.channel-btn p:first-child { font-weight:600; line-height:1.5; }
+.channel-btn p + p { font-size:11px; margin-top:3px; }
+.channel-btn > span { white-space:nowrap; font-size:10px; margin-left:10px; }
+#togglePlayBtn { min-height:46px; border-radius:12px; padding:11px 18px; font-size:13px; flex-shrink:0; box-shadow:none; }
+#togglePlayBtn:not([class*="bg-rose"]) { background:var(--primary-color,#2dd4bf); color:#071d24; }
+#playerStatus { font-size:16px; margin:4px 0 8px; }
+#audioQualityBadge { font-size:9px; max-width:210px; white-space:normal; line-height:1.5; }
+#volumeSlider { accent-color:var(--primary-color,#2dd4bf); height:5px; }
+input[type=range] { min-height:24px; }
+select { min-height:38px; border-radius:9px; background:#0d1627; border-color:#33435d; max-width:100%; }
+#abrModeSelect { width:100%; font-size:11px; margin-top:7px; }
+#subtitlesSection { min-height:360px; }
+#subtitlesSection > div:first-child { align-items:flex-start; border-color:#2a3750; gap:14px; }
+#subtitlesSection > div:first-child > span { color:#c3cfe1; font-size:10px; letter-spacing:.08em; line-height:1.6; }
+#subtitlesSection > div:first-child > div { flex-wrap:wrap; }
+#subtitlesBox { background:#0b1424; border-color:#22324a; padding:22px; line-height:1.8; max-height:500px; min-height:240px; }
+#listenerPlaceholderMsg { color:#94a3b8; font-style:normal; line-height:1.8; }
+#listenerInterimStream { color:#76e4d6; }
+footer { color:#8292ab; font-size:11px; letter-spacing:.02em; padding:24px; }
+button,select,a,input { outline-offset:4px; }
+button:focus-visible,select:focus-visible,a:focus-visible,input:focus-visible { outline:2px solid #60a5fa; }
+@media(min-width:960px) {
+ body > main { display:grid; grid-template-columns:minmax(340px, .85fr) minmax(0,1.15fr); align-content:start; align-items:start; }
+ #eventWelcomeCard { grid-column:1/-1; }
+ main > section:first-of-type { grid-column:1; grid-row:2; }
+ main > section:nth-of-type(2) { grid-column:1; grid-row:3; }
+ #subtitlesSection { grid-column:2; grid-row:2/4; align-self:stretch; }
+ #subtitlesBox { max-height:650px; }
+}
+@media(max-width:599px) {
+ body > header { padding:14px 16px; min-height:68px; gap:10px; }
+ #headerTitle { font-size:13px; max-width:145px; }
+ #p2pBadge,#latencyBadge { font-size:9px; padding:3px 6px; }
+ #roomBadge { font-size:10px; padding:4px 7px; }
+ body > main { padding:26px 16px 16px; gap:16px; }
+ #eventTitle { font-size:28px; }
+ main > section { padding:18px; }
+ #eventWelcomeCard > p { font-size:12px; }
+ #togglePlayBtn { padding:10px 12px; font-size:12px; }
+ #audioQualityBadge { max-width:168px; }
+ #playerStatus { font-size:14px; }
+ #subtitlesBox { padding:16px; }
+}
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; } }

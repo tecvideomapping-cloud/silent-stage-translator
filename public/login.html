@@ -1,55 +1,17 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login Administrativo | Videomappingtech</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4 font-sans selection:bg-cyan-500 selection:text-white">
-
-  <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl flex flex-col gap-6">
-    
-    <div class="text-center flex flex-col items-center">
-      <div class="w-12 h-12 rounded-2xl bg-cyan-950 border border-cyan-800 flex items-center justify-center text-2xl text-cyan-400 mb-3">
-        🔐
-      </div>
-      <h1 class="text-xl font-bold bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 bg-clip-text text-transparent">
-        Videomappingtech Console
-      </h1>
-      <p class="text-xs text-slate-400 mt-1">Acesso restrito para operadores e administradores</p>
-    </div>
-
-    <form id="loginForm" onsubmit="handleLogin(event)" class="flex flex-col gap-4 text-xs">
-      <div>
-        <label class="block font-semibold text-slate-300 mb-1">E-mail Administrativo:</label>
-        <input type="email" id="loginEmail" required placeholder="admin@videomappingtech.com"
-          class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-200 focus:border-cyan-500 focus:outline-none text-sm">
-      </div>
-
-      <div>
-        <label class="block font-semibold text-slate-300 mb-1">Senha de Acesso:</label>
-        <input type="password" id="loginPassword" required placeholder="••••••••••••"
-          class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-200 focus:border-cyan-500 focus:outline-none text-sm font-mono">
-      </div>
-
-      <div id="errorAlert" class="hidden p-3 bg-rose-950/80 border border-rose-800 text-rose-300 rounded-xl text-xs text-center">
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#10111c"><title>Acesso ao workspace | Videomappingtech</title><script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script><script src="https://cdn.tailwindcss.com"></script><link rel="stylesheet" href="/design-system.css"><link rel="stylesheet" href="/public-v2.css"><script src="/design-system.js" defer></script></head><body class="vmt-app vmt-login"><main class="access-layout"><section class="access-story"><a href="/landing.html" class="vmt-brand"><span class="vmt-brand-mark"><span data-icon="audio-lines" aria-hidden="true"></span></span><span>videomappingtech<small>SILENT TRANSLATOR</small></span></a><div class="access-orbit" aria-hidden="true"></div><div class="access-story-copy"><h1>Nos bastidores<br>de grandes<br>conexões.</h1><p>O controle do seu evento começa aqui. Entre e prepare o próximo encontro.</p><div class="access-chip"><span data-icon="audio-lines" aria-hidden="true"></span> Uma plataforma. Todas as vozes.</div></div><span class="access-caption">VIDEOMAPPINGTECH · EVENT TECHNOLOGY</span></section><section class="access-panel"><div class="access-toolbar"><button type="button" data-theme-toggle class="vmt-theme-toggle" aria-label="Ativar modo claro"></button></div><div class="access-content"><span class="vmt-icon access-fingerprint"><span data-icon="fingerprint" aria-hidden="true"></span></span><h1>Bom ter você aqui.</h1><p class="vmt-muted">Acesse seu espaço de operação.</p><form class="access-form" id="loginForm" onsubmit="handleLogin(event)">
+<div>
+<label class="block font-semibold text-slate-300 mb-1" for="loginEmail">E-mail Administrativo:</label>
+<input autocomplete="email" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-200 focus:border-cyan-500 focus:outline-none text-sm" id="loginEmail" placeholder="admin@videomappingtech.com" required="" type="email"/>
+</div>
+<div>
+<label class="block font-semibold text-slate-300 mb-1" for="loginPassword">Senha de Acesso:</label>
+<input autocomplete="current-password" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-200 focus:border-cyan-500 focus:outline-none text-sm font-mono" id="loginPassword" placeholder="••••••••••••" required="" type="password"/>
+</div>
+<div class="hidden p-3 bg-rose-950/80 border border-rose-800 text-rose-300 rounded-xl text-xs text-center" id="errorAlert">
         Credenciais inválidas. Verifique seu e-mail e senha.
       </div>
-
-      <button type="submit" id="submitBtn"
-        class="mt-2 w-full py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg transition active:scale-95 text-sm">
-        Entrar no Painel
-      </button>
-    </form>
-
-    <div class="text-center text-[11px] text-slate-500 pt-3 border-t border-slate-800/80">
-      <p>Acesso protegido por autenticação de sessão criptografada.</p>
-    </div>
-
-  </div>
-
-  <script>
+<button class="vmt-btn vmt-primary" id="submitBtn" type="submit">Entrar no workspace</button>
+</form><div class="access-protection"><span data-icon="shield-check" aria-hidden="true"></span> Acesso protegido para operadores e administradores</div><footer>© 2026 Videomappingtech</footer></div></section></main><script>
     // Se já estiver logado, redireciona direto
     const existingToken = localStorage.getItem('vmt_admin_token');
     if (existingToken) {
@@ -95,6 +57,4 @@
         btn.innerText = 'Entrar no Painel';
       }
     }
-  </script>
-</body>
-</html>
+  </script></body></html>

@@ -6,62 +6,35 @@
   <title>Painel Administrativo | Videomappingtech Stage AI</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <link rel="stylesheet" href="/design-system.css">
+  <link rel="stylesheet" href="/admin-v2.css">
+  <script src="/design-system.js" defer></script>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen font-sans selection:bg-cyan-500 selection:text-white pb-12">
+<body class="vmt-app vmt-admin">
 
-  <!-- Topbar com Sessão do Usuário e Logout -->
-  <header class="border-b border-slate-800 bg-slate-900/90 sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <img src="/logo_VMP.svg" alt="Video Mapping Logo" class="h-8 w-auto filter drop-shadow">
-      <div>
-        <h1 class="font-bold text-lg bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 bg-clip-text text-transparent">
-          Videomappingtech • Admin Console
-        </h1>
-        <p class="text-[11px] text-slate-400">Gestão de Clientes, Eventos e Palestras Silenciosas</p>
-      </div>
+  <aside class="admin-sidebar">
+    <a href="/admin.html" class="vmt-brand admin-brand"><span class="vmt-icon" data-icon="audio-lines"></span><span>Videomappingtech<small>SILENT TRANSLATOR</small></span></a>
+    <div class="admin-nav-label">WORKSPACE</div>
+    <nav class="admin-navigation" aria-label="Administração">
+      <button onclick="switchTab('events')" id="tabBtnEvents" class="text-cyan-400"><span data-icon="calendar-days"></span><span>Eventos e salas</span></button>
+      <button onclick="switchTab('clients')" id="tabBtnClients" class="text-slate-400"><span data-icon="building-2"></span><span>Clientes</span><span id="clientsBadge" class="admin-count">0</span></button>
+      <button onclick="switchTab('leads')" id="tabBtnLeads" class="text-slate-400"><span data-icon="inbox"></span><span>Propostas</span><span id="leadsBadge" class="admin-count">0</span></button>
+      <button onclick="switchTab('glossaries')" id="tabBtnGlossaries" class="text-slate-400"><span data-icon="book-open"></span><span>Glossários</span><span id="glossariesBadge" class="admin-count">0</span></button>
+    </nav>
+    <div class="admin-sidebar-foot">
+      <div class="admin-user"><span class="admin-avatar" data-icon="user-round"></span><div><p id="userNameDisplay">Administrador</p><p id="userEmailDisplay">admin@videomappingtech.com</p></div></div>
+      <div class="admin-account-actions"><button onclick="openChangePasswordModal()"><span data-icon="key-round"></span>Senha</button><button onclick="handleLogout()"><span data-icon="log-out"></span>Sair</button></div>
     </div>
-    
-    <div class="flex items-center gap-4">
-      <div class="text-right hidden sm:block">
-        <p id="userNameDisplay" class="text-xs font-bold text-slate-200">Administrador</p>
-        <p id="userEmailDisplay" class="text-[10px] text-slate-400">admin@videomappingtech.com</p>
-      </div>
-
-      <button onclick="openChangePasswordModal()" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-slate-300 transition">
-        🔑 Senha
-      </button>
-
-      <button onclick="handleLogout()" class="text-xs bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 font-semibold px-3 py-1.5 rounded-lg transition">
-        Sair
-      </button>
-    </div>
-  </header>
-
-  <main class="max-w-7xl mx-auto p-6 flex flex-col gap-8">
-
-    <!-- Navegação de Abas -->
-    <div class="flex border-b border-slate-800 gap-6">
-      <button onclick="switchTab('events')" id="tabBtnEvents" class="pb-3 text-sm font-semibold border-b-2 border-cyan-500 text-cyan-400 transition">
-        🎪 Eventos & Salas
-      </button>
-      <button onclick="switchTab('clients')" id="tabBtnClients" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
-        <span>🏢 Clientes & Horas Contratadas</span>
-        <span id="clientsBadge" class="bg-cyan-500/20 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full">0</span>
-      </button>
-      <button onclick="switchTab('leads')" id="tabBtnLeads" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
-        <span>📩 Propostas & Orçamentos</span>
-        <span id="leadsBadge" class="bg-cyan-500/20 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full">0</span>
-      </button>
-      <button onclick="switchTab('glossaries')" id="tabBtnGlossaries" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
-        <span>📖 Biblioteca de Glossários</span>
-        <span id="glossariesBadge" class="bg-cyan-500/20 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full">0</span>
-      </button>
-    </div>
-
+  </aside>
+  <header class="admin-topbar"><div><span class="admin-breadcrumb">Workspace</span><span class="admin-breadcrumb-divider">/</span><strong>Painel administrativo</strong></div><button class="vmt-btn admin-theme" data-theme-toggle aria-label="Alternar tema"><span data-icon="sun-moon"></span><span>Tema</span></button></header>
+  <main class="admin-main">
+    <div class="admin-page-intro"><span class="admin-eyebrow">CONTROLE COM CLAREZA</span><h1>Seu próximo evento.<br>Uma experiência extraordinária.</h1><p>Organize seus eventos, conecte pessoas e cuide de cada detalhe em um só lugar.</p></div>
+    <section id="sectionEvents" class="flex flex-col gap-6">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div class="flex items-center gap-3">
-            <h2 class="text-xl font-bold text-white">Salas & Eventos Ativos</h2>
+            <h2 class="text-xl font-bold text-white">Eventos e salas</h2>
             <span id="totalOnlineBadgeAdmin" class="text-xs bg-emerald-950/90 text-emerald-300 border border-emerald-800/80 px-2.5 py-1 rounded-full font-semibold flex items-center gap-1.5 shadow-sm">
               <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               <span id="totalOnlineCountAdmin">0 ouvintes ativos agora</span>
@@ -141,6 +114,7 @@
           </table>
         </div>
       </div>
+    </section>
     <!-- ABA 4: BIBLIOTECA DE GLOSSÁRIOS REUTILIZÁVEIS -->
     <section id="sectionGlossaries" class="hidden flex flex-col gap-6">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -568,8 +542,8 @@
         const ch = stats.channels || {};
 
         return `
-          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between gap-4 relative overflow-hidden">
-            ${room.banner_url ? `<div class="h-16 -mx-5 -mt-5 bg-cover bg-center mb-1" style="background-image: url('${room.banner_url}');"></div>` : ''}
+          <div class="admin-event vmt-glass flex flex-col">
+            <div class="admin-event-art ${room.banner_url ? 'has-banner' : ''}" ${room.banner_url ? `style="background-image: linear-gradient(0deg,rgba(15,12,30,.75),rgba(15,12,30,.08)),url('${room.banner_url}');"` : ''}><span class="admin-event-art-label">SILENT TRANSLATOR</span><strong>${room.name}</strong></div>
             <div>
               <div class="flex items-center justify-between mb-2">
                 <span class="text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded-full">

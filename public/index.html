@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Palestra Silenciosa & Tradução ao Vivo | Videomappingtech</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
@@ -18,8 +18,12 @@
       animation: pulse-ring 2s infinite ease-in-out;
     }
   </style>
+  <link rel="stylesheet" href="/design-system.css">
+  <link rel="stylesheet" href="/audience-v2.css">
+  <script src="/design-system.js" defer></script>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-cyan-500 selection:text-white pb-8">
+<body class="vmt-app vmt-audience bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-cyan-500 selection:text-white pb-8">
 
   <!-- Header Dinâmico com Branding do Evento -->
   <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30 px-4 py-3 flex items-center justify-between">
@@ -46,11 +50,12 @@
       </span>
       <span id="statusIndicator" class="w-2.5 h-2.5 rounded-full bg-amber-500" title="Conectando..."></span>
     </div>
+    <button type="button" class="vmt-btn vmt-audience-theme" data-theme-toggle aria-label="Alternar tema"><span data-icon="sun-moon"></span></button>
   </header>
 
   <!-- Banner de Destrave de Áudio Mobile (Autoplay Guard) -->
   <div id="audioUnlockBanner" onclick="unlockAudioForMobile()" class="bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 text-white text-xs font-semibold px-4 py-2.5 text-center flex items-center justify-center gap-2 cursor-pointer shadow-lg animate-pulse transition hover:brightness-110">
-    <span>🎧</span>
+    <span data-icon="headphones"></span>
     <span>Toque aqui para liberar o áudio e a tradução ao vivo no seu dispositivo</span>
     <span class="bg-white/20 px-2 py-0.5 rounded-full text-[10px] uppercase font-bold tracking-wider">Ativar</span>
   </div>
@@ -59,18 +64,24 @@
   <audio id="sharedTtsAudioPlayer" playsinline webkit-playsinline preload="auto" style="display:none"></audio>
 
   <!-- Banner do Evento (se configurado no Admin) -->
-  <div id="bannerContainer" class="hidden w-full max-h-40 overflow-hidden border-b border-slate-800">
-    <img id="bannerImg" src="" alt="Banner do Evento" class="w-full h-full object-cover">
-  </div>
 
-  <main class="flex-1 max-w-md w-full mx-auto p-4 flex flex-col gap-4">
+
+  <main class="vmt-audience-layout">
+    <aside class="vmt-session-story">
 
     <!-- Card de Boas-Vindas e Nome do Evento -->
     <div id="eventWelcomeCard" class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 text-center">
+      <p class="vmt-story-eyebrow">SUA EXPERIÊNCIA AO VIVO</p>
       <h1 id="eventTitle" class="text-lg font-bold text-white">Palestra Ao Vivo</h1>
-      <p class="text-xs text-slate-400 mt-1">Conecte seus fones de ouvido para a melhor experiência 🎧</p>
+      <p class="text-xs text-slate-400 mt-1">Conecte seus fones de ouvido para a melhor experiência.</p>
     </div>
 
+    <div class="vmt-session-cover" aria-hidden="true"><span data-icon="audio-lines"></span><span class="vmt-cover-orbit"></span></div>
+  <div id="bannerContainer" class="hidden w-full max-h-40 overflow-hidden border-b border-slate-800">
+    <img id="bannerImg" src="" alt="Banner do Evento" class="w-full h-full object-cover">
+  </div>
+    </aside>
+    <div class="vmt-listener vmt-glass">
     <!-- Seleção de Canal (Palestras Silenciosas & Idiomas) -->
     <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
       <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center justify-between">
@@ -101,11 +112,11 @@
 
       <!-- Controle de Volume -->
       <div class="flex items-center gap-3 pt-2 border-t border-slate-800/80">
-        <span class="text-sm text-slate-400">🔈</span>
-        <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="1"
+        <span class="text-sm text-slate-400" data-icon="volume-1"></span>
+        <input type="range" id="volumeSlider" aria-label="Volume do áudio" min="0" max="1" step="0.05" value="1"
           class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
           oninput="adjustVolume(this.value)">
-        <span class="text-sm text-slate-400">🔊</span>
+        <span class="text-sm text-slate-400" data-icon="volume-2"></span>
       </div>
 
       <!-- Resiliência de Rede: Buffer Elástico Anti-Corte + Degrade Quality Individual -->
@@ -114,7 +125,7 @@
           <span class="text-slate-400 font-medium">Proteção de Sinal:</span>
           <span id="bufferStatusBadge" class="text-[10px] font-mono bg-slate-950 text-cyan-400 border border-slate-800 px-2 py-0.5 rounded-full">Buffer: 65ms</span>
         </div>
-        <select id="abrModeSelect" onchange="changeAbrMode(this.value)" class="bg-slate-950 text-[11px] text-slate-200 px-2.5 py-1 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-500">
+        <select id="abrModeSelect" aria-label="Proteção e qualidade do sinal" onchange="changeAbrMode(this.value)" class="bg-slate-950 text-[11px] text-slate-200 px-2.5 py-1 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-500">
           <option value="auto" selected>🛡️ Auto Adaptativo (Anti-Corte Inteligente)</option>
           <option value="saver">📶 Estabilizar Sinal Fraco (-75% Dados + Buffer Amplo)</option>
           <option value="high">⚡ Forçar Qualidade Máxima (PCM Puro)</option>
@@ -129,7 +140,7 @@
           <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span> Legenda Simultânea ao Vivo
         </span>
         <div class="flex items-center gap-2">
-          <select id="subtitleLangSelect" onchange="changeSubtitleLang(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
+          <select id="subtitleLangSelect" aria-label="Idioma das legendas" onchange="changeSubtitleLang(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
             <option value="auto">Idioma do Canal (Auto)</option>
             <option value="original">Original (Áudio Falado)</option>
             <option value="en">Inglês (English)</option>
@@ -153,6 +164,7 @@
       </div>
     </section>
 
+    </div>
   </main>
 
   <footer class="mt-auto text-center text-xs text-slate-500 py-3">
@@ -222,7 +234,11 @@
       document.documentElement.style.setProperty('--primary-color', primary);
       document.documentElement.style.setProperty('--secondary-color', secondary);
       document.documentElement.style.setProperty('--app-bg', bgColor);
-      document.body.style.backgroundColor = bgColor;
+      // Legacy defaults use the shared appearance; explicit event branding still wins.
+      document.body.style.backgroundColor = room.bg_color && room.bg_color.toLowerCase() !== '#020617' ? room.bg_color : '';
+      if (room.primary_color && room.primary_color.toLowerCase() !== '#06b6d4') {
+        document.documentElement.style.setProperty('--vmt-accent', room.primary_color);
+      }
 
       // 2. Carregamento Dinâmico de Fontes do Google Fonts
       if (font && font !== 'Inter') {

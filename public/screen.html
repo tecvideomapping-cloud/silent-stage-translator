@@ -58,72 +58,62 @@
       to { opacity: 1; transform: translateY(0); }
     }
   </style>
+  <link rel="stylesheet" href="/design-system.css">
+  <link rel="stylesheet" href="/screen-v2.css">
+  <script src="/design-system.js" defer></script>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
 </head>
-<body class="theme-lowerthird min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none">
+<body class="vmt-app vmt-screen theme-lowerthird min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none">
 
   <!-- Barra de Configurações (Oculta automaticamente em apresentação) -->
-  <header id="controlsHeader" class="flex flex-wrap items-center justify-between opacity-40 hover:opacity-100 transition-opacity duration-300 bg-slate-900/60 backdrop-blur p-3 rounded-xl border border-slate-800 gap-2">
-    <div class="flex items-center gap-3">
-      <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">Videomappingtech Screen</span>
-      <span id="roomTag" class="text-xs bg-slate-800 px-2.5 py-1 rounded-md text-slate-300 font-mono">Sala: demo</span>
-      <span id="liveDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-    </div>
-
-    <div class="flex flex-wrap items-center gap-2 sm:gap-3">
-      <label class="text-xs text-slate-300">Posição:</label>
-      <select id="screenPositionSelect" onchange="changePosition(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
-        <option value="pos-bottom" selected>⬇️ Rodapé (Inferior)</option>
-        <option value="pos-top">⬆️ Topo (Superior)</option>
-        <option value="pos-center">⏺️ Centro da Tela</option>
-      </select>
-
-      <label class="text-xs text-slate-300">Fundo:</label>
-      <select id="screenThemeSelect" onchange="changeTheme(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
-        <option value="theme-transparent">🪟 100% Transparente (Sobreposição)</option>
-        <option value="theme-lowerthird" selected>⬛ Tarja Translúcida (Lower-Third)</option>
-        <option value="theme-chroma">🟢 Verde Chroma Key (vMix/OBS)</option>
-        <option value="theme-black">⚫ Preto (LED/Projetor)</option>
-        <option value="theme-dark">🔵 Azul Escuro</option>
-      </select>
-
-      <label class="text-xs text-slate-300">Idioma:</label>
-      <select id="screenLangSelect" onchange="changeScreenLang(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
-        <option value="all">Todas / Tradução Ativa</option>
-        <option value="en">Inglês (English)</option>
-        <option value="es">Espanhol (Español)</option>
-        <option value="original">Original (Transcrição)</option>
-      </select>
-
-      <label class="text-xs text-slate-300">Marca:</label>
-      <select id="screenLogoLocalSelect" onchange="changeScreenLogo(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
-        <option value="vmp">Video Mapping</option>
-        <option value="client">Logo do Cliente</option>
-        <option value="none">Ocultar Marca</option>
-      </select>
-
-      <div class="flex items-center gap-1">
-        <button onclick="adjustFontSize(-4)" class="bg-slate-800 hover:bg-slate-700 text-xs px-2.5 py-1 rounded text-slate-200 font-bold">A-</button>
-        <button onclick="adjustFontSize(4)" class="bg-slate-800 hover:bg-slate-700 text-xs px-2.5 py-1 rounded text-slate-200 font-bold">A+</button>
-      </div>
-
-      <button onclick="toggleFullScreen()" class="bg-cyan-600 hover:bg-cyan-500 text-white text-xs px-3 py-1 rounded font-semibold transition">
-        ⛶ Tela Cheia
-      </button>
-    </div>
-  </header>
+  <header class="vmt-screen-masthead"><div class="vmt-brand"><span class="vmt-icon" data-icon="audio-lines"></span><span>Silent Stage AI<small>VIDEOMAPPINGTECH</small></span></div><div class="vmt-screen-actions">      <span id="roomTag" class="text-xs bg-slate-800 px-2.5 py-1 rounded-md text-slate-300 font-mono">Sala: demo</span>      <span id="liveDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>      <button type="button" class="vmt-btn" data-theme-toggle aria-label="Alternar tema dos controles"><span data-icon="sun-moon"></span></button>      <button onclick="toggleFullScreen()" class="bg-cyan-600 hover:bg-cyan-500 text-white text-xs px-3 py-1 rounded font-semibold transition">
+        <span data-icon="maximize"></span> Tela Cheia
+      </button></div></header>
+  <div class="vmt-screen-editorial"><p class="vmt-screen-eyebrow">TELÃO AO VIVO</p><h1>Voz em palavras.<br>Em qualquer palco.</h1><p>Legendas em tempo real, com a composição ideal para sua apresentação.</p></div>
 
   <!-- Área de Legendas com Posicionamento Dinâmico -->
   <main id="screenMainArea" class="flex-1 flex flex-col items-center text-center px-6 transition-all duration-300 justify-end pb-10">
     <div id="subtitlesContainer" class="w-full max-w-5xl flex flex-col gap-4 text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-normal">
       <p class="text-slate-600 text-2xl font-normal italic">Aguardando início do áudio no palco...</p>
     </div>
-  </main>
-
-  <!-- Marca d'água no Canto Inferior Direito -->
   <div id="screenWatermarkBox" class="fixed bottom-6 right-8 z-20 pointer-events-none transition-opacity duration-300 opacity-90">
     <img id="watermarkVMP" src="/logo_VMP.svg" alt="Video Mapping" class="h-16 w-auto filter drop-shadow-lg">
     <img id="watermarkClient" src="" alt="Logo do Cliente" class="h-16 w-auto filter drop-shadow-lg hidden">
   </div>
+  </main>
+  <section id="controlsHeader" class="vmt-glass vmt-composition-controls">
+    <div class="vmt-composition-heading"><div><span class="vmt-screen-eyebrow">AJUSTES DE EXIBIÇÃO</span><h2>Composição da projeção</h2></div><span class="vmt-screen-note">Ajuste a saída para o seu palco.</span></div>
+    <div class="vmt-screen-fields"><div class="vmt-screen-field">      <label class="text-xs text-slate-300" for="screenPositionSelect">Posição:</label>
+      <select id="screenPositionSelect" onchange="changePosition(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
+        <option value="pos-bottom" selected>⬇️ Rodapé (Inferior)</option>
+        <option value="pos-top">⬆️ Topo (Superior)</option>
+        <option value="pos-center">⏺️ Centro da Tela</option>
+      </select></div><div class="vmt-screen-field">      <label class="text-xs text-slate-300" for="screenThemeSelect">Fundo:</label>
+      <select id="screenThemeSelect" onchange="changeTheme(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
+        <option value="theme-transparent">🪟 100% Transparente (Sobreposição)</option>
+        <option value="theme-lowerthird" selected>⬛ Tarja Translúcida (Lower-Third)</option>
+        <option value="theme-chroma">🟢 Verde Chroma Key (vMix/OBS)</option>
+        <option value="theme-black">⚫ Preto (LED/Projetor)</option>
+        <option value="theme-dark">🔵 Azul Escuro</option>
+      </select></div><div class="vmt-screen-field">      <label class="text-xs text-slate-300" for="screenLangSelect">Idioma:</label>
+      <select id="screenLangSelect" onchange="changeScreenLang(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
+        <option value="all">Todas / Tradução Ativa</option>
+        <option value="en">Inglês (English)</option>
+        <option value="es">Espanhol (Español)</option>
+        <option value="original">Original (Transcrição)</option>
+      </select></div><div class="vmt-screen-field">      <label class="text-xs text-slate-300" for="screenLogoLocalSelect">Marca:</label>
+      <select id="screenLogoLocalSelect" onchange="changeScreenLogo(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
+        <option value="vmp">Video Mapping</option>
+        <option value="client">Logo do Cliente</option>
+        <option value="none">Ocultar Marca</option>
+      </select></div><div class="vmt-screen-field"><span class="vmt-font-label">Tamanho das legendas</span>      <div class="flex items-center gap-1">
+        <button onclick="adjustFontSize(-4)" class="bg-slate-800 hover:bg-slate-700 text-xs px-2.5 py-1 rounded text-slate-200 font-bold">A-</button>
+        <button onclick="adjustFontSize(4)" class="bg-slate-800 hover:bg-slate-700 text-xs px-2.5 py-1 rounded text-slate-200 font-bold">A+</button>
+      </div></div></div>
+  </section>
+
+  <!-- Marca d'água no Canto Inferior Direito -->
+
 
   <!-- Rodapé discreto -->
   <footer class="text-center py-2 opacity-30 text-xs">
@@ -132,6 +122,8 @@
 
   <script>
     const urlParams = new URLSearchParams(window.location.search);
+    // Explicit projection parameters preserve a clean OBS/output canvas.
+    document.documentElement.dataset.screenView = (urlParams.has('theme') || urlParams.has('pos')) ? 'output' : 'studio';
     const roomId = decodeURIComponent(urlParams.get('room') || urlParams.get('roomId') || 'palco1').trim().toLowerCase();
     document.getElementById('roomTag').innerText = `Sala: ${roomId}`;
 
@@ -358,7 +350,7 @@
 
     function changeTheme(themeName) {
       currentTheme = themeName || 'theme-lowerthird';
-      document.body.className = `${currentTheme} min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none`;
+      document.body.className = `vmt-app vmt-screen ${currentTheme} min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none`;
       const sel = document.getElementById('screenThemeSelect');
       if (sel) sel.value = currentTheme;
     }
@@ -367,6 +359,9 @@
       fontSize = Math.max(28, Math.min(96, fontSize + delta));
       document.querySelectorAll('.subtitle-line').forEach(el => {
         el.style.fontSize = fontSize + 'px';
+        el.querySelectorAll('[style*="font-size"]').forEach(text => {
+          text.style.fontSize = fontSize + 'px';
+        });
       });
     }
 
