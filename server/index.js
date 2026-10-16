@@ -54,6 +54,67 @@ function getRoomClients(roomId) {
   return roomsClients.get(roomId);
 }
 
+// Relatório em tempo real de usuários online, ouvintes por canal e telões conectados
+function getRoomOnlineStats(roomId) {
+  const normalizedId = (roomId || '').trim().toLowerCase();
+  const clients = roomsClients.get(normalizedId);
+  if (!clients) {
+    return {
+      total: 0,
+      listeners: 0,
+      hosts: 0,
+      screens: 0,
+      channels: { original: 0, en: 0, es: 0, text: 0 }
+    };
+  }
+  let listeners = 0;
+  let hosts = 0;
+  let screens = 0;
+  const channels = { original: 0, en: 0, es: 0, text: 0 };
+
+  for (const client of clients) {
+    if (client.readyState !== WebSocket.OPEN) continue;
+    if (client.role === 'host') {
+      hosts++;
+    } else if (client.role === 'screen') {
+      screens++;
+    } else {
+      listeners++;
+      const ch = client.channel || 'original';
+      channels[ch] = (channels[ch] || 0) + 1;
+    }
+  }
+
+  return {
+    total: listeners + hosts + screens,
+    listeners,
+    hosts,
+    screens,
+    channels
+  };
+}
+
+function broadcastRoomStats(roomId) {
+  const normalizedId = (roomId || '').trim().toLowerCase();
+  const clients = roomsClients.get(normalizedId);
+  if (!clients) return;
+  const stats = getRoomOnlineStats(normalizedId);
+  const payload = JSON.stringify({
+    type: 'room_online_stats',
+    roomId: normalizedId,
+    stats,
+    timestamp: Date.now()
+  });
+
+  for (const client of clients) {
+    if (client.readyState === WebSocket.OPEN && (client.role === 'host' || client.role === 'admin' || client.role === 'screen')) {
+      try {
+        client.send(payload);
+      } catch (e) {}
+    }
+  }
+}
+
 // ----------------------------------------------------
 // ROTAS DE AUTENTICAÇÃO (LOGIN / SESSÃO)
 // ----------------------------------------------------
@@ -150,11 +211,25 @@ app.delete('/api/clients/:id', requireAuth, async (req, res) => {
 // GESTÃO DE SALAS / EVENTOS (PROTEGIDO)
 // ----------------------------------------------------
 
-// Listar todas as salas (Apenas Admin autenticado)
+// Listar todas as salas (Apenas Admin autenticado, inclui métricas online em tempo real)
 app.get('/api/rooms', requireAuth, async (req, res) => {
   try {
     const rooms = await listRooms();
-    res.json({ rooms });
+    const roomsWithStats = rooms.map(r => ({
+      ...r,
+      onlineStats: getRoomOnlineStats(r.id)
+    }));
+    res.json({ rooms: roomsWithStats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Relatório público/host de ouvintes e usuários online da sala
+app.get('/api/rooms/:id/stats', async (req, res) => {
+  try {
+    const stats = getRoomOnlineStats(req.params.id);
+    res.json({ roomId: req.params.id, ...stats });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -632,6 +707,9 @@ wss.on('connection', (ws, req) => {
     } catch (e) {}
   }
 
+  // Notifica imediatamente anfitrião e telões sobre métricas de ouvintes online
+  broadcastRoomStats(roomId);
+
   ws.on('message', async (data, isBinary) => {
     // 1. Mensagens Binárias: Chunks de Áudio
     if (isBinary) {
@@ -712,6 +790,7 @@ wss.on('connection', (ws, req) => {
       if (msg.type === 'switch_channel') {
         ws.channel = msg.channel;
         ws.send(JSON.stringify({ type: 'channel_switched', channel: ws.channel }));
+        broadcastRoomStats(roomId);
       } else if (msg.type === 'audio_meta') {
         roomAudioMeta.set(roomId, msg);
         for (const client of roomClients) {
@@ -851,6 +930,7 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     roomClients.delete(ws);
+    broadcastRoomStats(roomId);
     if (roomClients.size === 0) {
       roomsClients.delete(roomId);
       roomAudioMeta.delete(roomId);

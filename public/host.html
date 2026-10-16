@@ -21,6 +21,10 @@
       </div>
     </div>
     <div class="flex items-center gap-3">
+      <div id="hostLiveListenersPill" class="flex items-center gap-1.5 text-xs bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 px-3 py-1 rounded-full font-semibold shadow-sm">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="hostOnlineCountText">0 ouvintes online</span>
+      </div>
       <a href="/admin.html" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-slate-300 transition">
         ⚙️ Painel Admin
       </a>
@@ -391,9 +395,45 @@
 
     </div>
 
-    <!-- Coluna Direita: QR Code para Ouvintes e Monitoramento -->
+    <!-- Coluna Direita: Audiência Online, QR Code e Monitoramento -->
     <div class="flex flex-col gap-6">
       
+      <!-- Card de Audiência Online em Tempo Real -->
+      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <h2 class="text-sm font-bold text-white uppercase tracking-wider">Audiência ao Vivo</h2>
+          </div>
+          <span id="hostTotalOnlineBadge" class="text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-2.5 py-0.5 rounded-full font-bold font-mono">
+            0 ouvintes
+          </span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col">
+            <span class="text-[10px] text-slate-400 flex items-center gap-1">🎧 Áudio Original</span>
+            <span id="channelCountOriginal" class="text-base font-bold text-cyan-400 font-mono mt-0.5">0</span>
+            <span class="text-[10px] text-slate-500">Palestra Silenciosa</span>
+          </div>
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col">
+            <span class="text-[10px] text-slate-400 flex items-center gap-1">🇺🇸 Inglês</span>
+            <span id="channelCountEn" class="text-base font-bold text-purple-400 font-mono mt-0.5">0</span>
+            <span class="text-[10px] text-slate-500">Tradução Simultânea</span>
+          </div>
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col">
+            <span class="text-[10px] text-slate-400 flex items-center gap-1">🇪🇸 Espanhol</span>
+            <span id="channelCountEs" class="text-base font-bold text-amber-400 font-mono mt-0.5">0</span>
+            <span class="text-[10px] text-slate-500">Tradução Simultânea</span>
+          </div>
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col">
+            <span class="text-[10px] text-slate-400 flex items-center gap-1">📺 Telões Ativos</span>
+            <span id="channelCountScreens" class="text-base font-bold text-emerald-400 font-mono mt-0.5">0</span>
+            <span class="text-[10px] text-slate-500">Receptores Palco</span>
+          </div>
+        </div>
+      </section>
+
       <!-- Card do QR Code -->
       <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 flex flex-col items-center text-center shadow-xl">
         <h2 class="text-sm font-bold text-white uppercase tracking-wider mb-1">Acesso dos Participantes</h2>
@@ -941,6 +981,41 @@
       }
     }
 
+    function updateHostOnlineStats(stats) {
+      if (!stats) return;
+      const listeners = stats.listeners || 0;
+      const screens = stats.screens || 0;
+      const channels = stats.channels || {};
+
+      const pill = document.getElementById('hostOnlineCountText');
+      if (pill) pill.innerText = `${listeners} ouvinte${listeners !== 1 ? 's' : ''} online`;
+
+      const badge = document.getElementById('hostTotalOnlineBadge');
+      if (badge) badge.innerText = `${listeners} ouvinte${listeners !== 1 ? 's' : ''}`;
+
+      const elOrig = document.getElementById('channelCountOriginal');
+      if (elOrig) elOrig.innerText = channels.original || 0;
+
+      const elEn = document.getElementById('channelCountEn');
+      if (elEn) elEn.innerText = channels.en || 0;
+
+      const elEs = document.getElementById('channelCountEs');
+      if (elEs) elEs.innerText = channels.es || 0;
+
+      const elScreens = document.getElementById('channelCountScreens');
+      if (elScreens) elScreens.innerText = screens;
+    }
+
+    async function fetchRoomStats() {
+      try {
+        const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/stats`);
+        if (res.ok) {
+          const data = await res.json();
+          updateHostOnlineStats(data);
+        }
+      } catch (e) {}
+    }
+
     function connectHostWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=host`;
@@ -951,12 +1026,15 @@
         document.getElementById('connStatus').innerText = '● Online (Sala ' + roomId + ')';
         broadcastAudioMeta();
         broadcastSpeakerVoiceProfile();
+        fetchRoomStats();
       };
 
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'subtitle') {
+          if (data.type === 'room_online_stats' && data.stats) {
+            updateHostOnlineStats(data.stats);
+          } else if (data.type === 'subtitle') {
             const box = document.getElementById('hostTranscriptBox');
             const p = document.createElement('p');
             p.className = data.isFinal ? 'text-slate-200 mb-1' : 'text-cyan-400 italic mb-1';
@@ -1762,6 +1840,8 @@
     fetchSavedGlossaries();
     loadTtsKeyStatus();
     connectHostWS();
+    fetchRoomStats();
+    setInterval(fetchRoomStats, 4000);
   </script>
 </body>
 </html>

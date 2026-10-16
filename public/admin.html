@@ -58,15 +58,19 @@
       </button>
     </div>
 
-    <!-- ABA 1: GERENCIAMENTO DE EVENTOS -->
-    <section id="sectionEvents" class="flex flex-col gap-6">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 class="text-xl font-bold text-white">Salas & Eventos Ativos</h2>
-          <p class="text-xs text-slate-400">Configure marcas, palestras silenciosas, idiomas e telões para cada auditório</p>
+          <div class="flex items-center gap-3">
+            <h2 class="text-xl font-bold text-white">Salas & Eventos Ativos</h2>
+            <span id="totalOnlineBadgeAdmin" class="text-xs bg-emerald-950/90 text-emerald-300 border border-emerald-800/80 px-2.5 py-1 rounded-full font-semibold flex items-center gap-1.5 shadow-sm">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span id="totalOnlineCountAdmin">0 ouvintes ativos agora</span>
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">Configure marcas, palestras silenciosas, idiomas e telões para cada auditório</p>
         </div>
         <button onclick="openNewEventModal()"
-          class="text-xs bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-4 py-2.5 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-1.5">
+          class="text-xs bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-4 py-2.5 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
           <span>+</span> Novo Evento
         </button>
       </div>
@@ -527,6 +531,17 @@
 
     function renderRooms() {
       const grid = document.getElementById('eventsGrid');
+
+      // Calcula métrica global de ouvintes ativos em todas as salas
+      let grandTotalOnline = 0;
+      roomsList.forEach(r => {
+        grandTotalOnline += (r.onlineStats?.listeners || 0);
+      });
+      const totalBadge = document.getElementById('totalOnlineCountAdmin');
+      if (totalBadge) {
+        totalBadge.innerText = `${grandTotalOnline} ouvinte${grandTotalOnline !== 1 ? 's' : ''} ativo${grandTotalOnline !== 1 ? 's' : ''} agora`;
+      }
+
       if (roomsList.length === 0) {
         grid.innerHTML = `
           <div class="col-span-full bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center gap-3">
@@ -546,6 +561,11 @@
         const listenerUrl = `${origin}/?room=${room.id}`;
         const hostUrl = `${origin}/host.html?room=${room.id}`;
         const screenUrl = `${origin}/screen.html?room=${room.id}`;
+        const stats = room.onlineStats || { listeners: 0, screens: 0, hosts: 0, channels: {} };
+        const listenersCount = stats.listeners || 0;
+        const screensCount = stats.screens || 0;
+        const hostsCount = stats.hosts || 0;
+        const ch = stats.channels || {};
 
         return `
           <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between gap-4 relative overflow-hidden">
@@ -555,11 +575,40 @@
                 <span class="text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded-full">
                   ID: ${room.id}
                 </span>
-                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500" title="Ativo"></span>
+                <div class="flex items-center gap-1.5">
+                  ${listenersCount > 0 ? `
+                    <span class="flex items-center gap-1.5 text-[11px] bg-emerald-950/90 text-emerald-300 border border-emerald-800 px-2.5 py-0.5 rounded-full font-semibold shadow-sm">
+                      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      ${listenersCount} online
+                    </span>
+                  ` : `
+                    <span class="flex items-center gap-1 text-[11px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full font-medium">
+                      <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                      0 online
+                    </span>
+                  `}
+                  ${hostsCount > 0 ? `
+                    <span class="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded-full" title="Transmissor de Som Conectado">
+                      🎙️ Live
+                    </span>
+                  ` : ''}
+                </div>
               </div>
               <h3 class="font-bold text-base text-white truncate">${room.name}</h3>
               ${room.client_company ? `<p class="text-xs text-cyan-400">Cliente: ${room.client_company}</p>` : ''}
               <p class="text-xs text-slate-400 mt-1">Palco: <strong>${room.source_language || 'pt-BR'}</strong> → Tradução: <strong>${(room.target_languages || []).join(', ').toUpperCase()}</strong></p>
+              
+              <!-- Relatório de Usuários Online no Card -->
+              <div class="bg-slate-950/80 border border-slate-800/90 rounded-xl p-2.5 flex items-center justify-between text-xs mt-2.5">
+                <div class="flex items-center gap-1.5 truncate">
+                  <span class="text-slate-400 font-medium">👥 Ouvintes:</span>
+                  <span class="font-bold text-white font-mono">${listenersCount}</span>
+                  <span class="text-[11px] text-slate-400 font-mono">(${ch.original || 0} Orig • ${ch.en || 0} EN • ${ch.es || 0} ES)</span>
+                </div>
+                <div class="text-[11px] font-mono ${screensCount > 0 ? 'text-indigo-300 bg-indigo-950/70 border border-indigo-800/60' : 'text-slate-400 bg-slate-900 border border-slate-800'} px-2 py-0.5 rounded shrink-0">
+                  📺 ${screensCount} telão${screensCount !== 1 ? 'ões' : ''}
+                </div>
+              </div>
             </div>
 
             <div class="bg-slate-950/80 rounded-xl p-3 border border-slate-800/80 flex flex-col gap-2 text-xs">
@@ -1007,6 +1056,8 @@
     loadClients();
     loadLeads();
     loadAdminGlossaries();
+    // Atualiza automaticamente as métricas de ouvintes online a cada 4 segundos
+    setInterval(loadRooms, 4000);
   </script>
 </body>
 </html>
