@@ -238,15 +238,12 @@
             // Legenda original (transcrição do palco)
             if (currentScreenLang === 'all' || allowedLangs.includes('original') || allowedLangs.includes('all')) {
               displaySubtitle(data.text, data.isFinal, 'original');
-            } else if (!data.isFinal) {
-              // Mesmo quando a tela estiver em modo traduzido, exibe a fala instantânea
-              // enquanto a tradução da frase de 4 palavras está a caminho
-              displayInterimActivity(data.text);
             }
           } else if (data.type === 'subtitle_translated') {
-            // Legenda traduzida
+            // Legenda traduzida (simultânea em tempo real e confirmada)
+            const isFinalSub = data.isFinal !== false;
             if (currentScreenLang === 'all' || allowedLangs.includes(data.lang) || allowedLangs.includes('all')) {
-              displaySubtitle(data.text, true, data.lang);
+              displaySubtitle(data.text, isFinalSub, data.lang);
             }
           }
         } catch (e) {}

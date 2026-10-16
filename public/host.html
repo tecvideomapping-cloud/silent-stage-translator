@@ -1346,9 +1346,158 @@
       currentInterimEl: null,
       sessionFinalizedIndices: new Set(),
       sessionCommittedWords: {},
+      lastPendingWords: [],
       pauseDebounceTimer: null,
+      fallbackFlushTimer: null,
       lastCommittedClause: '',
       lastCommittedTime: 0,
+
+      // Palavras que NUNCA podem encerrar um trecho lógico (artigos, preposições, pronomes, conectivos pendentes, verbos auxiliares e adjetivos pré-nominais)
+      danglingEndWords: new Set([
+        // Preposições e contrações (PT/ES/EN)
+        'de', 'do', 'da', 'dos', 'das', 'dum', 'duma', 'em', 'no', 'na', 'nos', 'nas', 'num', 'numa',
+        'por', 'pelo', 'pela', 'pelos', 'pelas', 'para', 'pra', 'pro', 'pros', 'pras', 'com', 'sem',
+        'sob', 'sobre', 'entre', 'até', 'desde', 'contra', 'perante', 'após', 'durante', 'mediante', 'segundo', 'como',
+        'of', 'in', 'to', 'for', 'with', 'on', 'at', 'from', 'by', 'about', 'into', 'through', 'after', 'over', 'between', 'against', 'during', 'without', 'before', 'under',
+        'del', 'al', 'con', 'sin', 'hacia', 'hasta', 'según',
+        // Artigos, determinantes, possessivos e demonstrativos
+        'o', 'a', 'os', 'as', 'um', 'uma', 'uns', 'umas',
+        'meu', 'minha', 'meus', 'minhas', 'teu', 'tua', 'seu', 'sua', 'seus', 'suas', 'nosso', 'nossa', 'nossos', 'nossas',
+        'este', 'esta', 'estes', 'estas', 'isto', 'esse', 'essa', 'esses', 'essas', 'isso', 'aquele', 'aquela', 'aqueles', 'aquelas', 'aquilo',
+        'todo', 'toda', 'todos', 'todas', 'outro', 'outra', 'outros', 'outras', 'algum', 'alguma', 'alguns', 'algumas', 'nenhum', 'nenhuma', 'cada', 'qualquer', 'cujo', 'cuja',
+        'the', 'an', 'my', 'your', 'his', 'her', 'its', 'our', 'their', 'this', 'that', 'these', 'those', 'every', 'each', 'some', 'any', 'no', 'other', 'another',
+        'el', 'la', 'los', 'las', 'un', 'unos', 'unas', 'mi', 'mis', 'tu', 'tus', 'su', 'sus', 'nuestro', 'nuestra',
+        // Conjunções, relativos e conectivos subordinativos
+        'e', 'ou', 'mas', 'porém', 'contudo', 'todavia', 'entretanto', 'nem', 'que', 'se', 'quando', 'onde', 'enquanto', 'embora', 'porque', 'pois', 'portanto', 'logo', 'caso', 'qual', 'quais', 'quem',
+        'and', 'or', 'but', 'nor', 'so', 'yet', 'because', 'although', 'since', 'unless', 'while', 'where', 'when', 'whether', 'who', 'whom', 'whose', 'which', 'what',
+        'y', 'u', 'pero', 'sino', 'pues', 'cuando', 'donde', 'mientras', 'aunque', 'si', 'quien', 'cual',
+        // Pronomes pessoais/oblíquos, advérbios pré-modificadores e negação
+        'eu', 'tu', 'ele', 'ela', 'nós', 'vós', 'eles', 'elas', 'você', 'vocês', 'me', 'te', 'lhe', 'lhes',
+        'não', 'nunca', 'jamais', 'muito', 'muita', 'muitos', 'muitas', 'mais', 'menos', 'tão', 'bem', 'mal', 'quase', 'apenas', 'só', 'somente', 'também', 'ainda', 'já',
+        'i', 'you', 'he', 'she', 'it', 'we', 'they', 'not', 'very', 'more', 'less', 'too', 'also', 'just', 'only', 'still', 'already', 'even',
+        'yo', 'tú', 'él', 'ella', 'nosotros', 'ellos', 'ellas', 'usted', 'ustedes', 'muy', 'más', 'tan', 'ya', 'todavía', 'aún',
+        // Verbos auxiliares / de ligação / modais que exigem complemento imediato
+        'estou', 'está', 'estamos', 'estão', 'estava', 'estávamos', 'estavam', 'sou', 'é', 'somos', 'são', 'era', 'eram', 'foi', 'foram', 'ser', 'estar', 'sendo', 'estado',
+        'vou', 'vai', 'vamos', 'vão', 'ia', 'iam', 'tenho', 'tem', 'temos', 'têm', 'tinha', 'tinham', 'havia', 'há', 'ter', 'tendo',
+        'posso', 'pode', 'podemos', 'podem', 'devo', 'deve', 'devemos', 'devem', 'quero', 'quer', 'queremos', 'querem', 'preciso', 'precisa', 'precisamos', 'precisam',
+        'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'shall', 'should', 'can', 'could', 'may', 'might', 'must',
+        'estoy', 'están', 'es', 'son', 'fue', 'fueron', 'voy', 'va', 'van', 'puede', 'pueden', 'he', 'ha', 'han', 'hemos',
+        // Adjetivos tipicamente pré-nominais (que antecedem o substantivo)
+        'novo', 'nova', 'novos', 'novas', 'grande', 'grandes', 'pequeno', 'pequena', 'bom', 'boa', 'bons', 'boas', 'melhor', 'melhores', 'maior', 'maiores', 'menor', 'menores',
+        'primeiro', 'primeira', 'primeiros', 'primeiras', 'último', 'última', 'próximo', 'próxima', 'próprio', 'própria', 'mesmo', 'mesma',
+        'new', 'good', 'best', 'first', 'last', 'next', 'same', 'own', 'big', 'great', 'high', 'low', 'old', 'young',
+        'nuevo', 'nueva', 'buen', 'buena', 'gran', 'primer', 'primera'
+      ]),
+
+      // Conectivos que iniciam uma NOVA oração lógica (ponto ideal para cortar ANTES deles durante a fala contínua)
+      clauseStarters: new Set([
+        'mas', 'porém', 'contudo', 'todavia', 'entretanto',
+        'porque', 'pois', 'portanto', 'então',
+        'quando', 'enquanto', 'onde', 'aonde', 'embora', 'caso',
+        'para', 'pra', 'além', 'inclusive',
+        'but', 'however', 'because', 'since', 'therefore', 'so', 'when', 'while', 'where', 'although', 'unless',
+        'pero', 'porque', 'pues', 'entonces', 'cuando', 'mientras', 'donde', 'aunque', 'además'
+      ]),
+
+      // Preposições de ligação nominal forte (ex: "mesa de som", "fones de ouvido" — NUNCA cortar antes delas)
+      boundPrepositions: new Set([
+        'de', 'do', 'da', 'dos', 'das', 'del', 'of'
+      ]),
+
+      // Preposições que iniciam adjuntos adverbiais (excelentes pontos de transição após um sintagma completo)
+      adverbialPrepositions: new Set([
+        'em', 'no', 'na', 'nos', 'nas', 'com', 'por', 'pelo', 'pela', 'sobre', 'durante', 'através', 'entre', 'até', 'desde',
+        'in', 'on', 'at', 'with', 'by', 'through', 'during', 'en', 'con'
+      ]),
+
+      cleanWord(w) {
+        return (w || '').toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+      },
+
+      isCompleteWord(w) {
+        const clean = this.cleanWord(w);
+        if (!clean || clean.length <= 1) return false;
+        return !this.danglingEndWords.has(clean);
+      },
+
+      /**
+       * Segmentador Sintático Inteligente:
+       * Encontra um ponto de corte semântico e gramatical lógico durante a fala contínua,
+       * sem esperar pausa do orador e sem cortar frases em artigos, preposições ou no meio de termos compostos.
+       */
+      findLogicalSplitCount(pendingWords) {
+        const len = pendingWords.length;
+
+        // 1. Pontuação explícita (. ! ? : ; ou vírgula após oração de >= 4 palavras completas)
+        for (let i = 3; i < len; i++) {
+          const w = pendingWords[i];
+          if (/[.!?:;]$/.test(w) && this.isCompleteWord(w)) {
+            return i + 1;
+          }
+          if (/,$/.test(w) && i >= 4 && this.isCompleteWord(w)) {
+            return i + 1;
+          }
+        }
+
+        // Exige pelo menos 2 palavras seguintes (lookahead) para garantir estabilidade acústica no Chrome
+        const maxSafeIdx = len - 3;
+        if (maxSafeIdx < 4) return 0; // Menos de 7 palavras na fila: aguarda completar o pensamento
+
+        // 2. Fronteira natural de Oração: corta ANTES de conjunções/conectivos ("mas", "porque", "quando", "para", "onde")
+        for (let i = 4; i <= maxSafeIdx; i++) {
+          const currW = pendingWords[i];
+          const nextClean = this.cleanWord(pendingWords[i + 1]);
+
+          if (this.isCompleteWord(currW)) {
+            if (this.clauseStarters.has(nextClean)) {
+              return i + 1;
+            }
+            // Conjunção aditiva ("e" / "ou" / "and" / "y") após >= 6 palavras, desde que não quebre termo composto
+            if (i >= 5 && (nextClean === 'e' || nextClean === 'ou' || nextClean === 'and' || nextClean === 'y')) {
+              const afterNextClean = this.cleanWord(pendingWords[i + 2]);
+              if (afterNextClean && !this.boundPrepositions.has(afterNextClean)) {
+                return i + 1;
+              }
+            }
+          }
+        }
+
+        // 3. Fala contínua fluida (>= 9 palavras pendentes sem conjunção explícita):
+        // Procura a melhor fronteira sintática entre a 6ª palavra (i=5) e maxSafeIdx
+        if (len >= 9) {
+          // Prioridade A: Cortar antes de adjunto adverbial ("em", "no", "na", "com", "sobre", "durante")
+          for (let i = maxSafeIdx; i >= 5; i--) {
+            const currW = pendingWords[i];
+            const nextClean = this.cleanWord(pendingWords[i + 1]);
+            if (this.isCompleteWord(currW) && this.adverbialPrepositions.has(nextClean)) {
+              return i + 1;
+            }
+          }
+
+          // Prioridade B (a partir de 10 palavras): Cortar após substantivo/verbo pleno que NÃO seja seguido por "de/do/da"
+          if (len >= 10) {
+            for (let i = maxSafeIdx; i >= 5; i--) {
+              const currW = pendingWords[i];
+              const nextClean = this.cleanWord(pendingWords[i + 1]);
+              if (this.isCompleteWord(currW) && !this.boundPrepositions.has(nextClean)) {
+                return i + 1;
+              }
+            }
+          }
+        }
+
+        // 4. Teto de segurança para orações muito extensas (>= 14 palavras)
+        if (len >= 14) {
+          for (let i = maxSafeIdx; i >= 4; i--) {
+            if (this.isCompleteWord(pendingWords[i])) {
+              return i + 1;
+            }
+          }
+          return 10;
+        }
+
+        return 0;
+      },
 
       async start() {
         this.isActive = true;
@@ -1368,6 +1517,7 @@
         if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null; }
         if (this.watchdogTimer) { clearInterval(this.watchdogTimer); this.watchdogTimer = null; }
         if (this.pauseDebounceTimer) { clearTimeout(this.pauseDebounceTimer); this.pauseDebounceTimer = null; }
+        if (this.fallbackFlushTimer) { clearTimeout(this.fallbackFlushTimer); this.fallbackFlushTimer = null; }
 
         if (this.recognizer) {
           try {
@@ -1378,6 +1528,7 @@
           } catch (e) {}
           this.recognizer = null;
         }
+        this.lastPendingWords = [];
         this.updateInterim('');
       },
 
@@ -1449,6 +1600,12 @@
           return;
         }
 
+        // Se havia palavras pendentes não finalizadas da sessão anterior, despacha antes de limpar
+        if (this.lastPendingWords && this.lastPendingWords.length > 0) {
+          this.commitClause(this.lastPendingWords.join(' '));
+          this.lastPendingWords = [];
+        }
+
         if (this.recognizer) {
           try {
             this.recognizer.onend = null;
@@ -1465,6 +1622,10 @@
         if (this.pauseDebounceTimer) {
           clearTimeout(this.pauseDebounceTimer);
           this.pauseDebounceTimer = null;
+        }
+        if (this.fallbackFlushTimer) {
+          clearTimeout(this.fallbackFlushTimer);
+          this.fallbackFlushTimer = null;
         }
 
         try {
@@ -1497,6 +1658,10 @@
 
           rec.onend = () => {
             this.lastEventTime = Date.now();
+            if (this.lastPendingWords && this.lastPendingWords.length > 0) {
+              this.commitClause(this.lastPendingWords.join(' '));
+              this.lastPendingWords = [];
+            }
             console.log('[STT] Sessão do navegador expirou (comportamento nativo). Reiniciando de forma transparente...');
             if (this.isActive) {
               this.updateBadge('renewing');
@@ -1530,13 +1695,11 @@
         this.watchdogTimer = setInterval(() => {
           if (!this.isActive) return;
 
-          // Se a janela voltou ao primeiro plano, revalida wakeLock
           if (document.visibilityState === 'visible' && !this.wakeLock) {
             this.acquireWakeLock();
           }
 
           const idleMs = Date.now() - this.lastEventTime;
-          // Se o motor não emitiu qualquer sinal de vida (resultado, start ou erro) por mais de 15 segundos, renova a sessão
           if (idleMs > 15000) {
             console.log('[STT-Watchdog] Reconhecedor inativo há mais de 15s. Renovando sessão para prevenir congelamento...');
             this.initSession();
@@ -1552,7 +1715,6 @@
           this.currentInterimEl = null;
         }
 
-        // Mantém as últimas 100 linhas no console do host para performance leve constante
         const existing = box.querySelectorAll('p');
         if (existing.length >= 100) {
           existing[0].remove();
@@ -1619,14 +1781,17 @@
           const allWords = fullTranscript.split(/\s+/).filter(Boolean);
           const startIndex = this.sessionCommittedWords[i] || 0;
           const pendingWords = allWords.slice(startIndex);
+          this.lastPendingWords = pendingWords;
 
           if (isSpeechFinal) {
             if (this.pauseDebounceTimer) clearTimeout(this.pauseDebounceTimer);
+            if (this.fallbackFlushTimer) clearTimeout(this.fallbackFlushTimer);
             if (pendingWords.length > 0) {
               this.commitClause(pendingWords.join(' '));
             }
             this.sessionFinalizedIndices.add(i);
             delete this.sessionCommittedWords[i];
+            this.lastPendingWords = [];
             this.updateInterim('');
             continue;
           }
@@ -1636,6 +1801,7 @@
           const pendingText = pendingWords.join(' ');
           this.updateInterim(pendingText);
 
+          // Envia a transcrição parcial imediatamente (o servidor já traduz em tempo real para as legendas!)
           if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({
               type: 'speech_transcript',
@@ -1645,58 +1811,63 @@
             }));
           }
 
-          // 1. Quebra em pontuação forte (. ! ? :) quando oração >= 3 palavras
-          let strongBreakIdx = -1;
-          for (let wIdx = 0; wIdx < pendingWords.length; wIdx++) {
-            if (/[.!?:]$/.test(pendingWords[wIdx]) && wIdx >= 2) {
-              strongBreakIdx = wIdx;
-              break;
+          // 1. Segmentação Sintática Simultânea (corta durante a fala APENAS em fronteiras lógicas completas)
+          const splitCount = this.findLogicalSplitCount(pendingWords);
+          if (splitCount > 0) {
+            if (this.pauseDebounceTimer) clearTimeout(this.pauseDebounceTimer);
+            if (this.fallbackFlushTimer) clearTimeout(this.fallbackFlushTimer);
+
+            const chunkWords = pendingWords.slice(0, splitCount);
+            this.sessionCommittedWords[i] = startIndex + splitCount;
+            this.commitClause(chunkWords.join(' '));
+
+            const remainingWords = allWords.slice(this.sessionCommittedWords[i]);
+            this.lastPendingWords = remainingWords;
+            this.updateInterim(remainingWords.join(' '));
+            continue;
+          }
+
+          // 2. Detecção inteligente de micro-pausa na respiração (350ms):
+          // Só despacha rápido se a última palavra fechar um pensamento completo (nunca corta em "sobre...", "para...", "uma...")
+          if (this.pauseDebounceTimer) clearTimeout(this.pauseDebounceTimer);
+          if (this.fallbackFlushTimer) clearTimeout(this.fallbackFlushTimer);
+
+          const targetIdx = i;
+          this.pauseDebounceTimer = setTimeout(() => {
+            if (this.sessionFinalizedIndices.has(targetIdx)) return;
+            const curItem = evt.results[targetIdx];
+            if (!curItem || !curItem[0]) return;
+            const curFull = curItem[0].transcript.trim();
+            const curWords = curFull.split(/\s+/).filter(Boolean);
+            const curStart = this.sessionCommittedWords[targetIdx] || 0;
+            const curPending = curWords.slice(curStart);
+
+            if (curPending.length >= 3 && this.isCompleteWord(curPending[curPending.length - 1])) {
+              this.sessionCommittedWords[targetIdx] = curWords.length;
+              this.lastPendingWords = [];
+              this.commitClause(curPending.join(' '));
+              this.updateInterim('');
             }
-          }
+          }, 350);
 
-          if (strongBreakIdx !== -1) {
-            if (this.pauseDebounceTimer) clearTimeout(this.pauseDebounceTimer);
-            const chunkCount = strongBreakIdx + 1;
-            const chunkWords = pendingWords.slice(0, chunkCount);
-            this.sessionCommittedWords[i] = startIndex + chunkCount;
-            this.commitClause(chunkWords.join(' '));
+          // 3. Fallback de segurança (1350ms de silêncio real):
+          // Se o orador realmente parou de falar mesmo após uma palavra curta/pendente, despacha para nunca reter palavras
+          this.fallbackFlushTimer = setTimeout(() => {
+            if (this.sessionFinalizedIndices.has(targetIdx)) return;
+            const curItem = evt.results[targetIdx];
+            if (!curItem || !curItem[0]) return;
+            const curFull = curItem[0].transcript.trim();
+            const curWords = curFull.split(/\s+/).filter(Boolean);
+            const curStart = this.sessionCommittedWords[targetIdx] || 0;
+            const curPending = curWords.slice(curStart);
 
-            const remainingWords = allWords.slice(this.sessionCommittedWords[i]);
-            this.updateInterim(remainingWords.join(' '));
-            continue;
-          }
-
-          // 2. Frase longa (>= 8 palavras) sem pontuação: despacha 6 palavras
-          if (pendingWords.length >= 8) {
-            if (this.pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
-            const chunkWords = pendingWords.slice(0, 6);
-            this.sessionCommittedWords[i] = startIndex + 6;
-            this.commitClause(chunkWords.join(' '));
-
-            const remainingWords = allWords.slice(this.sessionCommittedWords[i]);
-            this.updateInterim(remainingWords.join(' '));
-            continue;
-          }
-
-          // 3. Cadência de pausa natural na fala (500ms de silêncio após >= 3 palavras)
-          if (pendingWords.length >= 3) {
-            if (this.pauseDebounceTimer) clearTimeout(this.pauseDebounceTimer);
-            const targetIdx = i;
-            this.pauseDebounceTimer = setTimeout(() => {
-              if (this.sessionFinalizedIndices.has(targetIdx)) return;
-              const curItem = evt.results[targetIdx];
-              if (!curItem || !curItem[0]) return;
-              const curFull = curItem[0].transcript.trim();
-              const curWords = curFull.split(/\s+/).filter(Boolean);
-              const curStart = this.sessionCommittedWords[targetIdx] || 0;
-              const curPending = curWords.slice(curStart);
-              if (curPending.length >= 2) {
-                this.sessionCommittedWords[targetIdx] = curWords.length;
-                this.commitClause(curPending.join(' '));
-                this.updateInterim('');
-              }
-            }, 500);
-          }
+            if (curPending.length >= 1) {
+              this.sessionCommittedWords[targetIdx] = curWords.length;
+              this.lastPendingWords = [];
+              this.commitClause(curPending.join(' '));
+              this.updateInterim('');
+            }
+          }, 1350);
         }
       }
     };
@@ -2107,32 +2278,67 @@
       const words = text.split(/\s+/).filter(Boolean);
       if (wordCountText) wordCountText.innerText = `${words.length} palavras testadas`;
 
-      // Simula fala humana natural com primeiro pedaço (interim) e envio final íntegro
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        const halfWords = words.slice(0, Math.max(2, Math.floor(words.length / 2))).join(' ');
-        socket.send(JSON.stringify({
-          type: 'speech_transcript',
-          text: halfWords,
-          isFinal: false,
-          sourceLang: document.getElementById('sourceLang').value || 'pt-BR'
-        }));
+      // Simula fala humana contínua palavra por palavra passando pelo Segmentador Sintático Inteligente
+      const sourceLang = document.getElementById('sourceLang').value || 'pt-BR';
+      let committedIndex = 0;
+      const logicalChunks = [];
 
-        await new Promise(r => setTimeout(r, 200));
+      for (let wIdx = 1; wIdx <= words.length; wIdx++) {
+        const currentAll = words.slice(0, wIdx);
+        const pendingWords = currentAll.slice(committedIndex);
 
-        socket.send(JSON.stringify({
-          type: 'speech_transcript',
-          text: text,
-          isFinal: true,
-          sourceLang: document.getElementById('sourceLang').value || 'pt-BR'
-        }));
+        if (socket && socket.readyState === WebSocket.OPEN && pendingWords.length > 0) {
+          socket.send(JSON.stringify({
+            type: 'speech_transcript',
+            text: pendingWords.join(' '),
+            isFinal: false,
+            sourceLang
+          }));
+        }
+
+        const splitCount = window.speechEngine ? window.speechEngine.findLogicalSplitCount(pendingWords) : 0;
+        if (splitCount > 0) {
+          const chunkText = pendingWords.slice(0, splitCount).join(' ');
+          logicalChunks.push(chunkText);
+          committedIndex += splitCount;
+
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+              type: 'speech_transcript',
+              text: chunkText,
+              isFinal: true,
+              sourceLang
+            }));
+          }
+          await new Promise(r => setTimeout(r, 180));
+        } else {
+          await new Promise(r => setTimeout(r, 45));
+        }
+      }
+
+      // Despacha o trecho final restante ao concluir a frase
+      const remaining = words.slice(committedIndex);
+      if (remaining.length > 0) {
+        const finalChunk = remaining.join(' ');
+        logicalChunks.push(finalChunk);
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: 'speech_transcript',
+            text: finalChunk,
+            isFinal: true,
+            sourceLang
+          }));
+        }
       }
 
       const box = document.getElementById('hostTranscriptBox');
       if (box) {
-        const p = document.createElement('p');
-        p.className = 'text-cyan-300 font-semibold mb-1 border-l-2 border-emerald-400 pl-2 bg-slate-900/50 py-1 rounded';
-        p.innerText = `[Teste de Integridade] ${text}`;
-        box.appendChild(p);
+        logicalChunks.forEach((chunk, idx) => {
+          const p = document.createElement('p');
+          p.className = 'text-cyan-300 font-semibold mb-1 border-l-2 border-emerald-400 pl-2 bg-slate-900/50 py-1 rounded';
+          p.innerText = `[Trecho Lógico ${idx + 1}/${logicalChunks.length}] ${chunk}`;
+          box.appendChild(p);
+        });
         box.scrollTop = box.scrollHeight;
       }
 
@@ -2142,9 +2348,9 @@
           btn.innerHTML = `<span>▶️</span> Testar Agora`;
         }
         if (statusText) {
-          statusText.innerText = `✅ Sucesso: ${words.length}/${words.length} palavras íntegras (0 cortes)`;
+          statusText.innerText = `✅ ${words.length}/${words.length} palavras em ${logicalChunks.length} trecho(s) lógico(s) (0 cortes aleatórios)`;
         }
-      }, 1000);
+      }, 600);
     }
 
     function injectTestSpeech() {

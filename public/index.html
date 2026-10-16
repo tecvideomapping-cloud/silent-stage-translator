@@ -495,10 +495,11 @@
             // Legenda original
             renderSubtitle(data.text, data.isFinal, 'original');
           } else if (data.type === 'subtitle_translated') {
-            // Legenda traduzida
-            renderSubtitle(data.text, true, data.lang);
-            // Se o usuário estiver ouvindo este canal de idioma traduzido, reproduz áudio (funciona com tela bloqueada)
-            if (currentChannel === data.lang) {
+            const isFinalSub = data.isFinal !== false;
+            // Legenda traduzida (exibe simultaneamente durante a fala e confirma ao fechar o trecho lógico)
+            renderSubtitle(data.text, isFinalSub, data.lang);
+            // Reproduz o áudio sintetizado apenas quando o trecho lógico completo é fechado
+            if (isFinalSub && currentChannel === data.lang) {
               playTranslatedAudio(data.text, data.lang);
             }
           } else if (data.type === 'pong') {

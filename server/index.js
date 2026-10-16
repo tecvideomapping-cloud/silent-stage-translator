@@ -662,6 +662,7 @@ app.get('/api/tts', async (req, res) => {
 const roomAudioMeta = new Map(); // roomId -> { type: 'audio_meta', format, sampleRate, kbps, profileName }
 const roomSpeakerProfile = new Map(); // roomId -> { voice, pitch, speed }
 const roomLastFinalTranscript = new Map(); // roomId -> { text, time }
+const roomLastInterimTranslate = new Map(); // roomId -> { text, time, seq }
 
 wss.on('connection', (ws, req) => {
   // Parse à prova de falhas com URL padrão Node.js e normalização de slug
@@ -819,6 +820,10 @@ wss.on('connection', (ws, req) => {
           const cleanText = (text || '').trim();
           if (!cleanText) return;
 
+          // Invalida qualquer tradução parcial (interim) anterior que ainda esteja em trânsito
+          const prevInterim = roomLastInterimTranslate.get(roomId);
+          roomLastInterimTranslate.set(roomId, { text: '', time: Date.now(), seq: (prevInterim?.seq || 0) + 1 });
+
           const lastObj = roomLastFinalTranscript.get(roomId);
           if (lastObj && lastObj.text.toLowerCase() === cleanText.toLowerCase() && (Date.now() - lastObj.time) < 400) {
             // Ignora apenas disparo duplicado instantâneo de rede (< 400ms)
@@ -836,6 +841,7 @@ wss.on('connection', (ws, req) => {
                 type: 'subtitle_translated',
                 lang,
                 text: translatedText,
+                isFinal: true,
                 sourceText: text,
                 timestamp: Date.now()
               });
@@ -864,6 +870,43 @@ wss.on('connection', (ws, req) => {
               console.error('[DB] Erro não-bloqueante ao salvar transcrição:', err.message);
             });
           });
+        } else {
+          // Tradução simultânea em tempo real da fala em andamento (isFinal: false) para exibição imediata nas legendas
+          const cleanInterim = (text || '').trim();
+          const interimWords = cleanInterim.split(/\s+/).filter(Boolean);
+          if (interimWords.length >= 2) {
+            const lastInterim = roomLastInterimTranslate.get(roomId);
+            const now = Date.now();
+            if (!lastInterim || (cleanInterim.toLowerCase() !== lastInterim.text.toLowerCase() && (now - lastInterim.time) >= 420)) {
+              const currentSeq = (lastInterim?.seq || 0) + 1;
+              roomLastInterimTranslate.set(roomId, { text: cleanInterim, time: now, seq: currentSeq });
+
+              getRoom(roomId).then(room => {
+                const targetLangs = room?.target_languages || ['en', 'es'];
+                const glossary = room?.glossary || {};
+
+                aiPipeline.translateText(cleanInterim, targetLangs, glossary, (lang, translatedText) => {
+                  // Só envia se esta prévia ainda for a mais recente (não atropela frase finalizada)
+                  if (roomLastInterimTranslate.get(roomId)?.seq !== currentSeq) return;
+
+                  const interimPayload = JSON.stringify({
+                    type: 'subtitle_translated',
+                    lang,
+                    text: translatedText,
+                    isFinal: false,
+                    sourceText: cleanInterim,
+                    timestamp: Date.now()
+                  });
+
+                  for (const client of roomClients) {
+                    if (client !== ws && client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener')) {
+                      client.send(interimPayload);
+                    }
+                  }
+                }).catch(() => {});
+              }).catch(() => {});
+            }
+          }
         }
       } else if (msg.type === 'set_screen_lang') {
         // Administrador/Host define remotamente o idioma, fundo chroma/preto e logo de todos os telões da sala
