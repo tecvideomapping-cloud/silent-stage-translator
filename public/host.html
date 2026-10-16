@@ -285,25 +285,31 @@
 
         <!-- CALIBRAÇÃO DE VOZ DO PALESTRANTE (TIMBRE IA & NATURALIDADE) -->
         <div class="bg-slate-950 border border-purple-900/50 rounded-xl p-4 flex flex-col gap-3">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span class="text-xs font-bold text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
               <span>🎙️</span> Calibração de Voz do Palestrante (Timbre IA)
             </span>
-            <span id="detectedPitchBadge" class="text-[11px] bg-purple-950/80 text-purple-300 border border-purple-800/60 px-2.5 py-0.5 rounded-full font-mono">
-              Aguardando transmissão para analisar timbre...
-            </span>
+            <div class="flex flex-wrap items-center gap-2">
+              <span id="detectedPitchBadge" class="text-[11px] bg-purple-950/80 text-purple-300 border border-purple-800/60 px-2.5 py-0.5 rounded-full font-mono">
+                🎯 Perfil Ativo: Masculino Profundo (Barítono)
+              </span>
+              <button type="button" id="calibrateMicBtn" onclick="calibrateVoiceFromMicNow()"
+                class="text-[11px] bg-purple-600 hover:bg-purple-500 text-white font-semibold px-2.5 py-1 rounded-lg transition shadow flex items-center gap-1 active:scale-95">
+                <span>🎙️</span> Calibrar Voz pelo Mic (3s)
+              </button>
+            </div>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label class="block text-[11px] font-medium text-slate-400 mb-1">Perfil de Timbre / Voz:</label>
-              <select id="speakerTimbreSelect" onchange="broadcastSpeakerVoiceProfile()"
+              <select id="speakerTimbreSelect" onchange="onSpeakerVoiceControlChanged(true)"
                 class="w-full bg-slate-900 border border-purple-500/60 rounded-lg px-3 py-1.5 text-xs text-purple-200 font-semibold focus:outline-none focus:border-purple-400">
                 <option value="auto_match" selected>🎯 Auto-Match (Clonar Timbre do Microfone)</option>
-                <option value="male_deep">👨 Masculino Profundo (Barítono / Tom Onyx)</option>
-                <option value="male_natural">👨 Masculino Natural (Orador / Tom Echo)</option>
-                <option value="female_warm">👩 Feminino Envolvente (Expressivo / Tom Nova)</option>
-                <option value="female_clear">👩 Feminino Claro (Suave / Tom Shimmer)</option>
+                <option value="male_deep">👨 Masculino Profundo (Barítono / Christopher & Onyx)</option>
+                <option value="male_natural">👨 Masculino Natural (Orador / Guy & Echo)</option>
+                <option value="female_warm">👩 Feminino Envolvente (Expressivo / Aria & Nova)</option>
+                <option value="female_clear">👩 Feminino Claro (Suave / Jenny & Shimmer)</option>
               </select>
             </div>
 
@@ -313,7 +319,8 @@
                 <span id="pitchValueText" class="text-[10px] text-purple-300 font-mono">0 st</span>
               </div>
               <input type="range" id="speakerPitchRange" min="-5" max="5" value="0" step="1"
-                oninput="document.getElementById('pitchValueText').innerText = (this.value > 0 ? '+' : '') + this.value + ' st'; broadcastSpeakerVoiceProfile();"
+                oninput="document.getElementById('pitchValueText').innerText = (this.value > 0 ? '+' : '') + this.value + ' st'; onSpeakerVoiceControlChanged(false);"
+                onchange="onSpeakerVoiceControlChanged(true)"
                 class="w-full accent-purple-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg">
             </div>
 
@@ -323,26 +330,32 @@
                 <span id="speedValueText" class="text-[10px] text-purple-300 font-mono">1.05x</span>
               </div>
               <input type="range" id="speakerSpeedRange" min="0.85" max="1.30" value="1.05" step="0.05"
-                oninput="document.getElementById('speedValueText').innerText = parseFloat(this.value).toFixed(2) + 'x'; broadcastSpeakerVoiceProfile();"
+                oninput="document.getElementById('speedValueText').innerText = parseFloat(this.value).toFixed(2) + 'x'; onSpeakerVoiceControlChanged(false);"
+                onchange="onSpeakerVoiceControlChanged(true)"
                 class="w-full accent-purple-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg">
             </div>
           </div>
 
           <!-- Barra de Ações de Voz & Configuração Neural -->
-          <div class="mt-3 pt-3 border-t border-purple-900/30 flex flex-wrap items-center justify-between gap-2.5">
-            <div class="flex items-center gap-2">
+          <div class="mt-2 pt-3 border-t border-purple-900/30 flex flex-wrap items-center justify-between gap-2.5">
+            <div class="flex flex-wrap items-center gap-2">
+              <select id="previewVoiceLangSelect" class="bg-slate-900 border border-purple-500/40 rounded-lg px-2.5 py-1.5 text-xs text-purple-200 focus:outline-none">
+                <option value="en" selected>🇺🇸 Testar Voz em Inglês (EN)</option>
+                <option value="es">🇪🇸 Testar Voz em Espanhol (ES)</option>
+                <option value="pt">🇧🇷 Testar Voz em Português (PT)</option>
+              </select>
               <button type="button" id="previewVoiceBtn" onclick="testSpeakerVoicePreview()"
-                class="text-xs bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/50 px-3 py-1.5 rounded-lg transition font-medium flex items-center gap-1.5 active:scale-95 shadow-sm">
+                class="text-xs bg-purple-600/40 hover:bg-purple-600/60 text-purple-100 border border-purple-500/60 px-3 py-1.5 rounded-lg transition font-semibold flex items-center gap-1.5 active:scale-95 shadow-sm">
                 <span>🎧</span> Ouvir Demonstração da Voz
               </button>
               <button type="button" onclick="toggleTtsKeyPanel()"
                 class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-lg transition font-medium flex items-center gap-1.5">
-                <span>🔑</span> Configurar Chaves de Voz IA
+                <span>🔑</span> Chaves Opcionais (OpenAI / ElevenLabs)
               </button>
             </div>
             <div class="flex items-center gap-1.5 text-[11px] text-slate-400">
               <span class="text-slate-500">Motor Ativo:</span>
-              <span id="ttsActiveProviderBadge" class="font-mono text-purple-300 bg-purple-950/70 border border-purple-800/60 px-2 py-0.5 rounded-full">Carregando...</span>
+              <span id="ttsActiveProviderBadge" class="font-mono text-emerald-300 bg-emerald-950/70 border border-emerald-800/60 px-2 py-0.5 rounded-full">Microsoft Neural Studio (Edge-TTS HD)</span>
             </div>
           </div>
 
@@ -973,14 +986,162 @@
       navigator.clipboard.writeText(url).then(() => alert('Link copiado para a área de transferência!'));
     }
 
-    function broadcastSpeakerVoiceProfile() {
-      const timbreSelect = document.getElementById('speakerTimbreSelect');
-      let voice = timbreSelect ? timbreSelect.value : 'auto_match';
-      if (voice === 'auto_match') {
-        voice = window.autoDetectedSpeakerVoice || 'male_deep';
+    const SPEAKER_VOICE_LABELS = {
+      male_deep: 'Masculino Profundo (Barítono)',
+      male_natural: 'Masculino Natural (Orador)',
+      female_warm: 'Feminino Envolvente (Expressivo)',
+      female_clear: 'Feminino Claro (Suave)'
+    };
+
+    function classifyPitchHzToProfile(f0Hz) {
+      if (f0Hz <= 116) {
+        const refHz = 98;
+        const st = Math.max(-3, Math.min(3, Math.round(12 * Math.log2(f0Hz / refHz))));
+        return { voice: 'male_deep', pitchSt: st, label: `Masculino Profundo (~${f0Hz}Hz)` };
+      } else if (f0Hz <= 162) {
+        const refHz = 135;
+        const st = Math.max(-3, Math.min(3, Math.round(12 * Math.log2(f0Hz / refHz))));
+        return { voice: 'male_natural', pitchSt: st, label: `Masculino Natural (~${f0Hz}Hz)` };
+      } else if (f0Hz <= 215) {
+        const refHz = 188;
+        const st = Math.max(-3, Math.min(3, Math.round(12 * Math.log2(f0Hz / refHz))));
+        return { voice: 'female_warm', pitchSt: st, label: `Feminino Envolvente (~${f0Hz}Hz)` };
+      } else {
+        const refHz = 240;
+        const st = Math.max(-3, Math.min(3, Math.round(12 * Math.log2(f0Hz / refHz))));
+        return { voice: 'female_clear', pitchSt: st, label: `Feminino Claro (~${f0Hz}Hz)` };
       }
+    }
+
+    // Autocorrelação Normalizada de Domínio de Tempo (NSDF 2048 amostras) para detecção precisa de F0 (70Hz a 340Hz)
+    function estimatePitchNormalized(floatBuf, sampleRate) {
+      let rmsSum = 0;
+      for (let i = 0; i < floatBuf.length; i++) {
+        rmsSum += floatBuf[i] * floatBuf[i];
+      }
+      const rms = Math.sqrt(rmsSum / floatBuf.length);
+      if (rms < 0.018) return 0; // Silêncio ou ruído de fundo baixo
+
+      const minPeriod = Math.max(8, Math.floor(sampleRate / 340));
+      const maxPeriod = Math.min(Math.floor(floatBuf.length * 0.65), Math.floor(sampleRate / 70));
+      const windowLen = floatBuf.length - maxPeriod;
+      if (windowLen < 128) return 0;
+
+      let bestNormCorr = 0;
+      let bestPeriod = -1;
+
+      for (let period = minPeriod; period <= maxPeriod; period++) {
+        let cross = 0;
+        let e0 = 0;
+        let eLag = 0;
+        for (let i = 0; i < windowLen; i++) {
+          const a = floatBuf[i];
+          const b = floatBuf[i + period];
+          cross += a * b;
+          e0 += a * a;
+          eLag += b * b;
+        }
+        const denom = Math.sqrt(e0 * eLag);
+        if (denom > 1e-6) {
+          const normCorr = cross / denom;
+          if (normCorr > bestNormCorr) {
+            bestNormCorr = normCorr;
+            bestPeriod = period;
+          }
+        }
+      }
+
+      if (bestNormCorr >= 0.55 && bestPeriod > 0) {
+        return Math.round(sampleRate / bestPeriod);
+      }
+      return 0;
+    }
+
+    function getResolvedSpeakerVoiceProfile() {
+      const timbreSelect = document.getElementById('speakerTimbreSelect');
+      const selectedMode = timbreSelect ? timbreSelect.value : 'auto_match';
+      const voice = (selectedMode === 'auto_match')
+        ? (window.autoDetectedSpeakerVoice || 'male_deep')
+        : selectedMode;
       const pitch = parseFloat(document.getElementById('speakerPitchRange')?.value || 0);
       const speed = parseFloat(document.getElementById('speakerSpeedRange')?.value || 1.05);
+      return { selectedMode, voice, pitch, speed };
+    }
+
+    function updateVoiceCalibrationBadgeUI() {
+      const pBadge = document.getElementById('detectedPitchBadge');
+      if (!pBadge) return;
+      const { selectedMode, voice, pitch, speed } = getResolvedSpeakerVoiceProfile();
+      const baseLabel = SPEAKER_VOICE_LABELS[voice] || 'Masculino Profundo';
+      const pitchStr = (pitch > 0 ? `+${pitch}` : `${pitch}`) + 'st';
+      const speedStr = speed.toFixed(2) + 'x';
+
+      if (selectedMode === 'auto_match') {
+        const hzInfo = window.lastDetectedSpeakerHz ? ` ~${window.lastDetectedSpeakerHz}Hz` : '';
+        pBadge.innerText = `🎯 Auto-Match:${hzInfo} ${baseLabel} (${pitchStr} • ${speedStr})`;
+      } else {
+        pBadge.innerText = `🎙️ Calibrado: ${baseLabel} (${pitchStr} • ${speedStr})`;
+      }
+    }
+
+    function saveSpeakerVoiceToStorage() {
+      try {
+        const { selectedMode, voice, pitch, speed } = getResolvedSpeakerVoiceProfile();
+        localStorage.setItem('vmp_speaker_voice_profile', JSON.stringify({
+          selectedMode,
+          voice,
+          pitch,
+          speed,
+          autoDetectedSpeakerVoice: window.autoDetectedSpeakerVoice || 'male_deep',
+          lastDetectedSpeakerHz: window.lastDetectedSpeakerHz || 0
+        }));
+      } catch (e) {}
+    }
+
+    function restoreSpeakerVoiceFromStorage() {
+      try {
+        const raw = localStorage.getItem('vmp_speaker_voice_profile');
+        if (!raw) {
+          updateVoiceCalibrationBadgeUI();
+          return;
+        }
+        const saved = JSON.parse(raw);
+        if (saved.autoDetectedSpeakerVoice) window.autoDetectedSpeakerVoice = saved.autoDetectedSpeakerVoice;
+        if (saved.lastDetectedSpeakerHz) window.lastDetectedSpeakerHz = saved.lastDetectedSpeakerHz;
+
+        const timbreSelect = document.getElementById('speakerTimbreSelect');
+        if (timbreSelect && saved.selectedMode) timbreSelect.value = saved.selectedMode;
+
+        const pitchRange = document.getElementById('speakerPitchRange');
+        const pitchText = document.getElementById('pitchValueText');
+        if (pitchRange && typeof saved.pitch === 'number') {
+          pitchRange.value = String(saved.pitch);
+          if (pitchText) pitchText.innerText = (saved.pitch > 0 ? '+' : '') + saved.pitch + ' st';
+        }
+
+        const speedRange = document.getElementById('speakerSpeedRange');
+        const speedText = document.getElementById('speedValueText');
+        if (speedRange && typeof saved.speed === 'number') {
+          speedRange.value = String(saved.speed);
+          if (speedText) speedText.innerText = saved.speed.toFixed(2) + 'x';
+        }
+      } catch (e) {}
+      updateVoiceCalibrationBadgeUI();
+    }
+
+    function onSpeakerVoiceControlChanged(shouldAutoPreview = false) {
+      updateVoiceCalibrationBadgeUI();
+      saveSpeakerVoiceToStorage();
+      broadcastSpeakerVoiceProfile();
+      // Se já estava tocando uma demonstração de voz quando o operador mexeu no controle, atualiza a prévia na hora
+      if (shouldAutoPreview && previewAudioEl && !previewAudioEl.paused) {
+        testSpeakerVoicePreview();
+      }
+    }
+
+    function broadcastSpeakerVoiceProfile() {
+      const { voice, pitch, speed } = getResolvedSpeakerVoiceProfile();
+      updateVoiceCalibrationBadgeUI();
 
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
@@ -989,6 +1150,112 @@
           pitch,
           speed
         }));
+      }
+    }
+
+    // Calibração Direta de 3 Segundos pelo Microfone / Interface (mesmo antes de iniciar transmissão)
+    let isCalibratingMic = false;
+    async function calibrateVoiceFromMicNow() {
+      if (isCalibratingMic) return;
+      const btn = document.getElementById('calibrateMicBtn');
+      const pBadge = document.getElementById('detectedPitchBadge');
+      isCalibratingMic = true;
+
+      let tempStream = null;
+      let tempCtx = null;
+
+      try {
+        if (btn) {
+          btn.disabled = true;
+          btn.innerHTML = '<span>🎙️</span> Fale ao microfone (3s)...';
+        }
+        if (pBadge) {
+          pBadge.innerText = '🎙️ Ouvindo sua voz... Fale normalmente por 3 segundos';
+        }
+
+        // Usa o stream ativo da transmissão ou abre o microfone selecionado por 3 segundos
+        let streamToAnalyze = (isBroadcasting && audioStream) ? audioStream : null;
+        if (!streamToAnalyze) {
+          const selectedDeviceId = document.getElementById('audioDeviceSelect')?.value;
+          const constraints = {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          };
+          if (selectedDeviceId) constraints.deviceId = { ideal: selectedDeviceId };
+          tempStream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+          streamToAnalyze = tempStream;
+        }
+
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        tempCtx = new AudioCtx();
+        if (tempCtx.state === 'suspended') await tempCtx.resume();
+
+        const src = tempCtx.createMediaStreamSource(streamToAnalyze);
+        const calAnalyser = tempCtx.createAnalyser();
+        calAnalyser.fftSize = 2048;
+        src.connect(calAnalyser);
+
+        const floatBuf = new Float32Array(calAnalyser.fftSize);
+        const detectedSamples = [];
+        const startMs = Date.now();
+
+        while (Date.now() - startMs < 2800) {
+          calAnalyser.getFloatTimeDomainData(floatBuf);
+          const f0 = estimatePitchNormalized(floatBuf, tempCtx.sampleRate);
+          if (f0 >= 70 && f0 <= 340) {
+            detectedSamples.push(f0);
+            if (pBadge) {
+              pBadge.innerText = `🎙️ Analisando harmônicos: ~${f0} Hz (${detectedSamples.length} amostras)...`;
+            }
+          }
+          await new Promise(r => setTimeout(r, 90));
+        }
+
+        if (detectedSamples.length === 0) {
+          if (pBadge) {
+            pBadge.innerText = '⚠️ Nenhum sinal de voz detectado. Fale mais próximo ao microfone.';
+          }
+          return;
+        }
+
+        // Mediana das frequências fundamentais para eliminar outliers
+        detectedSamples.sort((a, b) => a - b);
+        const medianHz = detectedSamples[Math.floor(detectedSamples.length / 2)];
+        const result = classifyPitchHzToProfile(medianHz);
+
+        window.autoDetectedSpeakerVoice = result.voice;
+        window.lastDetectedSpeakerHz = medianHz;
+
+        const timbreSelect = document.getElementById('speakerTimbreSelect');
+        if (timbreSelect) timbreSelect.value = result.voice;
+
+        const pitchRange = document.getElementById('speakerPitchRange');
+        const pitchText = document.getElementById('pitchValueText');
+        if (pitchRange) {
+          pitchRange.value = String(result.pitchSt);
+          if (pitchText) pitchText.innerText = (result.pitchSt > 0 ? '+' : '') + result.pitchSt + ' st';
+        }
+
+        saveSpeakerVoiceToStorage();
+        broadcastSpeakerVoiceProfile();
+
+        // Toca demonstração imediata com a voz calibrada
+        await testSpeakerVoicePreview();
+      } catch (err) {
+        alert('Erro ao acessar microfone para calibração: ' + err.message);
+      } finally {
+        isCalibratingMic = false;
+        if (tempStream) {
+          try { tempStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+        }
+        if (tempCtx) {
+          try { tempCtx.close(); } catch (e) {}
+        }
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<span>🎙️</span> Calibrar Voz pelo Mic (3s)';
+        }
       }
     }
 
@@ -1006,17 +1273,12 @@
           const data = await res.json();
           const badge = document.getElementById('ttsActiveProviderBadge');
           if (badge) {
-            badge.innerText = data.provider || 'Padrão / Sistema';
-            if (data.hasOpenAi) {
-              badge.className = 'font-mono text-emerald-300 bg-emerald-950/70 border border-emerald-800/60 px-2 py-0.5 rounded-full';
-            } else if (data.hasElevenLabs) {
-              badge.className = 'font-mono text-cyan-300 bg-cyan-950/70 border border-cyan-800/60 px-2 py-0.5 rounded-full';
-            } else {
-              badge.className = 'font-mono text-purple-300 bg-purple-950/70 border border-purple-800/60 px-2 py-0.5 rounded-full';
-            }
+            badge.innerText = data.provider || 'Microsoft Neural Studio (Edge-TTS HD)';
+            badge.className = 'font-mono text-emerald-300 bg-emerald-950/70 border border-emerald-800/60 px-2 py-0.5 rounded-full';
           }
         }
       } catch (e) {}
+      restoreSpeakerVoiceFromStorage();
     }
 
     async function saveTtsKeys() {
@@ -1043,34 +1305,49 @@
 
     let previewAudioEl = null;
     async function testSpeakerVoicePreview() {
-      const timbreSelect = document.getElementById('speakerTimbreSelect');
-      let voice = timbreSelect ? timbreSelect.value : 'auto_match';
-      if (voice === 'auto_match') {
-        voice = window.autoDetectedSpeakerVoice || 'male_deep';
-      }
-      const pitch = parseFloat(document.getElementById('speakerPitchRange')?.value || 0);
-      const speed = parseFloat(document.getElementById('speakerSpeedRange')?.value || 1.05);
+      const { voice, pitch, speed } = getResolvedSpeakerVoiceProfile();
+      const previewLang = document.getElementById('previewVoiceLangSelect')?.value || 'en';
 
       const previewBtn = document.getElementById('previewVoiceBtn');
       if (previewBtn) {
         previewBtn.disabled = true;
-        previewBtn.innerHTML = `<span>⏳</span> Gerando áudio...`;
+        previewBtn.innerHTML = `<span>⏳</span> Sintetizando voz neural...`;
       }
 
       try {
         if (previewAudioEl) {
-          previewAudioEl.pause();
+          try { previewAudioEl.pause(); } catch (e) {}
           previewAudioEl = null;
         }
-        const sampleText = "Olá, esta é a calibração de voz do palestrante com entonação e timbre natural.";
-        const url = `/api/tts?lang=pt&text=${encodeURIComponent(sampleText)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}&t=${Date.now()}`;
 
-        previewAudioEl = new Audio(url);
-        const pitchFactor = Math.pow(2, pitch / 12);
-        previewAudioEl.preservesPitch = false;
-        previewAudioEl.playbackRate = Math.max(0.7, Math.min(1.5, speed * pitchFactor));
+        const samplePhrases = {
+          en: "Hello everyone, this is the calibrated speaker voice with natural studio timbre and intonation.",
+          es: "Hola a todos, esta es la calibración de voz del orador con timbre y entonación natural de estudio.",
+          pt: "Olá a todos, esta é a calibração de voz do palestrante com entonação e timbre neural de estúdio."
+        };
+        const sampleText = samplePhrases[previewLang] || samplePhrases.en;
+        const url = `/api/tts?lang=${encodeURIComponent(previewLang)}&text=${encodeURIComponent(sampleText)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}&t=${Date.now()}`;
+
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Falha ao sintetizar áudio no servidor');
+        const provider = response.headers.get('X-TTS-Provider') || 'edge-neural';
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+
+        previewAudioEl = new Audio(objectUrl);
+        if (provider === 'google-fallback') {
+          // Apenas no fallback de emergência aplica pitch/speed via playbackRate local
+          const pitchFactor = Math.pow(2, pitch / 12);
+          previewAudioEl.preservesPitch = false;
+          previewAudioEl.playbackRate = Math.max(0.75, Math.min(1.45, speed * pitchFactor));
+        } else {
+          // No Microsoft Edge Neural Studio / OpenAI, o servidor já gerou a voz neural exata com Pitch e Cadência SSML independentes!
+          previewAudioEl.preservesPitch = true;
+          previewAudioEl.playbackRate = 1.0;
+        }
 
         const resetBtn = () => {
+          URL.revokeObjectURL(objectUrl);
           if (previewBtn) {
             previewBtn.disabled = false;
             previewBtn.innerHTML = `<span>🎧</span> Ouvir Demonstração da Voz`;
@@ -1080,13 +1357,13 @@
         previewAudioEl.onended = resetBtn;
         previewAudioEl.onerror = () => {
           resetBtn();
-          alert('Não foi possível gerar a demonstração de áudio. Verifique sua conexão.');
+          alert('Não foi possível reproduzir a demonstração de áudio.');
         };
 
         await previewAudioEl.play();
         if (previewBtn) {
           previewBtn.disabled = false;
-          previewBtn.innerHTML = `<span>🔊</span> Tocando prévia...`;
+          previewBtn.innerHTML = `<span>🔊</span> Ouvindo (${SPEAKER_VOICE_LABELS[voice] || voice})...`;
         }
       } catch (err) {
         console.error('Erro na prévia de áudio:', err);
@@ -1296,47 +1573,25 @@
 
         const source = audioContext.createMediaStreamSource(audioStream);
         const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 512;
+        // 2048 amostras (~42ms em 48kHz) permite medir com exatidão vozes graves masculinas (70Hz-150Hz) e femininas (165Hz-340Hz)
+        analyser.fftSize = 2048;
         analyser.smoothingTimeConstant = 0.3;
         source.connect(analyser);
 
-        const dataArray = new Uint8Array(analyser.fftSize);
+        const floatTimeData = new Float32Array(analyser.fftSize);
         let lastPitchCalcTime = 0;
-        let pitchSum = 0;
-        let pitchSamplesCount = 0;
+        const recentPitchReadings = [];
         let currentRmsLevel = 0;
-
-        function estimatePitch(buf, sampleRate) {
-          const minPeriod = Math.floor(sampleRate / 340);
-          const maxPeriod = Math.floor(sampleRate / 75);
-          let bestCorr = 0;
-          let bestPeriod = -1;
-
-          for (let period = minPeriod; period < maxPeriod; period++) {
-            let corr = 0;
-            for (let i = 0; i < buf.length - period; i++) {
-              corr += (buf[i] - 128) * (buf[i + period] - 128);
-            }
-            if (corr > bestCorr) {
-              bestCorr = corr;
-              bestPeriod = period;
-            }
-          }
-          if (bestCorr > 35000 && bestPeriod > 0) {
-            return Math.round(sampleRate / bestPeriod);
-          }
-          return 0;
-        }
 
         function updateVU() {
           if (!isBroadcasting) return;
-          analyser.getByteTimeDomainData(dataArray);
+          analyser.getFloatTimeDomainData(floatTimeData);
           let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) {
-            const val = (dataArray[i] - 128) / 128;
+          for (let i = 0; i < floatTimeData.length; i++) {
+            const val = floatTimeData[i];
             sum += val * val;
           }
-          const rms = Math.sqrt(sum / dataArray.length);
+          const rms = Math.sqrt(sum / floatTimeData.length);
           currentRmsLevel = rms;
           const pct = Math.min(100, Math.round(rms * 400));
           const vuBar = document.getElementById('vuBar');
@@ -1345,22 +1600,25 @@
           if (vuText) vuText.innerText = pct + '%';
 
           const now = Date.now();
-          if (rms > 0.035 && (now - lastPitchCalcTime) > 300) {
+          if (rms > 0.025 && (now - lastPitchCalcTime) > 280) {
             lastPitchCalcTime = now;
-            const f0 = estimatePitch(dataArray, audioContext.sampleRate);
-            if (f0 >= 75 && f0 <= 320) {
-              pitchSum += f0;
-              pitchSamplesCount++;
-              const avgPitch = Math.round(pitchSum / pitchSamplesCount);
-              const isMale = avgPitch < 160;
-              window.autoDetectedSpeakerVoice = isMale ? 'male_deep' : 'female_warm';
+            const f0 = estimatePitchNormalized(floatTimeData, audioContext.sampleRate);
+            if (f0 >= 70 && f0 <= 340) {
+              recentPitchReadings.push(f0);
+              if (recentPitchReadings.length > 15) recentPitchReadings.shift();
 
-              const pBadge = document.getElementById('detectedPitchBadge');
-              if (pBadge) {
-                const sel = document.getElementById('speakerTimbreSelect')?.value;
-                const profileLabel = isMale ? `Masculino Barítono (~${avgPitch}Hz • Tom Onyx)` : `Feminino Expressivo (~${avgPitch}Hz • Tom Nova)`;
-                pBadge.innerText = `🎯 Timbre Detectado: ${profileLabel}`;
-                if (sel === 'auto_match') {
+              const sorted = [...recentPitchReadings].sort((a, b) => a - b);
+              const medianPitch = sorted[Math.floor(sorted.length / 2)];
+              const classified = classifyPitchHzToProfile(medianPitch);
+
+              const prevVoice = window.autoDetectedSpeakerVoice;
+              window.autoDetectedSpeakerVoice = classified.voice;
+              window.lastDetectedSpeakerHz = medianPitch;
+
+              const sel = document.getElementById('speakerTimbreSelect')?.value;
+              if (sel === 'auto_match') {
+                updateVoiceCalibrationBadgeUI();
+                if (prevVoice !== classified.voice) {
                   broadcastSpeakerVoiceProfile();
                 }
               }
@@ -1670,8 +1928,9 @@
         if (progText) progText.innerText = `Trecho ${bIdx + 1}/${fullLectureParagraphs.length} (${pct}%)`;
         if (curTextEl) curTextEl.innerText = `"${paragraph}"`;
 
-        // 1. Toca a voz da palestra na saída de áudio do computador (/api/tts em português)
-        const voiceUrl = `/api/tts?lang=pt&text=${encodeURIComponent(paragraph)}&voice=male_deep&speed=1.08&t=${Date.now()}`;
+        // 1. Toca a voz da palestra na saída de áudio do computador (/api/tts respeitando a calibração de voz do palestrante)
+        const { voice: simVoice, pitch: simPitch, speed: simSpeed } = getResolvedSpeakerVoiceProfile();
+        const voiceUrl = `/api/tts?lang=pt&text=${encodeURIComponent(paragraph)}&voice=${encodeURIComponent(simVoice)}&speed=${simSpeed}&pitch=${simPitch}&t=${Date.now()}`;
         fullLectureAudioEl = new Audio(voiceUrl);
         let audioFinished = false;
         fullLectureAudioEl.onended = () => { audioFinished = true; };

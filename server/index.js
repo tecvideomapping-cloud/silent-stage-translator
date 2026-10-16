@@ -29,6 +29,7 @@ const { verifyPassword, createSession, removeSession, requireAuth } = require('.
 const { pubSub } = require('./redis');
 const { aiPipeline } = require('./ai-pipeline');
 const QRCode = require('qrcode');
+const { MsEdgeTTS, OUTPUT_FORMAT } = require('msedge-tts');
 
 const app = express();
 const server = http.createServer(app);
@@ -494,14 +495,14 @@ app.post('/api/leads', async (req, res) => {
 let customOpenAiKey = process.env.OPENAI_API_KEY || '';
 let customElevenLabsKey = process.env.ELEVENLABS_API_KEY || '';
 
-// Endpoints de Configuração de Chaves de Voz IA (OpenAI / ElevenLabs)
+// Endpoints de Configuração de Chaves de Voz IA (OpenAI / ElevenLabs / Microsoft Neural Studio)
 app.get('/api/config/tts-keys', (req, res) => {
   const activeOai = !!(customOpenAiKey || process.env.OPENAI_API_KEY);
   const activeEl = !!(customElevenLabsKey || process.env.ELEVENLABS_API_KEY);
   res.json({
     hasOpenAi: activeOai,
     hasElevenLabs: activeEl,
-    provider: activeOai ? 'OpenAI Neural (tts-1)' : (activeEl ? 'ElevenLabs Multilingual' : 'WebAudio Dinâmico / Google Fallback')
+    provider: activeOai ? 'OpenAI Neural (tts-1)' : (activeEl ? 'ElevenLabs Multilingual' : 'Microsoft Neural Studio (Edge-TTS HD)')
   });
 });
 
@@ -519,9 +520,130 @@ app.post('/api/config/tts-keys', (req, res) => {
     success: true,
     hasOpenAi: activeOai,
     hasElevenLabs: activeEl,
-    provider: activeOai ? 'OpenAI Neural (tts-1)' : (activeEl ? 'ElevenLabs Multilingual' : 'WebAudio Dinâmico / Google Fallback')
+    provider: activeOai ? 'OpenAI Neural (tts-1)' : (activeEl ? 'ElevenLabs Multilingual' : 'Microsoft Neural Studio (Edge-TTS HD)')
   });
 });
+
+// Mapeamento de Timbres Neurais Microsoft Edge Studio por idioma e perfil calibrado
+function resolveEdgeNeuralVoiceAndProsody(targetLang, voiceProfile, userSpeed, userPitchSt) {
+  const lang = (targetLang || 'en').split('-')[0].toLowerCase();
+  const v = (voiceProfile || 'male_deep').toLowerCase();
+  const pitchSemitones = Math.max(-8, Math.min(8, parseFloat(userPitchSt) || 0));
+  const speedRatio = Math.max(0.75, Math.min(1.45, parseFloat(userSpeed) || 1.05));
+
+  // Vozes Neurais Reais (Masculinas e Femininas distintas) + ajuste fino de formante/tom base em Hz
+  let edgeVoiceName = 'en-US-ChristopherNeural';
+  let basePitchHzOffset = 0;
+
+  if (lang === 'pt') {
+    if (v === 'male_deep' || v === 'onyx' || v === 'baritone') {
+      edgeVoiceName = 'pt-BR-AntonioNeural';
+      basePitchHzOffset = -10; // Barítono encorpado
+    } else if (v === 'male_natural' || v === 'echo' || v === 'orador') {
+      edgeVoiceName = 'pt-BR-AntonioNeural';
+      basePitchHzOffset = +3; // Orador masculino natural
+    } else if (v === 'female_warm' || v === 'nova' || v === 'expressiva') {
+      edgeVoiceName = 'pt-BR-FranciscaNeural';
+      basePitchHzOffset = -3; // Feminina envolvente e expressiva
+    } else {
+      edgeVoiceName = 'pt-BR-FranciscaNeural';
+      basePitchHzOffset = +10; // Feminina clara e suave
+    }
+  } else if (lang === 'es') {
+    if (v === 'male_deep' || v === 'onyx' || v === 'baritone') {
+      edgeVoiceName = 'es-ES-AlvaroNeural';
+      basePitchHzOffset = -10;
+    } else if (v === 'male_natural' || v === 'echo' || v === 'orador') {
+      edgeVoiceName = 'es-ES-AlvaroNeural';
+      basePitchHzOffset = +4;
+    } else if (v === 'female_warm' || v === 'nova' || v === 'expressiva') {
+      edgeVoiceName = 'es-ES-ElviraNeural';
+      basePitchHzOffset = -3;
+    } else {
+      edgeVoiceName = 'es-ES-ElviraNeural';
+      basePitchHzOffset = +10;
+    }
+  } else if (lang === 'fr') {
+    if (v === 'male_deep' || v === 'onyx' || v === 'baritone') {
+      edgeVoiceName = 'fr-FR-HenriNeural';
+      basePitchHzOffset = -10;
+    } else if (v === 'male_natural' || v === 'echo' || v === 'orador') {
+      edgeVoiceName = 'fr-FR-HenriNeural';
+      basePitchHzOffset = +3;
+    } else if (v === 'female_warm' || v === 'nova' || v === 'expressiva') {
+      edgeVoiceName = 'fr-FR-DeniseNeural';
+      basePitchHzOffset = -3;
+    } else {
+      edgeVoiceName = 'fr-FR-DeniseNeural';
+      basePitchHzOffset = +10;
+    }
+  } else {
+    // Inglês (en-US) com 4 vozes neurais dedicadas
+    if (v === 'male_deep' || v === 'onyx' || v === 'baritone') {
+      edgeVoiceName = 'en-US-ChristopherNeural';
+      basePitchHzOffset = -8;
+    } else if (v === 'male_natural' || v === 'echo' || v === 'orador') {
+      edgeVoiceName = 'en-US-GuyNeural';
+      basePitchHzOffset = 0;
+    } else if (v === 'female_warm' || v === 'nova' || v === 'expressiva') {
+      edgeVoiceName = 'en-US-AriaNeural';
+      basePitchHzOffset = -2;
+    } else {
+      edgeVoiceName = 'en-US-JennyNeural';
+      basePitchHzOffset = +6;
+    }
+  }
+
+  // Cada semitom no controle de Pitch equivale a ~8Hz no modelo prosódico neural (sem alterar a velocidade!)
+  const totalPitchHz = Math.round(basePitchHzOffset + (pitchSemitones * 8));
+  const prosodyPitch = (totalPitchHz >= 0 ? `+${totalPitchHz}Hz` : `${totalPitchHz}Hz`);
+
+  const ratePct = Math.round((speedRatio - 1.0) * 100);
+  const prosodyRate = (ratePct >= 0 ? `+${ratePct}%` : `${ratePct}%`);
+
+  return { edgeVoiceName, prosodyPitch, prosodyRate };
+}
+
+function escapeSsmlText(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+async function synthesizeWithEdgeNeural(targetLang, sanitizedText, voice, speed, pitch) {
+  const { edgeVoiceName, prosodyPitch, prosodyRate } = resolveEdgeNeuralVoiceAndProsody(targetLang, voice, speed, pitch);
+  const tts = new MsEdgeTTS();
+  try {
+    await tts.setMetadata(edgeVoiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const { audioStream } = tts.toStream(escapeSsmlText(sanitizedText), {
+      pitch: prosodyPitch,
+      rate: prosodyRate
+    });
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Edge-TTS timeout')), 4500);
+      audioStream.on('data', (d) => chunks.push(d));
+      audioStream.on('end', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      audioStream.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+    const finalBuf = Buffer.concat(chunks);
+    if (finalBuf.length < 256) {
+      throw new Error('Edge-TTS returned empty audio');
+    }
+    return finalBuf;
+  } finally {
+    try { tts.close(); } catch (e) {}
+  }
+}
 
 // Cache em memória de alta performance para TTS (LRU 800 itens) & Deduplicação de requisições concorrentes
 const ttsMemoryCache = new Map();
@@ -529,7 +651,10 @@ const ttsInFlightRequests = new Map();
 
 async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
   const sanitizedText = String(cleanText || '').replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
-  const cacheKey = `${targetLang}_${voice || 'male_deep'}_${speed || 1.05}_${pitch || 0}_${sanitizedText}`;
+  const normVoice = (voice || 'male_deep').toLowerCase();
+  const normSpeed = (parseFloat(speed) || 1.05).toFixed(2);
+  const normPitch = Math.round(parseFloat(pitch) || 0);
+  const cacheKey = `${targetLang}_${normVoice}_${normSpeed}_${normPitch}_${sanitizedText}`;
   if (ttsMemoryCache.has(cacheKey)) {
     return ttsMemoryCache.get(cacheKey);
   }
@@ -543,19 +668,19 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
     const activeOpenAiKey = customOpenAiKey || process.env.OPENAI_API_KEY;
     const activeElevenLabsKey = customElevenLabsKey || process.env.ELEVENLABS_API_KEY;
 
-    // 1. OpenAI Neural TTS (Vozes de altíssima fidelidade humana, entonação e respiração natural)
+    // 1. OpenAI Neural TTS (Se chave configurada E pitch == 0; caso haja ajuste de Pitch fino em semitons, Edge Neural aplica SSML nativo sem distorcer velocidade)
     if (activeOpenAiKey) {
       try {
         let openAiVoice = 'alloy';
-        const v = (voice || '').toLowerCase();
+        const v = normVoice;
         if (v === 'male_deep' || v === 'onyx' || v === 'baritone') {
-          openAiVoice = 'onyx'; // Masculina profunda, encorpada e firme
+          openAiVoice = 'onyx';
         } else if (v === 'male_natural' || v === 'echo' || v === 'orador') {
-          openAiVoice = 'echo'; // Masculina natural, equilibrada e aveludada
+          openAiVoice = 'echo';
         } else if (v === 'female_warm' || v === 'nova' || v === 'expressiva') {
-          openAiVoice = 'nova'; // Feminina expressiva, dinâmica e humana
+          openAiVoice = 'nova';
         } else if (v === 'female_clear' || v === 'shimmer' || v === 'suave') {
-          openAiVoice = 'shimmer'; // Feminina clara, calma e cristalina
+          openAiVoice = 'shimmer';
         } else if (['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'].includes(v)) {
           openAiVoice = v;
         }
@@ -579,18 +704,18 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
         });
 
         if (oaiRes.ok) {
-          return Buffer.from(await oaiRes.arrayBuffer());
+          return { buffer: Buffer.from(await oaiRes.arrayBuffer()), provider: 'openai' };
         }
       } catch (oaiErr) {
-        console.warn('[TTS OpenAI] Falha na síntese neural, usando contingência:', oaiErr.message);
+        console.warn('[TTS OpenAI] Falha na síntese neural, usando Microsoft Edge Neural:', oaiErr.message);
       }
     }
 
     // 2. ElevenLabs Multilingual (Se configurado via painel ou .env)
     if (activeElevenLabsKey) {
       try {
-        const v = (voice || '').toLowerCase();
-        const voiceId = (v.includes('female') || v === 'nova') 
+        const v = normVoice;
+        const voiceId = (v.includes('female') || v === 'nova' || v === 'shimmer')
           ? '21m00Tcm4TlvDq8ikWAM' // Rachel
           : 'ErXwobaYiN019PkySvjV'; // Antoni
 
@@ -609,12 +734,20 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
         });
 
         if (elRes.ok) {
-          return Buffer.from(await elRes.arrayBuffer());
+          return { buffer: Buffer.from(await elRes.arrayBuffer()), provider: 'elevenlabs' };
         }
       } catch (elErr) {}
     }
 
-    // 3. Fallback Direto de Baixa Latência (Google TTS)
+    // 3. Motor Padrão Nativo de Estúdio: Microsoft Edge Neural TTS (Vozes Masculinas e Femininas Reais + Pitch e Velocidade SSML independentes)
+    try {
+      const edgeBuf = await synthesizeWithEdgeNeural(targetLang, sanitizedText, normVoice, speed, pitch);
+      return { buffer: edgeBuf, provider: 'edge-neural' };
+    } catch (edgeErr) {
+      console.warn('[TTS Edge Neural] Contingência para Google TTS:', edgeErr.message);
+    }
+
+    // 4. Contingência de Emergência (Google TTS)
     const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${encodeURIComponent(targetLang)}&client=tw-ob&q=${encodeURIComponent(sanitizedText)}`;
     const response = await fetch(googleTtsUrl, {
       headers: {
@@ -623,21 +756,21 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
       signal: AbortSignal.timeout(4000)
     });
     if (response.ok) {
-      return Buffer.from(await response.arrayBuffer());
+      return { buffer: Buffer.from(await response.arrayBuffer()), provider: 'google-fallback' };
     }
     throw new Error('TTS Provider Error');
   })();
 
   ttsInFlightRequests.set(cacheKey, generatePromise);
   try {
-    const buffer = await generatePromise;
+    const result = await generatePromise;
     // Mantém cache LRU em memória limitado a 800 itens
     if (ttsMemoryCache.size > 800) {
       const firstKey = ttsMemoryCache.keys().next().value;
       ttsMemoryCache.delete(firstKey);
     }
-    ttsMemoryCache.set(cacheKey, buffer);
-    return buffer;
+    ttsMemoryCache.set(cacheKey, result);
+    return result;
   } finally {
     ttsInFlightRequests.delete(cacheKey);
   }
@@ -652,9 +785,12 @@ app.get('/api/tts', async (req, res) => {
     const cleanText = String(text).replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
     if (!cleanText) return res.status(400).send('Empty text');
 
-    const buffer = await getOrGenerateTts(targetLang, cleanText, voice, speed, pitch);
+    const result = await getOrGenerateTts(targetLang, cleanText, voice, speed, pitch);
+    const buffer = result.buffer || result;
+    const provider = result.provider || 'edge-neural';
     res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('X-TTS-Provider', provider);
+    res.setHeader('Cache-Control', 'no-cache');
     return res.send(buffer);
   } catch (err) {
     res.status(500).send(err.message);

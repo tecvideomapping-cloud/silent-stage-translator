@@ -546,9 +546,12 @@
           } else if (data.type === 'speaker_voice_profile') {
             currentSpeakerProfile = {
               voice: data.voice || 'male_deep',
-              pitch: data.pitch || 0,
-              speed: data.speed || 1.05
+              pitch: parseFloat(data.pitch || 0),
+              speed: parseFloat(data.speed || 1.05)
             };
+            if (typeof applyVoiceProfileEq === 'function') {
+              applyVoiceProfileEq(currentSpeakerProfile.voice);
+            }
           } else if (data.type === 'p2p_peers') {
             handleP2PPeersList(data.peers || []);
           } else if (data.type === 'p2p_signal') {
@@ -1058,6 +1061,26 @@
       }
     }
 
+    function applyVoiceProfileEq(voice) {
+      if (!ttsBassFilter || !ttsTrebleFilter) return;
+      if (voice === 'male_deep') {
+        ttsBassFilter.gain.value = 3;   // Ressonância natural de barítono (220Hz)
+        ttsTrebleFilter.gain.value = 0;
+      } else if (voice === 'male_natural') {
+        ttsBassFilter.gain.value = 1;
+        ttsTrebleFilter.gain.value = 1;
+      } else if (voice === 'female_warm') {
+        ttsBassFilter.gain.value = 0;
+        ttsTrebleFilter.gain.value = 2;  // Presença calorosa e envolvente
+      } else if (voice === 'female_clear') {
+        ttsBassFilter.gain.value = -1;
+        ttsTrebleFilter.gain.value = 4;  // Claridade e brilho cristalino (3.2kHz)
+      } else {
+        ttsBassFilter.gain.value = 0;
+        ttsTrebleFilter.gain.value = 0;
+      }
+    }
+
     function playNextTtsAudio() {
       if (ttsAudioQueue.length === 0) {
         isTtsPlaying = false;
@@ -1087,33 +1110,17 @@
       currentTtsAudioEl = audio;
       audio.src = url;
 
-      // Equalização acústica de frequência para esculpir o timbre humano
-      if (ttsBassFilter && ttsTrebleFilter) {
-        if (voice === 'male_deep') {
-          ttsBassFilter.gain.value = 6;   // Reforço encorpado de barítono (220Hz)
-          ttsTrebleFilter.gain.value = -2;
-        } else if (voice === 'male_natural') {
-          ttsBassFilter.gain.value = 2;
-          ttsTrebleFilter.gain.value = 0;
-        } else if (voice === 'female_warm') {
-          ttsBassFilter.gain.value = -1;
-          ttsTrebleFilter.gain.value = 4;  // Presença dinâmica e envolvente
-        } else if (voice === 'female_clear') {
-          ttsBassFilter.gain.value = -3;
-          ttsTrebleFilter.gain.value = 7;  // Claridade e brilho cristalino (3.2kHz)
-        } else {
-          ttsBassFilter.gain.value = 0;
-          ttsTrebleFilter.gain.value = 0;
-        }
-      }
+      // Equalização acústica sutil complementar ao modelo neural
+      applyVoiceProfileEq(voice);
 
-      // Transposição física de afinação (Pitch em semitons) e cadência
-      const pitchFactor = Math.pow(2, pitch / 12);
-      audio.preservesPitch = false;
-      audio.mozPreservesPitch = false;
-      audio.webkitPreservesPitch = false;
-      const dynamicRate = ttsAudioQueue.length > 1 ? (speed * 1.15) : speed;
-      audio.playbackRate = Math.max(0.75, Math.min(1.5, dynamicRate * pitchFactor));
+      // O servidor (Microsoft Edge Neural Studio) já sintetiza a voz masculina/feminina exata com Pitch (Hz) e Velocidade (%) via SSML!
+      // Mantemos preservesPitch = true para nunca distorcer o timbre neural.
+      audio.preservesPitch = true;
+      audio.mozPreservesPitch = true;
+      audio.webkitPreservesPitch = true;
+      const catchupRate = ttsAudioQueue.length > 1 ? 1.10 : 1.0;
+      audio.defaultPlaybackRate = catchupRate;
+      audio.playbackRate = catchupRate;
 
       if (gainNode) {
         audio.volume = gainNode.gain.value;
