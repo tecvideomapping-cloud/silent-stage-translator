@@ -656,6 +656,70 @@ app.get('/api/tts', async (req, res) => {
   }
 });
 
+// Endpoint de Transcrição Direta de Áudio Digital do Sistema / Arquivo (WAV 16kHz -> Whisper / Deepgram)
+app.post('/api/stt-chunk', express.raw({ type: 'audio/wav', limit: '5mb' }), async (req, res) => {
+  try {
+    const wavBuffer = req.body;
+    if (!wavBuffer || !Buffer.isBuffer(wavBuffer) || wavBuffer.length < 100) {
+      return res.json({ text: '' });
+    }
+    const rawLang = (req.query.lang || 'pt-BR').split('-')[0].toLowerCase();
+    const activeOpenAiKey = customOpenAiKey || process.env.OPENAI_API_KEY;
+    const activeGroqKey = process.env.GROQ_API_KEY;
+    const activeDeepgramKey = process.env.DEEPGRAM_API_KEY;
+
+    // 1. Groq Whisper Turbo / OpenAI Whisper
+    if (activeGroqKey || activeOpenAiKey) {
+      const endpoint = activeGroqKey
+        ? 'https://api.groq.com/openai/v1/audio/transcriptions'
+        : 'https://api.openai.com/v1/audio/transcriptions';
+      const apiKey = activeGroqKey || activeOpenAiKey;
+      const model = activeGroqKey ? 'whisper-large-v3-turbo' : 'whisper-1';
+
+      const formData = new FormData();
+      formData.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'chunk.wav');
+      formData.append('model', model);
+      formData.append('language', rawLang);
+      formData.append('response_format', 'json');
+
+      const sttRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        body: formData,
+        signal: AbortSignal.timeout(4500)
+      });
+
+      if (sttRes.ok) {
+        const data = await sttRes.json();
+        return res.json({ text: (data.text || '').trim(), provider: activeGroqKey ? 'groq' : 'openai' });
+      }
+    }
+
+    // 2. Deepgram Nova-2 REST
+    if (activeDeepgramKey) {
+      const dgRes = await fetch(`https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&language=${encodeURIComponent(rawLang)}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${activeDeepgramKey}`,
+          'Content-Type': 'audio/wav'
+        },
+        body: wavBuffer,
+        signal: AbortSignal.timeout(4500)
+      });
+
+      if (dgRes.ok) {
+        const dgData = await dgRes.json();
+        const transcript = dgData?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
+        return res.json({ text: transcript.trim(), provider: 'deepgram' });
+      }
+    }
+
+    return res.json({ text: '', needsAcousticLoopback: true });
+  } catch (err) {
+    return res.json({ text: '', error: err.message });
+  }
+});
+
 // ----------------------------------------------------
 // WebSocket Server (Áudio Original + Tradução + Legendas)
 // ----------------------------------------------------

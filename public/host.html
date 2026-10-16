@@ -87,6 +87,63 @@
           <span class="text-[11px] text-slate-400">
             Suporte a <strong>Interfaces USB (Focusrite Scarlett, Behringer UMC, Yamaha, Mackie, PreSonus)</strong>, Mesas Digitais via USB e Linha P2/P10.
           </span>
+
+          <!-- CAPTURA DE SAÍDA DE ÁUDIO DO COMPUTADOR & PLAYER DE PALESTRA COMPLETA -->
+          <div class="mt-2 pt-3 border-t border-slate-800/80 flex flex-col gap-2.5">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+              <span class="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                <span>🖥️</span> Testar com Áudio do Computador (Saída do Sistema / Palestra Inteira)
+              </span>
+              <span id="pcAudioSourceBadge" class="text-[10px] bg-slate-900 text-slate-400 border border-slate-700 px-2.5 py-0.5 rounded-full font-mono">
+                Modo Padrão: Microfone / Interface
+              </span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button type="button" id="captureSystemAudioBtn" onclick="startSystemAudioBroadcast()"
+                class="bg-cyan-950/60 hover:bg-cyan-900/70 text-cyan-200 border border-cyan-500/40 font-semibold px-3 py-2 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow">
+                <span>🔊</span> Capturar Saída do PC / Guia (YouTube/Player)
+              </button>
+
+              <button type="button" onclick="document.getElementById('lectureAudioFileInput').click()"
+                class="bg-indigo-950/60 hover:bg-indigo-900/70 text-indigo-200 border border-indigo-500/40 font-semibold px-3 py-2 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow">
+                <span>📂</span> Abrir Áudio/Vídeo do PC (.MP3/.MP4/.WAV)
+              </button>
+              <input type="file" id="lectureAudioFileInput" accept="audio/*,video/*" class="hidden" onchange="handleLectureFileSelected(event)">
+
+              <button type="button" id="fullLectureSimBtn" onclick="toggleFullLectureSimulation()"
+                class="bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-200 border border-emerald-500/40 font-semibold px-3 py-2 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow">
+                <span>🎓</span> Dar Play: Palestra Completa (Ao Vivo)
+              </button>
+            </div>
+
+            <!-- Player Embutido de Arquivo Local (exibido ao carregar MP3/WAV/MP4) -->
+            <div id="localFilePlayerBox" class="hidden bg-slate-900/90 border border-indigo-500/40 rounded-xl p-3 flex flex-col gap-2">
+              <div class="flex items-center justify-between text-xs">
+                <span id="localFileTitle" class="font-semibold text-indigo-300 truncate">Arquivo carregado</span>
+                <span class="text-[10px] text-emerald-400 font-mono">● Conectado à Transmissão & IA</span>
+              </div>
+              <audio id="hostLectureMediaEl" controls class="w-full h-9 rounded"></audio>
+              <p class="text-[10px] text-slate-400">
+                Dê <strong>Play</strong> acima: o áudio tocará na saída do computador, movimentará o VU Meter, enviará o som original aos ouvintes e alimentará as legendas e traduções simultâneas.
+              </p>
+            </div>
+
+            <!-- Barra de Progresso da Palestra Completa Simulada -->
+            <div id="fullLectureSimBox" class="hidden bg-slate-900/90 border border-emerald-500/40 rounded-xl p-3 flex flex-col gap-2">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-bold text-emerald-300 flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                  <span id="fullLectureStatusTitle">Reproduzindo Palestra Completa na Saída do PC...</span>
+                </span>
+                <span id="fullLectureProgressText" class="text-[11px] font-mono text-slate-300">Bloco 1/16</span>
+              </div>
+              <div class="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                <div id="fullLectureProgressBar" class="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-300 w-0"></div>
+              </div>
+              <p id="fullLectureCurrentText" class="text-[11px] text-slate-300 italic"></p>
+            </div>
+          </div>
         </div>
 
         <!-- Compressão & Taxa de Bits (kbps) da Transmissão -->
@@ -1115,9 +1172,79 @@
       };
     }
 
-    async function toggleBroadcast() {
-      if (!isBroadcasting) {
-        try {
+    function stopActiveBroadcastCleanly() {
+      isBroadcasting = false;
+      if (window.speechEngine) {
+        window.speechEngine.stop();
+      }
+      if (audioStream) {
+        try { audioStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+        audioStream = null;
+      }
+      if (audioContext) {
+        try { audioContext.close(); } catch (e) {}
+        audioContext = null;
+      }
+      const vuBar = document.getElementById('vuBar');
+      const vuText = document.getElementById('vuLevelText');
+      if (vuBar) vuBar.style.width = '0%';
+      if (vuText) vuText.innerText = '0%';
+      const btn = document.getElementById('broadcastBtn');
+      if (btn) btn.className = 'bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-2';
+      const icon = document.getElementById('btnIcon');
+      if (icon) icon.innerText = '🎙️';
+      const txt = document.getElementById('btnText');
+      if (txt) txt.innerText = 'Iniciar Transmissão';
+      const sysBtn = document.getElementById('captureSystemAudioBtn');
+      if (sysBtn) {
+        sysBtn.innerHTML = '<span>🔊</span> Capturar Saída do PC / Guia (YouTube/Player)';
+        sysBtn.className = 'bg-cyan-950/60 hover:bg-cyan-900/70 text-cyan-200 border border-cyan-500/40 font-semibold px-3 py-2 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow';
+      }
+      const badge = document.getElementById('pcAudioSourceBadge');
+      if (badge) {
+        badge.innerText = 'Modo Padrão: Microfone / Interface';
+        badge.className = 'text-[10px] bg-slate-900 text-slate-400 border border-slate-700 px-2.5 py-0.5 rounded-full font-mono';
+      }
+    }
+
+    function encodeWavFromInt16Chunks(chunks, totalSamples, sampleRate) {
+      const buffer = new ArrayBuffer(44 + totalSamples * 2);
+      const view = new DataView(buffer);
+      const writeStr = (offset, str) => {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+      };
+      writeStr(0, 'RIFF');
+      view.setUint32(4, 36 + totalSamples * 2, true);
+      writeStr(8, 'WAVE');
+      writeStr(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, 1, true); // Mono
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeStr(36, 'data');
+      view.setUint32(40, totalSamples * 2, true);
+
+      const int16Out = new Int16Array(buffer, 44, totalSamples);
+      let offset = 0;
+      for (const c of chunks) {
+        int16Out.set(c, offset);
+        offset += c.length;
+      }
+      return new Blob([buffer], { type: 'audio/wav' });
+    }
+
+    async function startBroadcastWithStream(customStream = null, sourceMode = 'mic') {
+      if (isBroadcasting) {
+        stopActiveBroadcastCleanly();
+      }
+
+      try {
+        if (customStream) {
+          audioStream = customStream;
+        } else {
           const selectedDeviceId = document.getElementById('audioDeviceSelect')?.value;
           const audioConstraints = {
             echoCancellation: false,
@@ -1127,207 +1254,476 @@
           if (selectedDeviceId) {
             audioConstraints.deviceId = { ideal: selectedDeviceId };
           }
-
           audioStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        }
 
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          // Abre na taxa nativa de hardware da interface/mic (ex: 48kHz na Elgato) para evitar silêncio no Windows
-          audioContext = new AudioCtx({
-            latencyHint: 'interactive'
-          });
-
-          // Garante que o AudioContext está em execução (evita política de autoplay do Chrome)
-          if (audioContext.state === 'suspended') {
-            await audioContext.resume();
+        const badge = document.getElementById('pcAudioSourceBadge');
+        if (badge) {
+          if (sourceMode === 'system') {
+            badge.innerText = '🖥️ Ativo: Saída de Áudio do PC / Guia';
+            badge.className = 'text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-500/60 px-2.5 py-0.5 rounded-full font-mono font-bold';
+          } else if (sourceMode === 'file') {
+            badge.innerText = '📂 Ativo: Player de Arquivo do PC';
+            badge.className = 'text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-500/60 px-2.5 py-0.5 rounded-full font-mono font-bold';
+          } else {
+            badge.innerText = '🎙️ Ativo: Microfone / Interface';
+            badge.className = 'text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-500/60 px-2.5 py-0.5 rounded-full font-mono';
           }
+        }
 
-          const source = audioContext.createMediaStreamSource(audioStream);
-          const analyser = audioContext.createAnalyser();
-          analyser.fftSize = 512;
-          analyser.smoothingTimeConstant = 0.3;
-          source.connect(analyser);
+        // Se o usuário parar o compartilhamento de tela/áudio na barra do Chrome, encerra limpo
+        const audioTracks = audioStream.getAudioTracks();
+        if (audioTracks.length > 0) {
+          audioTracks[0].onended = () => {
+            if (isBroadcasting) stopActiveBroadcastCleanly();
+          };
+        }
 
-          // VU Meter com cálculo RMS e estimador de pitch F0 para Auto-Match de Timbre
-          const dataArray = new Uint8Array(analyser.fftSize);
-          let lastPitchCalcTime = 0;
-          let pitchSum = 0;
-          let pitchSamplesCount = 0;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioCtx({
+          latencyHint: 'interactive'
+        });
 
-          function estimatePitch(buf, sampleRate) {
-            const minPeriod = Math.floor(sampleRate / 340);
-            const maxPeriod = Math.floor(sampleRate / 75);
-            let bestCorr = 0;
-            let bestPeriod = -1;
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
 
-            for (let period = minPeriod; period < maxPeriod; period++) {
-              let corr = 0;
-              for (let i = 0; i < buf.length - period; i++) {
-                corr += (buf[i] - 128) * (buf[i + period] - 128);
-              }
-              if (corr > bestCorr) {
-                bestCorr = corr;
-                bestPeriod = period;
-              }
+        const source = audioContext.createMediaStreamSource(audioStream);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.3;
+        source.connect(analyser);
+
+        const dataArray = new Uint8Array(analyser.fftSize);
+        let lastPitchCalcTime = 0;
+        let pitchSum = 0;
+        let pitchSamplesCount = 0;
+        let currentRmsLevel = 0;
+
+        function estimatePitch(buf, sampleRate) {
+          const minPeriod = Math.floor(sampleRate / 340);
+          const maxPeriod = Math.floor(sampleRate / 75);
+          let bestCorr = 0;
+          let bestPeriod = -1;
+
+          for (let period = minPeriod; period < maxPeriod; period++) {
+            let corr = 0;
+            for (let i = 0; i < buf.length - period; i++) {
+              corr += (buf[i] - 128) * (buf[i + period] - 128);
             }
-            if (bestCorr > 35000 && bestPeriod > 0) {
-              return Math.round(sampleRate / bestPeriod);
+            if (corr > bestCorr) {
+              bestCorr = corr;
+              bestPeriod = period;
             }
-            return 0;
           }
+          if (bestCorr > 35000 && bestPeriod > 0) {
+            return Math.round(sampleRate / bestPeriod);
+          }
+          return 0;
+        }
 
-          function updateVU() {
-            if (!isBroadcasting) return;
-            analyser.getByteTimeDomainData(dataArray);
-            let sum = 0;
-            for (let i = 0; i < dataArray.length; i++) {
-              const val = (dataArray[i] - 128) / 128;
-              sum += val * val;
-            }
-            const rms = Math.sqrt(sum / dataArray.length);
-            const pct = Math.min(100, Math.round(rms * 400));
-            const vuBar = document.getElementById('vuBar');
-            const vuText = document.getElementById('vuLevelText');
-            if (vuBar) vuBar.style.width = pct + '%';
-            if (vuText) vuText.innerText = pct + '%';
+        function updateVU() {
+          if (!isBroadcasting) return;
+          analyser.getByteTimeDomainData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            const val = (dataArray[i] - 128) / 128;
+            sum += val * val;
+          }
+          const rms = Math.sqrt(sum / dataArray.length);
+          currentRmsLevel = rms;
+          const pct = Math.min(100, Math.round(rms * 400));
+          const vuBar = document.getElementById('vuBar');
+          const vuText = document.getElementById('vuLevelText');
+          if (vuBar) vuBar.style.width = pct + '%';
+          if (vuText) vuText.innerText = pct + '%';
 
-            // Calibração em tempo real do tom de voz do palestrante
-            const now = Date.now();
-            if (rms > 0.035 && (now - lastPitchCalcTime) > 300) {
-              lastPitchCalcTime = now;
-              const f0 = estimatePitch(dataArray, audioContext.sampleRate);
-              if (f0 >= 75 && f0 <= 320) {
-                pitchSum += f0;
-                pitchSamplesCount++;
-                const avgPitch = Math.round(pitchSum / pitchSamplesCount);
-                const isMale = avgPitch < 160;
-                window.autoDetectedSpeakerVoice = isMale ? 'male_deep' : 'female_warm';
+          const now = Date.now();
+          if (rms > 0.035 && (now - lastPitchCalcTime) > 300) {
+            lastPitchCalcTime = now;
+            const f0 = estimatePitch(dataArray, audioContext.sampleRate);
+            if (f0 >= 75 && f0 <= 320) {
+              pitchSum += f0;
+              pitchSamplesCount++;
+              const avgPitch = Math.round(pitchSum / pitchSamplesCount);
+              const isMale = avgPitch < 160;
+              window.autoDetectedSpeakerVoice = isMale ? 'male_deep' : 'female_warm';
 
-                const badge = document.getElementById('detectedPitchBadge');
-                if (badge) {
-                  const sel = document.getElementById('speakerTimbreSelect')?.value;
-                  const profileLabel = isMale ? `Masculino Barítono (~${avgPitch}Hz • Tom Onyx)` : `Feminino Expressivo (~${avgPitch}Hz • Tom Nova)`;
-                  badge.innerText = `🎯 Timbre Detectado: ${profileLabel}`;
-                  if (sel === 'auto_match') {
-                    broadcastSpeakerVoiceProfile();
-                  }
+              const pBadge = document.getElementById('detectedPitchBadge');
+              if (pBadge) {
+                const sel = document.getElementById('speakerTimbreSelect')?.value;
+                const profileLabel = isMale ? `Masculino Barítono (~${avgPitch}Hz • Tom Onyx)` : `Feminino Expressivo (~${avgPitch}Hz • Tom Nova)`;
+                pBadge.innerText = `🎯 Timbre Detectado: ${profileLabel}`;
+                if (sel === 'auto_match') {
+                  broadcastSpeakerVoiceProfile();
                 }
               }
             }
-
-            requestAnimationFrame(updateVU);
           }
+
           requestAnimationFrame(updateVU);
+        }
+        requestAnimationFrame(updateVU);
 
-          // Buffer padrão de 1024 amostras = ~64ms por bloco (universal para mic e mesas)
-          scriptProcessor = audioContext.createScriptProcessor(1024, 1, 1);
-          source.connect(scriptProcessor);
-          scriptProcessor.connect(audioContext.destination);
+        scriptProcessor = audioContext.createScriptProcessor(1024, 1, 1);
+        source.connect(scriptProcessor);
+        scriptProcessor.connect(audioContext.destination);
 
-          // Referência global contra Garbage Collector do navegador
-          window.__activeAudioProcessor = scriptProcessor;
-          window.__activeAudioSource = source;
+        window.__activeAudioProcessor = scriptProcessor;
+        window.__activeAudioSource = source;
 
-          scriptProcessor.onaudioprocess = (e) => {
-            if (!isBroadcasting || !socket || socket.readyState !== WebSocket.OPEN) return;
-            const inputData = e.inputBuffer.getChannelData(0);
-            const sourceRate = audioContext.sampleRate;
-            const targetRate = currentAudioProfile.sampleRate;
-            const codec = currentAudioProfile.codec; // 'mulaw', 'adpcm', 'pcm16'
+        // Buffer de transcrição digital direta para Saída do PC / Arquivo (quando o microfone físico está mudo/fone)
+        let digitalPcmChunks = [];
+        let digitalPcmSamplesCount = 0;
+        let isSendingDigitalStt = false;
 
-            // 1. Reamostragem com interpolação linear suave para o sampleRate do perfil
-            let targetFloats = inputData;
-            if (sourceRate !== targetRate) {
-              const ratio = sourceRate / targetRate;
-              const newLen = Math.round(inputData.length / ratio);
-              targetFloats = new Float32Array(newLen);
-              for (let i = 0; i < newLen; i++) {
-                const srcPos = i * ratio;
-                const idx = Math.floor(srcPos);
-                const frac = srcPos - idx;
-                const s1 = inputData[idx] || 0;
-                const s2 = inputData[idx + 1] !== undefined ? inputData[idx + 1] : s1;
-                targetFloats[i] = s1 + frac * (s2 - s1);
-              }
+        scriptProcessor.onaudioprocess = (e) => {
+          if (!isBroadcasting || !socket || socket.readyState !== WebSocket.OPEN) return;
+          const inputData = e.inputBuffer.getChannelData(0);
+          const sourceRate = audioContext.sampleRate;
+          const targetRate = currentAudioProfile.sampleRate;
+          const codec = currentAudioProfile.codec;
+
+          let targetFloats = inputData;
+          if (sourceRate !== targetRate) {
+            const ratio = sourceRate / targetRate;
+            const newLen = Math.round(inputData.length / ratio);
+            targetFloats = new Float32Array(newLen);
+            for (let i = 0; i < newLen; i++) {
+              const srcPos = i * ratio;
+              const idx = Math.floor(srcPos);
+              const frac = srcPos - idx;
+              const s1 = inputData[idx] || 0;
+              const s2 = inputData[idx + 1] !== undefined ? inputData[idx + 1] : s1;
+              targetFloats[i] = s1 + frac * (s2 - s1);
             }
+          }
 
-            // 2. Converte Float32 para Int16
-            const numSamples = targetFloats.length;
-            const pcm16 = new Int16Array(numSamples);
-            for (let i = 0; i < numSamples; i++) {
-              const s = Math.max(-1, Math.min(1, targetFloats[i]));
-              pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            }
+          const numSamples = targetFloats.length;
+          const pcm16 = new Int16Array(numSamples);
+          for (let i = 0; i < numSamples; i++) {
+            const s = Math.max(-1, Math.min(1, targetFloats[i]));
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          }
 
-            // 3. Empacota com cabeçalho compacto de 4 bytes:
-            // Byte 0: 0xAA (Magic sync)
-            // Byte 1: Codec ID (0 = PCM16, 1 = μ-law 8-bit, 2 = ADPCM 4-bit)
-            // Byte 2-3: targetRate (Uint16)
-            let packetBuffer = null;
-            if (codec === 'mulaw') {
-              // G.711 μ-law: 1 byte por amostra (50% de compressão imediata)
-              packetBuffer = new Uint8Array(4 + numSamples);
-              packetBuffer[0] = 0xAA;
-              packetBuffer[1] = 1; // μ-law
-              packetBuffer[2] = targetRate & 0xFF;
-              packetBuffer[3] = (targetRate >> 8) & 0xFF;
-              for (let i = 0; i < numSamples; i++) {
-                packetBuffer[4 + i] = encodeMuLawSample(pcm16[i]);
-              }
-            } else if (codec === 'adpcm') {
-              // IMA ADPCM: 4 bits por amostra (75% de compressão)
-              const halfLen = Math.ceil(numSamples / 2);
-              packetBuffer = new Uint8Array(4 + halfLen);
-              packetBuffer[0] = 0xAA;
-              packetBuffer[1] = 2; // ADPCM
-              packetBuffer[2] = targetRate & 0xFF;
-              packetBuffer[3] = (targetRate >> 8) & 0xFF;
-              for (let i = 0; i < halfLen; i++) {
-                const s1 = pcm16[i * 2];
-                const s2 = (i * 2 + 1 < numSamples) ? pcm16[i * 2 + 1] : 0;
-                const n1 = encodeAdpcmNibble(s1);
-                const n2 = encodeAdpcmNibble(s2);
-                packetBuffer[4 + i] = (n1 & 0x0F) | ((n2 & 0x0F) << 4);
+          // Se estiver capturando Saída de Áudio do PC ou Arquivo e o WebSpeech local não captou pelo mic nos últimos 3.2s,
+          // envia fatias WAV de 3s para transcrição digital no servidor (/api/stt-chunk)
+          if ((sourceMode === 'system' || sourceMode === 'file') && currentRmsLevel > 0.012) {
+            const nativeIdleMs = Date.now() - (window.speechEngine?.lastNativeResultTime || 0);
+            if (nativeIdleMs > 3200) {
+              digitalPcmChunks.push(new Int16Array(pcm16));
+              digitalPcmSamplesCount += numSamples;
+              const windowSamples = Math.round(targetRate * 3.0);
+              if (digitalPcmSamplesCount >= windowSamples && !isSendingDigitalStt) {
+                const chunksToSend = digitalPcmChunks;
+                const totalToSend = digitalPcmSamplesCount;
+                digitalPcmChunks = [];
+                digitalPcmSamplesCount = 0;
+                isSendingDigitalStt = true;
+                const lang = document.getElementById('sourceLang')?.value || 'pt-BR';
+                const wavBlob = encodeWavFromInt16Chunks(chunksToSend, totalToSend, targetRate);
+                fetch(`/api/stt-chunk?lang=${encodeURIComponent(lang)}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'audio/wav' },
+                  body: wavBlob
+                })
+                  .then(r => r.json())
+                  .then(res => {
+                    if (res && res.text && window.speechEngine) {
+                      window.speechEngine.commitClause(res.text);
+                    }
+                  })
+                  .catch(() => {})
+                  .finally(() => { isSendingDigitalStt = false; });
               }
             } else {
-              // PCM 16 linear sem compressão
-              const byteLen = numSamples * 2;
-              packetBuffer = new Uint8Array(4 + byteLen);
-              packetBuffer[0] = 0xAA;
-              packetBuffer[1] = 0; // PCM16
-              packetBuffer[2] = targetRate & 0xFF;
-              packetBuffer[3] = (targetRate >> 8) & 0xFF;
-              new Uint8Array(packetBuffer.buffer, 4).set(new Uint8Array(pcm16.buffer));
+              digitalPcmChunks = [];
+              digitalPcmSamplesCount = 0;
             }
+          }
 
-            socket.send(packetBuffer.buffer);
-          };
+          let packetBuffer = null;
+          if (codec === 'mulaw') {
+            packetBuffer = new Uint8Array(4 + numSamples);
+            packetBuffer[0] = 0xAA;
+            packetBuffer[1] = 1;
+            packetBuffer[2] = targetRate & 0xFF;
+            packetBuffer[3] = (targetRate >> 8) & 0xFF;
+            for (let i = 0; i < numSamples; i++) {
+              packetBuffer[4 + i] = encodeMuLawSample(pcm16[i]);
+            }
+          } else if (codec === 'adpcm') {
+            const halfLen = Math.ceil(numSamples / 2);
+            packetBuffer = new Uint8Array(4 + halfLen);
+            packetBuffer[0] = 0xAA;
+            packetBuffer[1] = 2;
+            packetBuffer[2] = targetRate & 0xFF;
+            packetBuffer[3] = (targetRate >> 8) & 0xFF;
+            for (let i = 0; i < halfLen; i++) {
+              const s1 = pcm16[i * 2];
+              const s2 = (i * 2 + 1 < numSamples) ? pcm16[i * 2 + 1] : 0;
+              const n1 = encodeAdpcmNibble(s1);
+              const n2 = encodeAdpcmNibble(s2);
+              packetBuffer[4 + i] = (n1 & 0x0F) | ((n2 & 0x0F) << 4);
+            }
+          } else {
+            const byteLen = numSamples * 2;
+            packetBuffer = new Uint8Array(4 + byteLen);
+            packetBuffer[0] = 0xAA;
+            packetBuffer[1] = 0;
+            packetBuffer[2] = targetRate & 0xFF;
+            packetBuffer[3] = (targetRate >> 8) & 0xFF;
+            new Uint8Array(packetBuffer.buffer, 4).set(new Uint8Array(pcm16.buffer));
+          }
 
-          isBroadcasting = true;
-          document.getElementById('broadcastBtn').className = 'bg-rose-600 hover:bg-rose-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-2';
-          document.getElementById('btnIcon').innerText = '⏹️';
-          document.getElementById('btnText').innerText = 'Parar Transmissão';
+          socket.send(packetBuffer.buffer);
+        };
 
-          // Envia metadata do perfil de compressão e sampleRate para os ouvintes
-          broadcastAudioMeta();
+        isBroadcasting = true;
+        document.getElementById('broadcastBtn').className = 'bg-rose-600 hover:bg-rose-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-2';
+        document.getElementById('btnIcon').innerText = '⏹️';
+        document.getElementById('btnText').innerText = 'Parar Transmissão';
 
-          // Ativa Gerenciador Resiliente de Reconhecimento Contínuo (Zero perda de legendas ao longo do tempo)
-          window.speechEngine.start();
-        } catch (err) {
-          alert('Erro ao capturar o dispositivo de áudio: ' + err.message);
-        }
-      } else {
-        isBroadcasting = false;
-        if (window.speechEngine) {
-          window.speechEngine.stop();
-        }
-        if (audioStream) audioStream.getTracks().forEach(t => t.stop());
-        if (audioContext) audioContext.close();
-        document.getElementById('vuBar').style.width = '0%';
-        document.getElementById('vuLevelText').innerText = '0%';
-        document.getElementById('broadcastBtn').className = 'bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-2';
-        document.getElementById('btnIcon').innerText = '🎙️';
-        document.getElementById('btnText').innerText = 'Iniciar Transmissão';
+        broadcastAudioMeta();
+
+        // Passa a trilha de áudio capturada para o reconhecedor (suporte nativo MediaStreamTrack no Chrome + microfone)
+        const trackForStt = (sourceMode === 'system' || sourceMode === 'file') ? audioTracks[0] : null;
+        window.speechEngine.start(trackForStt);
+      } catch (err) {
+        alert('Erro ao capturar o dispositivo de áudio: ' + err.message);
       }
+    }
+
+    async function toggleBroadcast() {
+      if (!isBroadcasting) {
+        await startBroadcastWithStream(null, 'mic');
+      } else {
+        stopActiveBroadcastCleanly();
+      }
+    }
+
+    // 1. Capturar Saída de Áudio do Computador / Guia (YouTube, Vídeo, Player do PC)
+    async function startSystemAudioBroadcast() {
+      if (isBroadcasting && document.getElementById('pcAudioSourceBadge')?.innerText.includes('Saída de Áudio do PC')) {
+        stopActiveBroadcastCleanly();
+        return;
+      }
+
+      try {
+        const displayStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        });
+
+        const audioTracks = displayStream.getAudioTracks();
+        if (!audioTracks || audioTracks.length === 0) {
+          displayStream.getTracks().forEach(t => t.stop());
+          alert('⚠️ Atenção: O áudio não foi compartilhado!\n\nNa janela de seleção do navegador, marque a caixinha:\n☑️ "Compartilhar áudio da guia" (para YouTube/Navegador)\nou\n☑️ "Compartilhar áudio do sistema" (para Tela Inteira / Players no PC).');
+          return;
+        }
+
+        const sysBtn = document.getElementById('captureSystemAudioBtn');
+        if (sysBtn) {
+          sysBtn.innerHTML = '<span>⏹️</span> Parar Captura do Áudio do PC';
+          sysBtn.className = 'bg-rose-600 hover:bg-rose-500 text-white font-bold px-3 py-2 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow';
+        }
+
+        await startBroadcastWithStream(displayStream, 'system');
+      } catch (err) {
+        if (err.name !== 'NotAllowedError') {
+          alert('Não foi possível capturar o áudio do sistema: ' + err.message);
+        }
+      }
+    }
+
+    // 2. Carregar Arquivo de Áudio/Vídeo do Computador (.MP3, .WAV, .MP4)
+    function handleLectureFileSelected(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const box = document.getElementById('localFilePlayerBox');
+      const title = document.getElementById('localFileTitle');
+      const mediaEl = document.getElementById('hostLectureMediaEl');
+      if (!box || !mediaEl) return;
+
+      box.classList.remove('hidden');
+      if (title) title.innerText = `🎵 ${file.name}`;
+
+      const fileUrl = URL.createObjectURL(file);
+      mediaEl.src = fileUrl;
+
+      mediaEl.onplay = async () => {
+        try {
+          const stream = mediaEl.captureStream ? mediaEl.captureStream() : (mediaEl.mozCaptureStream ? mediaEl.mozCaptureStream() : null);
+          if (stream && stream.getAudioTracks().length > 0) {
+            await startBroadcastWithStream(stream, 'file');
+          } else if (!isBroadcasting) {
+            await startBroadcastWithStream(null, 'mic');
+          }
+        } catch (e) {
+          console.warn('Erro ao conectar stream do arquivo:', e);
+        }
+      };
+    }
+
+    // 3. Simulador de Palestra Completa Ao Vivo (Reproduz Voz na Saída do PC + Alimenta Transcrição Contínua)
+    let isFullLectureRunning = false;
+    let fullLectureAudioEl = null;
+
+    const fullLectureParagraphs = [
+      "Boa noite a todos os participantes presentes neste auditório, sejam muito bem-vindos ao nosso encontro anual de tecnologia e inovação.",
+      "Hoje nós vamos explorar como a inteligência artificial aplicada em tempo real está transformando completamente a experiência do público em grandes conferências.",
+      "Antigamente os eventos internacionais dependiam de equipamentos pesados de rádio frequência, mas agora cada participante pode ouvir diretamente no seu próprio celular.",
+      "Quando o palestrante fala no palco, o sinal da mesa de som é capturado com altíssima fidelidade para que ninguém perca nenhum detalhe técnico.",
+      "Além disso, o nosso novo motor de segmentação sintática identifica as fronteiras naturais de cada frase enquanto o orador ainda está falando.",
+      "Isso significa que a legenda traduzida e a voz sintetizada começam imediatamente, sem esperar que o palestrante faça uma pausa longa para respirar.",
+      "Outro ponto fundamental é que o sistema nunca corta uma frase no meio de um artigo ou de uma preposição, garantindo sentido completo em inglês e espanhol.",
+      "Se o orador fizer uma pequena hesitação no meio de um pensamento, o algoritmo aguarda a palavra seguinte para entregar uma tradução fluida e natural.",
+      "Durante toda a apresentação, a calibração automática de timbre analisa a frequência da voz original para ajustar a entonação da voz traduzida.",
+      "Mesmo que o participante bloqueie a tela do telefone ou coloque o aparelho no bolso, o fluxo de áudio continua tocando sem nenhuma interrupção.",
+      "No telão principal do evento, as legendas podem ser posicionadas no rodapé ou no topo com fundo transparente para não cobrir os slides da palestra.",
+      "Também implementamos um sistema de renovação automática da sessão de voz a cada minuto, evitando que o navegador pare de gerar legendas em palestras longas.",
+      "Graças à arquitetura híbrida de distribuição, dezenas ou centenas de ouvintes recebem o áudio simultaneamente com latência extremamente baixa.",
+      "Os organizadores acompanham em tempo real no painel administrativo exatamente quantos usuários estão conectados em cada canal de idioma.",
+      "Com essa solução integrada, qualquer congresso ou palestra silenciosa alcança acessibilidade global com qualidade profissional de estúdio.",
+      "Muito obrigado pela atenção de todos vocês nesta demonstração completa, e desejamos um excelente evento a todos os participantes."
+    ];
+
+    async function toggleFullLectureSimulation() {
+      const btn = document.getElementById('fullLectureSimBtn');
+      const box = document.getElementById('fullLectureSimBox');
+      const progBar = document.getElementById('fullLectureProgressBar');
+      const progText = document.getElementById('fullLectureProgressText');
+      const curTextEl = document.getElementById('fullLectureCurrentText');
+
+      if (isFullLectureRunning) {
+        isFullLectureRunning = false;
+        if (fullLectureAudioEl) {
+          try { fullLectureAudioEl.pause(); } catch (e) {}
+          fullLectureAudioEl = null;
+        }
+        if (btn) {
+          btn.innerHTML = '<span>🎓</span> Dar Play: Palestra Completa (Ao Vivo)';
+          btn.className = 'bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-200 border border-emerald-500/40 font-semibold px-3 py-2 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow';
+        }
+        if (box) box.classList.add('hidden');
+        return;
+      }
+
+      isFullLectureRunning = true;
+      if (btn) {
+        btn.innerHTML = '<span>⏹️</span> Parar Palestra Completa';
+        btn.className = 'bg-rose-600 hover:bg-rose-500 text-white font-bold px-3 py-2 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow';
+      }
+      if (box) box.classList.remove('hidden');
+
+      const sourceLang = document.getElementById('sourceLang')?.value || 'pt-BR';
+
+      for (let bIdx = 0; bIdx < fullLectureParagraphs.length; bIdx++) {
+        if (!isFullLectureRunning) break;
+
+        const paragraph = fullLectureParagraphs[bIdx];
+        const pct = Math.round(((bIdx + 1) / fullLectureParagraphs.length) * 100);
+        if (progBar) progBar.style.width = `${pct}%`;
+        if (progText) progText.innerText = `Trecho ${bIdx + 1}/${fullLectureParagraphs.length} (${pct}%)`;
+        if (curTextEl) curTextEl.innerText = `"${paragraph}"`;
+
+        // 1. Toca a voz da palestra na saída de áudio do computador (/api/tts em português)
+        const voiceUrl = `/api/tts?lang=pt&text=${encodeURIComponent(paragraph)}&voice=male_deep&speed=1.08&t=${Date.now()}`;
+        fullLectureAudioEl = new Audio(voiceUrl);
+        let audioFinished = false;
+        fullLectureAudioEl.onended = () => { audioFinished = true; };
+        fullLectureAudioEl.onerror = () => { audioFinished = true; };
+
+        try {
+          await fullLectureAudioEl.play();
+        } catch (e) {
+          audioFinished = true;
+        }
+
+        // 2. Simultaneamente ao áudio saindo no PC, injeta palavra por palavra no segmentador sintático em tempo real
+        const words = paragraph.split(/\s+/).filter(Boolean);
+        let committedIdx = 0;
+
+        for (let wIdx = 1; wIdx <= words.length; wIdx++) {
+          if (!isFullLectureRunning) break;
+
+          // Anima o VU Meter suavemente enquanto a voz da palestra fala no PC
+          const vuBar = document.getElementById('vuBar');
+          const vuText = document.getElementById('vuLevelText');
+          const simVu = 35 + Math.floor(Math.random() * 40);
+          if (vuBar) vuBar.style.width = simVu + '%';
+          if (vuText) vuText.innerText = simVu + '%';
+
+          const currentSlice = words.slice(0, wIdx);
+          const pendingWords = currentSlice.slice(committedIdx);
+          const pendingStr = pendingWords.join(' ');
+
+          if (window.speechEngine) {
+            window.speechEngine.updateInterim(pendingStr);
+          }
+
+          if (socket && socket.readyState === WebSocket.OPEN && pendingWords.length > 0) {
+            socket.send(JSON.stringify({
+              type: 'speech_transcript',
+              text: pendingStr,
+              isFinal: false,
+              sourceLang
+            }));
+          }
+
+          // Verifica se o Segmentador Sintático detectou uma fronteira lógica para disparo simultâneo
+          const splitCount = window.speechEngine ? window.speechEngine.findLogicalSplitCount(pendingWords) : 0;
+          if (splitCount > 0) {
+            const logicalChunk = pendingWords.slice(0, splitCount).join(' ');
+            committedIdx += splitCount;
+            if (window.speechEngine) {
+              window.speechEngine.commitClause(logicalChunk);
+            }
+          }
+
+          // Cadência natural de fala humana (~260ms por palavra)
+          await new Promise(r => setTimeout(r, 260));
+        }
+
+        if (!isFullLectureRunning) break;
+
+        // Fecha o restante do parágrafo
+        const remaining = words.slice(committedIdx);
+        if (remaining.length > 0 && window.speechEngine) {
+          window.speechEngine.commitClause(remaining.join(' '));
+          window.speechEngine.updateInterim('');
+        }
+
+        // Aguarda concluir o áudio da frase no PC antes de passar ao próximo parágrafo
+        let waitAudioMs = 0;
+        while (!audioFinished && isFullLectureRunning && waitAudioMs < 4000) {
+          await new Promise(r => setTimeout(r, 150));
+          waitAudioMs += 150;
+        }
+
+        // Breve respiração natural entre parágrafos (600ms)
+        if (isFullLectureRunning) {
+          await new Promise(r => setTimeout(r, 600));
+        }
+      }
+
+      isFullLectureRunning = false;
+      const vuBar = document.getElementById('vuBar');
+      const vuText = document.getElementById('vuLevelText');
+      if (!isBroadcasting) {
+        if (vuBar) vuBar.style.width = '0%';
+        if (vuText) vuText.innerText = '0%';
+      }
+      if (btn) {
+        btn.innerHTML = '<span>🎓</span> Dar Play: Palestra Completa (Ao Vivo)';
+        btn.className = 'bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-200 border border-emerald-500/40 font-semibold px-3 py-2 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow';
+      }
+      if (curTextEl) curTextEl.innerText = '✅ Palestra completa finalizada com sucesso!';
     }
 
     // =========================================================================
@@ -1499,8 +1895,10 @@
         return 0;
       },
 
-      async start() {
+      async start(customAudioTrack = null) {
         this.isActive = true;
+        this.customAudioTrack = customAudioTrack || null;
+        this.lastNativeResultTime = Date.now();
         this.updateBadge('active');
         this.armBackgroundKeepAlive();
         await this.acquireWakeLock();
@@ -1510,6 +1908,7 @@
 
       stop() {
         this.isActive = false;
+        this.customAudioTrack = null;
         this.updateBadge('inactive');
         this.releaseWakeLock();
         this.disarmBackgroundKeepAlive();
@@ -1643,6 +2042,7 @@
 
           rec.onresult = (evt) => {
             this.lastEventTime = Date.now();
+            this.lastNativeResultTime = Date.now();
             this.handleResult(evt);
           };
 
@@ -1675,7 +2075,15 @@
           };
 
           this.recognizer = rec;
-          rec.start();
+          if (this.customAudioTrack && this.customAudioTrack.readyState === 'live') {
+            try {
+              rec.start(this.customAudioTrack);
+            } catch (trackErr) {
+              rec.start();
+            }
+          } else {
+            rec.start();
+          }
           this.lastEventTime = Date.now();
         } catch (err) {
           console.warn('[STT] Erro ao iniciar instância, reagendando em 1s:', err.message);
