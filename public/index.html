@@ -109,11 +109,11 @@
       </div>
     </section>
 
-    <!-- Área de Legendas e Transcrição em Tempo Real -->
-    <section id="subtitlesSection" class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex-1 flex flex-col shadow-xl min-h-[200px]">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+    <!-- Área de Legendas e Transcrição Simultânea em Tempo Real -->
+    <section id="subtitlesSection" class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex-1 flex flex-col shadow-xl min-h-[240px]">
+      <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
         <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-          <span class="w-2 h-2 rounded-full bg-cyan-400"></span> Legenda ao Vivo
+          <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span> Legenda Simultânea ao Vivo
         </span>
         <div class="flex items-center gap-2">
           <select id="subtitleLangSelect" onchange="changeSubtitleLang(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
@@ -122,15 +122,21 @@
             <option value="en">Inglês (English)</option>
             <option value="es">Espanhol (Español)</option>
           </select>
-          <div class="flex items-center gap-1">
-            <button onclick="changeFontSize(-2)" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded">A-</button>
-            <button onclick="changeFontSize(2)" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded">A+</button>
+          <div class="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-0.5">
+            <button type="button" onclick="changeFontSize(-2)" title="Diminuir fonte" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-2.5 py-1 rounded transition">A-</button>
+            <span id="listenerFontSizeBadge" class="text-[11px] font-mono text-cyan-400 px-1">20px</span>
+            <button type="button" onclick="changeFontSize(2)" title="Aumentar fonte" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-2.5 py-1 rounded transition">A+</button>
           </div>
         </div>
       </div>
 
-      <div id="subtitlesBox" class="flex-1 overflow-y-auto mt-3 flex flex-col justify-end text-slate-200 text-base leading-relaxed max-h-52">
-        <p class="text-slate-500 italic text-sm text-center my-auto">Aguardando início da fala no palco...</p>
+      <div id="subtitlesBox" style="font-size: 20px;" class="flex-1 overflow-y-auto mt-3 p-3 bg-slate-950/70 rounded-xl border border-slate-800/80 text-slate-100 leading-relaxed max-h-72 min-h-[190px] scroll-smooth">
+        <p id="listenerPlaceholderMsg" class="text-slate-500 italic text-sm text-center my-12">Aguardando início da fala no palco...</p>
+        <div id="listenerLiveStreamFlow" class="hidden leading-relaxed tracking-wide break-words">
+          <span id="listenerConfirmedStream" class="text-slate-100 font-medium"></span>
+          <span id="listenerInterimStream" class="text-cyan-300 font-semibold transition-all"></span>
+          <span id="listenerLiveCursor" class="hidden inline-block w-2 h-5 bg-cyan-400 ml-1 animate-pulse align-middle rounded-sm"></span>
+        </div>
       </div>
     </section>
 
@@ -151,7 +157,7 @@
     let isPlaying = false;
     let audioContext = null;
     let gainNode = null;
-    let currentFontSize = 16;
+    let currentFontSize = parseInt(localStorage.getItem('vmp_listener_font_size') || '20', 10);
     let nextAudioTime = 0;
     let roomConfig = null;
 
@@ -731,16 +737,32 @@
           armBackgroundAudioKeepAlive();
         }
       }
+      if (selectedSubtitleLang === 'auto') {
+        resetListenerStreamDisplay();
+      }
     }
 
     let selectedSubtitleLang = 'auto';
 
+    function resetListenerStreamDisplay(customPlaceholderText = null) {
+      const confirmed = document.getElementById('listenerConfirmedStream');
+      const interim = document.getElementById('listenerInterimStream');
+      const cursor = document.getElementById('listenerLiveCursor');
+      const flow = document.getElementById('listenerLiveStreamFlow');
+      const placeholder = document.getElementById('listenerPlaceholderMsg');
+      if (confirmed) confirmed.innerHTML = '';
+      if (interim) interim.innerText = '';
+      if (cursor) cursor.classList.add('hidden');
+      if (flow) flow.classList.add('hidden');
+      if (placeholder) {
+        if (customPlaceholderText) placeholder.innerText = customPlaceholderText;
+        placeholder.classList.remove('hidden');
+      }
+    }
+
     function changeSubtitleLang(lang) {
       selectedSubtitleLang = lang;
-      const box = document.getElementById('subtitlesBox');
-      if (box) {
-        box.innerHTML = `<p class="text-slate-500 italic text-sm text-center my-auto">Idioma de legendas: ${lang.toUpperCase()}. Aguardando falas...</p>`;
-      }
+      resetListenerStreamDisplay(`Idioma de legendas: ${lang.toUpperCase()}. Aguardando falas...`);
     }
 
     // ----------------------------------------------------
@@ -1166,17 +1188,12 @@
       }
     }
 
-    let currentInterimSubtitleEl = null;
+    let lastConfirmedSubtitleText = '';
 
     function renderSubtitle(text, isFinal, lang = 'original') {
       const box = document.getElementById('subtitlesBox');
       const cleanText = stripLangPrefix(text);
       if (!box || !cleanText) return;
-
-      // Limpa mensagem de aguardando se houver
-      if (box.querySelector('.text-slate-500')) {
-        box.innerHTML = '';
-      }
 
       // 1. Determina com precisão o idioma desejado pelo participante
       let desiredLang = selectedSubtitleLang;
@@ -1189,41 +1206,52 @@
         return;
       }
 
-      // 3. Renderiza a legenda do idioma único selecionado
-      if (isFinal) {
-        if (currentInterimSubtitleEl && currentInterimSubtitleEl.parentNode) {
-          currentInterimSubtitleEl.remove();
-          currentInterimSubtitleEl = null;
-        }
+      const placeholder = document.getElementById('listenerPlaceholderMsg');
+      const flow = document.getElementById('listenerLiveStreamFlow');
+      const confirmedStream = document.getElementById('listenerConfirmedStream');
+      const interimStream = document.getElementById('listenerInterimStream');
+      const cursor = document.getElementById('listenerLiveCursor');
 
-        // Se a última legenda adicionada for idêntica, evita repetição visual
-        const lastEl = box.lastElementChild;
-        if (lastEl && lastEl.innerText.trim().toLowerCase() === cleanText.toLowerCase()) {
+      if (placeholder) placeholder.classList.add('hidden');
+      if (flow) flow.classList.remove('hidden');
+
+      // 3. Escrita Simultânea Contínua (Teleprompter em Tempo Real sem saltar caixas)
+      if (isFinal) {
+        if (interimStream) interimStream.innerText = '';
+        if (cursor) cursor.classList.add('hidden');
+
+        if (cleanText.toLowerCase() === lastConfirmedSubtitleText.toLowerCase()) {
           return;
         }
-        const p = document.createElement('p');
-        p.className = 'text-slate-100 font-medium mb-2 border-l-2 border-cyan-400 pl-2 bg-slate-900/40 py-1 rounded';
-        p.innerText = cleanText;
-        box.appendChild(p);
+        lastConfirmedSubtitleText = cleanText;
 
-        while (box.children.length > 50) {
-          box.removeChild(box.firstChild);
+        if (confirmedStream) {
+          while (confirmedStream.children.length >= 100) {
+            confirmedStream.removeChild(confirmedStream.firstChild);
+          }
+          const span = document.createElement('span');
+          span.className = 'text-slate-100 font-medium transition-colors duration-150';
+          span.innerText = cleanText + ' ';
+          confirmedStream.appendChild(span);
         }
       } else {
-        if (!currentInterimSubtitleEl || !currentInterimSubtitleEl.parentNode) {
-          currentInterimSubtitleEl = document.createElement('p');
-          currentInterimSubtitleEl.className = 'text-cyan-400 italic mb-2 opacity-85';
-          box.appendChild(currentInterimSubtitleEl);
+        if (interimStream) {
+          interimStream.innerText = cleanText;
         }
-        currentInterimSubtitleEl.innerText = cleanText + '...';
+        if (cursor) cursor.classList.remove('hidden');
       }
       box.scrollTop = box.scrollHeight;
     }
 
     function changeFontSize(delta) {
-      currentFontSize = Math.max(12, Math.min(26, currentFontSize + delta));
-      document.getElementById('subtitlesBox').style.fontSize = currentFontSize + 'px';
+      currentFontSize = Math.max(14, Math.min(44, currentFontSize + delta));
+      localStorage.setItem('vmp_listener_font_size', String(currentFontSize));
+      const box = document.getElementById('subtitlesBox');
+      const badge = document.getElementById('listenerFontSizeBadge');
+      if (box) box.style.fontSize = currentFontSize + 'px';
+      if (badge) badge.innerText = currentFontSize + 'px';
     }
+    changeFontSize(0);
 
     loadRoomConfig();
     connectWS();

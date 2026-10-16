@@ -280,8 +280,9 @@
       'es': { label: 'ES 🇪🇸', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' }
     };
 
-    function displaySubtitle(text, isFinal, lang = 'original') {
+    function displaySubtitle(rawText, isFinal, lang = 'original') {
       const container = document.getElementById('subtitlesContainer');
+      const text = String(rawText || '').replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
       if (!container || !text) return;
       
       // Limpa mensagem inicial
@@ -290,6 +291,7 @@
       }
 
       const badgeInfo = langBadges[lang] || { label: lang.toUpperCase(), color: 'bg-slate-800 text-slate-300 border-slate-700' };
+      const showBadge = allowedLangs.length > 1 || currentScreenLang === 'all';
 
       if (isFinal) {
         if (screenInterimEl && screenInterimEl.parentNode) {
@@ -299,7 +301,7 @@
 
         // Se a última linha final for idêntica e do mesmo idioma, não duplica
         const lastFinal = container.querySelector('.subtitle-line-final:last-child');
-        if (lastFinal && lastFinal.dataset.text === text.trim() && lastFinal.dataset.lang === lang) {
+        if (lastFinal && lastFinal.dataset.text === text && lastFinal.dataset.lang === lang) {
           return;
         }
 
@@ -312,25 +314,23 @@
 
         const div = document.createElement('div');
         div.className = 'subtitle-line subtitle-line-final flex items-center justify-center gap-3 drop-shadow-md';
-        div.dataset.text = text.trim();
+        div.dataset.text = text;
         div.dataset.lang = lang;
         
-        // Mostra badge do idioma se estiver em modo multilíngue ou bilíngue
-        const showBadge = allowedLangs.length > 1 || currentScreenLang === 'all';
         div.innerHTML = `
           ${showBadge ? `<span class="text-xs sm:text-sm font-mono border px-2 py-0.5 rounded-md ${badgeInfo.color} uppercase">${badgeInfo.label}</span>` : ''}
-          <span class="text-white" style="font-size: ${fontSize}px;">${text}</span>
+          <span class="text-white font-semibold" style="font-size: ${fontSize}px;">${text}</span>
         `;
         container.appendChild(div);
       } else {
         if (!screenInterimEl || !screenInterimEl.parentNode) {
           screenInterimEl = document.createElement('div');
-          screenInterimEl.className = 'subtitle-line flex items-center justify-center gap-3 opacity-90 italic';
+          screenInterimEl.className = 'subtitle-line flex items-center justify-center gap-3 drop-shadow-md';
           container.appendChild(screenInterimEl);
         }
         screenInterimEl.innerHTML = `
-          <span class="text-xs sm:text-sm font-mono border px-2 py-0.5 rounded-md ${badgeInfo.color} uppercase">${badgeInfo.label}</span>
-          <span class="text-cyan-400" style="font-size: ${fontSize}px;">${text}...</span>
+          ${showBadge ? `<span class="text-xs sm:text-sm font-mono border px-2 py-0.5 rounded-md ${badgeInfo.color} uppercase">${badgeInfo.label}</span>` : ''}
+          <span class="text-cyan-300 font-semibold" style="font-size: ${fontSize}px;">${text}</span>
         `;
       }
     }

@@ -508,17 +508,27 @@
       </section>
 
       <!-- Transcrição do Monitor de Palco & Validador de Integridade -->
-      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 flex-1 flex flex-col shadow-xl min-h-[260px]">
-        <div class="flex items-center justify-between mb-2">
+      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 flex-1 flex flex-col shadow-xl min-h-[300px]">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div class="flex items-center gap-2">
             <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Monitor da Transcrição ao Vivo</h2>
             <span id="transcriptionIntegrityBadge" class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2 py-0.5 rounded-full font-mono">
               ● 100% Íntegro
             </span>
           </div>
-          <button onclick="toggleSpeechTestPanel()" class="text-[11px] bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 border border-cyan-500/40 px-2.5 py-1 rounded-md transition font-medium flex items-center gap-1">
-            <span>🧪</span> Testar Transcrição & Tradução
-          </button>
+          <div class="flex items-center gap-1.5">
+            <div class="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-0.5">
+              <button type="button" onclick="changeHostTranscriptFontSize(-2)" title="Diminuir fonte" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-2 py-0.5 rounded transition">A-</button>
+              <span id="hostFontSizeBadge" class="text-[10px] font-mono text-cyan-400 px-1">18px</span>
+              <button type="button" onclick="changeHostTranscriptFontSize(2)" title="Aumentar fonte" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-2 py-0.5 rounded transition">A+</button>
+            </div>
+            <button type="button" onclick="clearHostTranscriptBox()" title="Limpar texto do monitor" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded-md transition">
+              Limpar
+            </button>
+            <button onclick="toggleSpeechTestPanel()" class="text-[11px] bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 border border-cyan-500/40 px-2.5 py-1 rounded-md transition font-medium flex items-center gap-1">
+              <span>🧪</span> Testar
+            </button>
+          </div>
         </div>
 
         <!-- Painel de Testes Interativos de Fala & Tradução -->
@@ -568,8 +578,13 @@
           </div>
         </div>
 
-        <div id="hostTranscriptBox" class="flex-1 overflow-y-auto bg-slate-950 rounded-lg border border-slate-800 p-3 text-xs text-slate-300 leading-relaxed max-h-48">
-          <p class="text-slate-600 italic">O áudio capturado aparecerá aqui em tempo real...</p>
+        <div id="hostTranscriptBox" style="font-size: 18px;" class="flex-1 overflow-y-auto bg-slate-950 rounded-xl border border-slate-800 p-4 text-slate-100 leading-relaxed max-h-72 min-h-[200px] scroll-smooth">
+          <p id="hostPlaceholderMsg" class="text-slate-600 italic text-sm">O áudio capturado será escrito aqui simultaneamente em tempo real...</p>
+          <div id="hostLiveStreamFlow" class="hidden leading-relaxed tracking-wide break-words">
+            <span id="hostConfirmedStream" class="text-slate-100 font-medium"></span>
+            <span id="hostInterimStream" class="text-cyan-300 font-semibold transition-all"></span>
+            <span id="hostLiveCursor" class="hidden inline-block w-2 h-5 bg-cyan-400 ml-1 animate-pulse align-middle rounded-sm"></span>
+          </div>
         </div>
       </section>
 
@@ -2141,39 +2156,53 @@
       appendConfirmed(chunkText) {
         const box = document.getElementById('hostTranscriptBox');
         if (!box || !chunkText) return;
-        if (this.currentInterimEl && this.currentInterimEl.parentNode) {
-          this.currentInterimEl.remove();
-          this.currentInterimEl = null;
-        }
 
-        const existing = box.querySelectorAll('p');
-        if (existing.length >= 100) {
-          existing[0].remove();
-        }
+        const placeholder = document.getElementById('hostPlaceholderMsg');
+        if (placeholder) placeholder.classList.add('hidden');
 
-        const p = document.createElement('p');
-        p.className = 'text-slate-100 mb-1.5 font-medium border-l-2 border-cyan-400 pl-2 bg-slate-900/40 py-0.5 rounded';
-        p.innerText = chunkText;
-        box.appendChild(p);
-        box.scrollTop = box.scrollHeight;
+        const flow = document.getElementById('hostLiveStreamFlow');
+        const confirmedStream = document.getElementById('hostConfirmedStream');
+        const interimStream = document.getElementById('hostInterimStream');
+        const cursor = document.getElementById('hostLiveCursor');
+
+        if (flow && confirmedStream) {
+          flow.classList.remove('hidden');
+          if (interimStream) interimStream.innerText = '';
+          if (cursor) cursor.classList.add('hidden');
+
+          while (confirmedStream.children.length >= 120) {
+            confirmedStream.removeChild(confirmedStream.firstChild);
+          }
+
+          const span = document.createElement('span');
+          span.className = 'text-slate-100 font-medium transition-colors duration-150';
+          span.innerText = chunkText.trim() + ' ';
+          confirmedStream.appendChild(span);
+          box.scrollTop = box.scrollHeight;
+        }
       },
 
       updateInterim(interimText) {
         const box = document.getElementById('hostTranscriptBox');
         if (!box) return;
+
+        const flow = document.getElementById('hostLiveStreamFlow');
+        const interimStream = document.getElementById('hostInterimStream');
+        const cursor = document.getElementById('hostLiveCursor');
+        const placeholder = document.getElementById('hostPlaceholderMsg');
+
         if (!interimText) {
-          if (this.currentInterimEl && this.currentInterimEl.parentNode) {
-            this.currentInterimEl.remove();
-            this.currentInterimEl = null;
-          }
+          if (interimStream) interimStream.innerText = '';
+          if (cursor) cursor.classList.add('hidden');
           return;
         }
-        if (!this.currentInterimEl || !this.currentInterimEl.parentNode) {
-          this.currentInterimEl = document.createElement('p');
-          this.currentInterimEl.className = 'text-cyan-400 italic mb-1.5 opacity-80';
-          box.appendChild(this.currentInterimEl);
+
+        if (placeholder) placeholder.classList.add('hidden');
+        if (flow) flow.classList.remove('hidden');
+        if (interimStream) {
+          interimStream.innerText = interimText.trim();
         }
-        this.currentInterimEl.innerText = interimText + '...';
+        if (cursor) cursor.classList.remove('hidden');
         box.scrollTop = box.scrollHeight;
       },
 
@@ -2302,6 +2331,30 @@
         }
       }
     };
+
+    let hostTranscriptFontSize = parseInt(localStorage.getItem('vmp_host_font_size') || '18', 10);
+    function changeHostTranscriptFontSize(delta) {
+      hostTranscriptFontSize = Math.max(12, Math.min(40, hostTranscriptFontSize + delta));
+      localStorage.setItem('vmp_host_font_size', String(hostTranscriptFontSize));
+      const box = document.getElementById('hostTranscriptBox');
+      const badge = document.getElementById('hostFontSizeBadge');
+      if (box) box.style.fontSize = hostTranscriptFontSize + 'px';
+      if (badge) badge.innerText = hostTranscriptFontSize + 'px';
+    }
+    changeHostTranscriptFontSize(0);
+
+    function clearHostTranscriptBox() {
+      const confirmed = document.getElementById('hostConfirmedStream');
+      const interim = document.getElementById('hostInterimStream');
+      const cursor = document.getElementById('hostLiveCursor');
+      const flow = document.getElementById('hostLiveStreamFlow');
+      const placeholder = document.getElementById('hostPlaceholderMsg');
+      if (confirmed) confirmed.innerHTML = '';
+      if (interim) interim.innerText = '';
+      if (cursor) cursor.classList.add('hidden');
+      if (flow) flow.classList.add('hidden');
+      if (placeholder) placeholder.classList.remove('hidden');
+    }
 
     // Revalidação de WakeLock e listeners de ciclo de vida
     document.addEventListener('visibilitychange', () => {
