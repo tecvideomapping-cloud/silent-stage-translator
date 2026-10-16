@@ -30,6 +30,8 @@ html[data-screen-view=studio] body.vmt-screen { background:var(--vmt-bg)!importa
 html[data-screen-view=studio] .vmt-screen.theme-chroma #screenMainArea { background:#00ff00; }
 html[data-screen-view=studio] .vmt-screen.theme-chroma #screenMainArea::before,html[data-screen-view=studio] .vmt-screen.theme-black #screenMainArea::before { display:none; }
 html[data-screen-view=studio] .vmt-screen.theme-black #screenMainArea { background:#000; }
+html[data-screen-view=studio] .vmt-screen.theme-transparent #screenMainArea,html[data-screen-view=studio] .vmt-screen.theme-lowerthird #screenMainArea { background:transparent!important; border-color:rgba(255,255,255,0.12)!important; }
+html[data-screen-view=studio] .vmt-screen.theme-transparent #screenMainArea::before,html[data-screen-view=studio] .vmt-screen.theme-lowerthird #screenMainArea::before { display:none!important; }
 html[data-screen-view=output] .vmt-screen-masthead,html[data-screen-view=output] .vmt-screen-editorial { display:none; }
 html[data-screen-view=output] body.vmt-screen { height:100vh; padding:0; overflow:hidden; }
 html[data-screen-view=output] .vmt-screen #screenMainArea { width:100%; max-width:none; height:100vh; flex:1; margin:0; border:0; border-radius:0; }

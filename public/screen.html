@@ -5,38 +5,52 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Telão de Legendas ao Vivo | Videomappingtech Stage Screen</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    body.theme-transparent {
+    <style>
+    body.theme-transparent,
+    body.theme-transparent #screenMainArea {
       background: transparent !important;
       background-color: transparent !important;
       color: #ffffff;
     }
-    body.theme-transparent .subtitle-line {
-      text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 4px 16px rgba(0,0,0,0.95);
+    body.theme-transparent .subtitle-box {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 6px 12px;
+    }
+    body.theme-transparent .subtitle-text {
+      text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 4px 18px rgba(0,0,0,0.98);
       -webkit-text-stroke: 1.5px rgba(0,0,0,0.9);
     }
-    body.theme-lowerthird {
+
+    body.theme-lowerthird,
+    body.theme-lowerthird #screenMainArea {
       background: transparent !important;
       background-color: transparent !important;
       color: #ffffff;
     }
-    body.theme-lowerthird .subtitle-line {
-      background: rgba(0, 0, 0, 0.78);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.15);
+    body.theme-lowerthird .subtitle-box {
+      background: rgba(0, 0, 0, 0.82) !important;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.18);
       border-radius: 18px;
-      padding: 10px 24px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-      display: inline-flex;
+      padding: 12px 28px;
+      box-shadow: 0 10px 32px rgba(0,0,0,0.65);
     }
-    body.theme-chroma {
+
+    body.theme-chroma,
+    body.theme-chroma #screenMainArea {
       background-color: #00ff00 !important;
       color: #ffffff !important;
     }
-    body.theme-chroma .subtitle-line {
+    body.theme-chroma .subtitle-box {
+      background: rgba(0, 0, 0, 0.85);
+      border-radius: 18px;
+      padding: 12px 28px;
+    }
+    body.theme-chroma .subtitle-text {
       text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 4px 12px rgba(0,0,0,0.95);
-      -webkit-text-stroke: 1.5px rgba(0,0,0,0.85);
     }
     body.theme-chroma #controlsHeader {
       background-color: rgba(0, 0, 0, 0.85);
@@ -47,14 +61,48 @@
       opacity: 0.6;
       font-weight: 600;
     }
-    body.theme-black { background-color: #000000; color: #ffffff; }
-    body.theme-dark { background-color: #090d16; color: #e2e8f0; }
 
-    .subtitle-line {
-      animation: fadeIn 0.3s ease-out forwards;
+    body.theme-black,
+    body.theme-black #screenMainArea {
+      background-color: #000000 !important;
+      color: #ffffff;
     }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(12px); }
+
+    body.theme-dark,
+    body.theme-dark #screenMainArea {
+      background-color: #090d16 !important;
+      color: #e2e8f0;
+    }
+
+    /* Caixa de Legenda Tradicional: No máximo 2 linhas visíveis */
+    .subtitle-box {
+      max-width: 92vw;
+      width: fit-content;
+      margin: 0 auto;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.22s ease-out;
+      animation: subFadeIn 0.25s ease-out forwards;
+    }
+
+    .subtitle-text {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: normal;
+      word-break: break-word;
+      line-height: 1.32;
+      text-align: center;
+      max-height: calc(2 * 1.32em);
+    }
+
+    @keyframes subFadeIn {
+      from { opacity: 0; transform: translateY(6px); }
       to { opacity: 1; transform: translateY(0); }
     }
   </style>
@@ -248,23 +296,8 @@
     }
 
     let screenInterimEl = null;
-
-    function displayInterimActivity(text) {
-      const container = document.getElementById('subtitlesContainer');
-      if (!container || !text) return;
-      if (container.querySelector('.text-slate-600')) {
-        container.innerHTML = '';
-      }
-      if (!screenInterimEl || !screenInterimEl.parentNode) {
-        screenInterimEl = document.createElement('div');
-        screenInterimEl.className = 'subtitle-line flex items-center justify-center gap-3 opacity-90 italic';
-        container.appendChild(screenInterimEl);
-      }
-      screenInterimEl.innerHTML = `
-        <span class="text-xs sm:text-sm font-mono border px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border-cyan-500/40 uppercase">AO VIVO 🎙️</span>
-        <span class="text-cyan-300" style="font-size: ${Math.round(fontSize * 0.9)}px;">${text}...</span>
-      `;
-    }
+    let subtitleClearTimer = null;
+    window.__screenMultiLines = {};
 
     const langBadges = {
       'original': { label: 'AO VIVO', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' },
@@ -276,59 +309,55 @@
       const container = document.getElementById('subtitlesContainer');
       const text = String(rawText || '').replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
       if (!container || !text) return;
-      
-      // Limpa mensagem inicial
-      if (container.querySelector('.text-slate-600')) {
+
+      // Reseta timer de inatividade (esmaecimento suave após 14s de silêncio)
+      if (subtitleClearTimer) clearTimeout(subtitleClearTimer);
+      subtitleClearTimer = setTimeout(() => {
+        const activeBox = document.getElementById('activeSubtitleBox');
+        if (activeBox) {
+          activeBox.style.opacity = '0.35';
+        }
+      }, 14000);
+
+      // Garante a existência do elemento de legenda único de 2 linhas
+      let box = document.getElementById('activeSubtitleBox');
+      if (!box) {
         container.innerHTML = '';
+        box = document.createElement('div');
+        box.id = 'activeSubtitleBox';
+        box.className = 'subtitle-box';
+        container.appendChild(box);
       }
+      box.style.opacity = '1';
 
       const badgeInfo = langBadges[lang] || { label: lang.toUpperCase(), color: 'bg-slate-800 text-slate-300 border-slate-700' };
-      const showBadge = allowedLangs.length > 1 || currentScreenLang === 'all';
+      const isMulti = allowedLangs.length > 1 || currentScreenLang === 'all';
 
-      if (isFinal) {
-        if (screenInterimEl && screenInterimEl.parentNode) {
-          screenInterimEl.remove();
-          screenInterimEl = null;
-        }
+      if (isMulti) {
+        // Modo Bilíngue / Multilíngue: no máximo 2 linhas (1 linha por idioma)
+        window.__screenMultiLines[lang] = { text, isFinal, badge: badgeInfo };
+        const activeLangs = Object.keys(window.__screenMultiLines).slice(-2);
 
-        // Se a última linha final for idêntica e do mesmo idioma, não duplica
-        const lastFinal = container.querySelector('.subtitle-line-final:last-child');
-        if (lastFinal && lastFinal.dataset.text === text && lastFinal.dataset.lang === lang) {
-          return;
-        }
-
-        // Mantém blocos adequados para cadência simultânea contínua
-        const maxLines = allowedLangs.length > 1 ? 5 : 3;
-        const existing = container.querySelectorAll('.subtitle-line-final');
-        if (existing.length >= maxLines) {
-          existing[0].remove();
-        }
-
-        const div = document.createElement('div');
-        div.className = 'subtitle-line subtitle-line-final flex items-center justify-center gap-3 drop-shadow-md';
-        div.dataset.text = text;
-        div.dataset.lang = lang;
-        
-        div.innerHTML = `
-          ${showBadge ? `<span class="text-xs sm:text-sm font-mono border px-2 py-0.5 rounded-md ${badgeInfo.color} uppercase">${badgeInfo.label}</span>` : ''}
-          <span class="text-white font-semibold" style="font-size: ${fontSize}px;">${text}</span>
-        `;
-        container.appendChild(div);
+        box.innerHTML = activeLangs.map(l => {
+          const item = window.__screenMultiLines[l];
+          const colorClass = item.isFinal ? 'text-white' : 'text-cyan-300';
+          return `
+            <div class="flex items-center justify-center gap-3 my-0.5">
+              <span class="text-xs sm:text-sm font-mono border px-2 py-0.5 rounded-md ${item.badge.color} uppercase shrink-0">${item.badge.label}</span>
+              <span class="subtitle-text font-bold ${colorClass}" style="font-size: ${Math.round(fontSize * 0.90)}px; -webkit-line-clamp: 1; line-clamp: 1; max-height: 1.32em;">${item.text}</span>
+            </div>
+          `;
+        }).join('');
       } else {
-        if (!screenInterimEl || !screenInterimEl.parentNode) {
-          screenInterimEl = document.createElement('div');
-          screenInterimEl.className = 'subtitle-line flex items-center justify-center gap-3 drop-shadow-md';
-          container.appendChild(screenInterimEl);
-        }
-        screenInterimEl.innerHTML = `
-          ${showBadge ? `<span class="text-xs sm:text-sm font-mono border px-2 py-0.5 rounded-md ${badgeInfo.color} uppercase">${badgeInfo.label}</span>` : ''}
-          <span class="text-cyan-300 font-semibold" style="font-size: ${fontSize}px;">${text}</span>
+        // Modo Tradicional (Idioma Único): Exibe a legenda com no máximo 2 linhas centralizadas
+        const colorClass = isFinal ? 'text-white' : 'text-cyan-300';
+        box.innerHTML = `
+          <div class="flex items-center justify-center gap-3">
+            <span class="subtitle-text font-bold ${colorClass}" style="font-size: ${fontSize}px;">${text}</span>
+          </div>
         `;
       }
     }
-
-    let currentTheme = urlParams.get('theme') || 'theme-lowerthird';
-    let currentPosition = urlParams.get('pos') || 'pos-bottom';
 
     function changePosition(pos) {
       currentPosition = pos || 'pos-bottom';
@@ -356,13 +385,13 @@
     }
 
     function adjustFontSize(delta) {
-      fontSize = Math.max(28, Math.min(96, fontSize + delta));
-      document.querySelectorAll('.subtitle-line').forEach(el => {
-        el.style.fontSize = fontSize + 'px';
-        el.querySelectorAll('[style*="font-size"]').forEach(text => {
-          text.style.fontSize = fontSize + 'px';
+      fontSize = Math.max(26, Math.min(96, fontSize + delta));
+      const box = document.getElementById('activeSubtitleBox');
+      if (box) {
+        box.querySelectorAll('.subtitle-text').forEach(el => {
+          el.style.fontSize = fontSize + 'px';
         });
-      });
+      }
     }
 
     function toggleFullScreen() {
