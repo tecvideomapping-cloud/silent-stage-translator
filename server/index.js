@@ -193,7 +193,7 @@ function broadcastRoomStats(roomId) {
 // ----------------------------------------------------
 
 // Login de Administrador
-app.post('/api/auth/login', commerce.throttle('admin-login',15), async (req, res) => {
+app.post('/api/auth/login', commerce.throttle('admin-login', 60), async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {

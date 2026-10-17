@@ -474,52 +474,71 @@
     let roomsList = [];
     let clientsList = [];
 
+    let authFailures = 0;
+    function handleAuthError(res) {
+      if (res && res.status === 401) {
+        authFailures++;
+        if (authFailures >= 3) {
+          handleLogout();
+        }
+      }
+    }
+
     async function checkAuthSession() {
       try {
         const res = await fetch('/api/auth/me', { headers: authHeaders });
-        if (!res.ok) {
-          localStorage.removeItem('vmt_admin_token');
-          window.location.href = '/login.html';
+        if (res.status === 401) {
+          handleAuthError(res);
           return;
         }
-        const data = await res.json();
-        document.getElementById('userNameDisplay').innerText = data.user.name;
-        document.getElementById('userEmailDisplay').innerText = data.user.email;
+        if (res.ok) {
+          authFailures = 0;
+          const data = await res.json();
+          document.getElementById('userNameDisplay').innerText = data.user.name;
+          document.getElementById('userEmailDisplay').innerText = data.user.email;
+        }
       } catch (e) {
-        window.location.href = '/login.html';
+        // Falha transitória de rede - não desloga o operador
       }
     }
 
     async function loadRooms() {
       try {
         const res = await fetch('/api/rooms', { headers: authHeaders });
-        if (res.status === 401) return handleLogout();
-        const data = await res.json();
-        roomsList = data.rooms || [];
-        renderRooms();
+        if (res.status === 401) return handleAuthError(res);
+        if (res.ok) {
+          authFailures = 0;
+          const data = await res.json();
+          roomsList = data.rooms || [];
+          renderRooms();
+        }
       } catch (e) {}
     }
 
     async function loadClients() {
       try {
         const res = await fetch('/api/clients', { headers: authHeaders });
-        if (res.status === 401) return handleLogout();
-        const data = await res.json();
-        clientsList = data.clients || [];
-        document.getElementById('clientsBadge').innerText = clientsList.length;
-        renderClients();
-        populateClientSelect();
+        if (res.status === 401) return handleAuthError(res);
+        if (res.ok) {
+          const data = await res.json();
+          clientsList = data.clients || [];
+          document.getElementById('clientsBadge').innerText = clientsList.length;
+          renderClients();
+          populateClientSelect();
+        }
       } catch (e) {}
     }
 
     async function loadLeads() {
       try {
         const res = await fetch('/api/leads', { headers: authHeaders });
-        if (res.status === 401) return handleLogout();
-        const data = await res.json();
-        const leads = data.leads || [];
-        document.getElementById('leadsBadge').innerText = leads.length;
-        renderLeads(leads);
+        if (res.status === 401) return handleAuthError(res);
+        if (res.ok) {
+          const data = await res.json();
+          const leads = data.leads || [];
+          document.getElementById('leadsBadge').innerText = leads.length;
+          renderLeads(leads);
+        }
       } catch (e) {}
     }
 

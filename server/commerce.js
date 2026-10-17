@@ -21,7 +21,12 @@ const langs=new Set(['en','es','fr','de','it','ja','ko','zh','pt','ar','hi']);
 const sourceLangs=new Set(['pt-BR','en','es','fr','de','it','en-US','es-ES','fr-FR','de-DE','it-IT','ja-JP','ko-KR','zh-CN','ar','hi-IN']);
 const fonts=new Set(['Inter','DM Sans','Manrope','Montserrat','Poppins','Roboto','Playfair Display']);
 const cookieName='vmt_customer_session';
-function tokenFrom(req){return String(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith(cookieName+'='))?.slice(cookieName.length+1)||'';}
+function tokenFrom(req){
+ if(!req||!req.headers)return '';
+ const h=req.headers['x-session-token']||(typeof req.headers.authorization==='string'&&req.headers.authorization.startsWith('Bearer ')?req.headers.authorization.slice(7):'');
+ if(h)return String(h).trim();
+ return String(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith(cookieName+'='))?.slice(cookieName.length+1)||'';
+}
 function publicCustomer(c){return {id:c.id,name:c.name,email:c.email,company:c.company,phone:c.phone};}
 async function passwordHash(password){const salt=crypto.randomBytes(16).toString('hex');const hash=await scrypt(password,salt,64);return `scrypt:${salt}:${hash.toString('hex')}`;}
 async function passwordMatches(password,stored){const [,salt,hash]=String(stored||'').split(':');if(!salt||!hash)return false;return safeEqual((await scrypt(password,salt,64)).toString('hex'),hash);}
@@ -49,7 +54,7 @@ class Commerce {
  async session(req){const token=tokenFrom(req);if(!/^[a-f0-9]{64}$/.test(token))return null;const session=await this.store.get('session',sha(token));if(!session||session.expiresAt<Date.now())return null;const customer=await this.store.get('customer',session.customerId);if(!customer||customer.passwordVersion!==session.passwordVersion)return null;return {session,customer};}
  async requireSession(req,res,next){try{await this.readyOrFail();const auth=await this.session(req);if(!auth)throw fail(401,'Entre na sua área para continuar.');req.customer=auth.customer;req.customerSession=auth.session;next();}catch(e){next(e);}}
  async issueSession(tx,customer){const token=crypto.randomBytes(32).toString('hex');const session={id:sha(token),customerId:customer.id,csrfToken:crypto.randomBytes(24).toString('hex'),passwordVersion:customer.passwordVersion,expiresAt:Date.now()+7*86400000};await tx.put('session',session.id,session);return {token,session};}
- setCookie(res,token){res.cookie(cookieName,token,{httpOnly:true,secure:this.env.NODE_ENV==='production'||!!this.baseUrl(),sameSite:'lax',maxAge:7*86400000,path:'/'});res.setHeader('Cache-Control','no-store');}
+ setCookie(res,token,req){const isHttps=Boolean((req&&(req.secure||(req.get?req.get('x-forwarded-proto'):req.headers?.['x-forwarded-proto'])==='https'))||(this.baseUrl()&&this.baseUrl().startsWith('https://')));res.cookie(cookieName,token,{httpOnly:true,secure:isHttps,sameSite:'lax',maxAge:7*86400000,path:'/'});res.setHeader('Cache-Control','no-store');}
  csrf(req,res,next){if(!safeEqual(req.get('x-csrf-token'),req.customerSession.csrfToken))return next(fail(403,'Sessão desatualizada. Atualize a página e tente novamente.'));next();}
  throttle(scope,max=12,windowMs=900000){return(req,res,next)=>{const key=scope+':'+(req.ip||req.socket.remoteAddress);const time=Date.now();if(this.limits.size>10000)for(const [k,v] of this.limits)if(v.until<time)this.limits.delete(k);const entry=this.limits.get(key)||{count:0,until:time+windowMs};if(entry.until<time){entry.count=0;entry.until=time+windowMs;}entry.count++;this.limits.set(key,entry);if(entry.count>max){res.setHeader('Retry-After',Math.ceil((entry.until-time)/1000));return next(fail(429,'Muitas tentativas. Aguarde alguns minutos.'));}next();};}
   origin(req,res,next){
@@ -218,12 +223,12 @@ class Commerce {
    if(!displayName||!isEmail(address)||typeof password!=='string'||password.length<10||password.length>128)throw fail(400,'Informe nome, e-mail válido e uma senha entre 10 e 128 caracteres.');
    const hash=await passwordHash(password);
    const result=await this.store.transaction(async tx=>{if(await tx.get('email',address))throw fail(409,'Este e-mail já possui uma conta. Entre ou recupere seu acesso.');const customer={id:uuid(),name:displayName,email:address,company:clean(company,160),phone:clean(phone,40),passwordHash:hash,passwordVersion:1,createdAt:now()};await tx.put('customer',customer.id,customer);await tx.put('email',address,{customerId:customer.id});return {customer,...await this.issueSession(tx,customer)};});
-   this.setCookie(res,result.token);res.status(201).json({customer:publicCustomer(result.customer),csrfToken:result.session.csrfToken});
+   this.setCookie(res,result.token,req);res.status(201).json({customer:publicCustomer(result.customer),token:result.token,csrfToken:result.session.csrfToken});
   }));
   router.post('/customer/login',origin,this.throttle('login',15),wrap(async(req,res)=>{
    await this.readyOrFail();const mapping=await this.store.get('email',email(req.body?.email));const customer=mapping?await this.store.get('customer',mapping.customerId):null;const password=req.body?.password;
    if(typeof password!=='string'||password.length>128||!customer||!await passwordMatches(password,customer.passwordHash))throw fail(401,'E-mail ou senha inválidos.');
-   const result=await this.store.transaction(tx=>this.issueSession(tx,customer));this.setCookie(res,result.token);res.json({customer:publicCustomer(customer),csrfToken:result.session.csrfToken});
+   const result=await this.store.transaction(tx=>this.issueSession(tx,customer));this.setCookie(res,result.token,req);res.json({customer:publicCustomer(customer),token:result.token,csrfToken:result.session.csrfToken});
   }));
   router.get('/customer/me',auth,(req,res)=>res.json({customer:publicCustomer(req.customer),csrfToken:req.customerSession.csrfToken}));
   router.post('/customer/logout',auth,csrf,wrap(async(req,res)=>{await this.store.transaction(tx=>tx.remove('session',req.customerSession.id));res.clearCookie(cookieName,{path:'/',sameSite:'lax',secure:this.env.NODE_ENV==='production'||!!this.baseUrl()});res.json({success:true});}));

@@ -52,7 +52,11 @@ class CommerceStore {
   async get(kind, id) {
     if (this.pool) {
       try {
-        return (await this.pool.query('SELECT data FROM self_service_records WHERE kind=$1 AND id=$2', [kind,id])).rows[0]?.data || null;
+        const row = (await this.pool.query('SELECT data FROM self_service_records WHERE kind=$1 AND id=$2', [kind,id])).rows[0];
+        if (row && row.data) {
+          this.memory.set(`${kind}:${id}`, structuredClone(row.data));
+          return row.data;
+        }
       } catch (err) {
         console.warn(`[CommerceStore] Falha no get(${kind}, ${id}) PostgreSQL, consultando memória:`, err.message);
       }
@@ -115,8 +119,8 @@ class CommerceStore {
         const tx = {
           get:async(kind,id)=>(await client.query('SELECT data FROM self_service_records WHERE kind=$1 AND id=$2 FOR UPDATE',[kind,id])).rows[0]?.data || null,
           list:async(kind,filter={})=>(await client.query('SELECT data FROM self_service_records WHERE kind=$1 AND data @> $2::jsonb',[kind,JSON.stringify(filter)])).rows.map(r=>r.data),
-          put:async(kind,id,data)=>{await client.query('INSERT INTO self_service_records(kind,id,data) VALUES($1,$2,$3::jsonb) ON CONFLICT(kind,id) DO UPDATE SET data=EXCLUDED.data,updated_at=NOW()',[kind,id,JSON.stringify(data)]);},
-          remove:async(kind,id)=>{await client.query('DELETE FROM self_service_records WHERE kind=$1 AND id=$2',[kind,id]);},
+          put:async(kind,id,data)=>{await client.query('INSERT INTO self_service_records(kind,id,data) VALUES($1,$2,$3::jsonb) ON CONFLICT(kind,id) DO UPDATE SET data=EXCLUDED.data,updated_at=NOW()',[kind,id,JSON.stringify(data)]);this.memory.set(`${kind}:${id}`,structuredClone(data));},
+          remove:async(kind,id)=>{await client.query('DELETE FROM self_service_records WHERE kind=$1 AND id=$2',[kind,id]);this.memory.delete(`${kind}:${id}`);},
           asset:async a=>{await client.query('INSERT INTO self_service_assets(id,customer_id,event_id,kind,mime,bytes) VALUES($1,$2,$3,$4,$5,$6)',[a.id,a.customerId,a.eventId,a.kind,a.mime,a.bytes]);},
           query:(sql,args)=>client.query(sql,args)
         };
