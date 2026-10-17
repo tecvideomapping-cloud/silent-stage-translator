@@ -562,3 +562,214 @@ body.desktop-app {
   flex: 1;
   font-size: 11px;
 }
+
+/* Audio Source Selector Bar & Badges */
+.audio-sources-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--vmt-wash);
+  border: 1px solid var(--vmt-line);
+  border-radius: 12px;
+}
+
+.btn-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--vmt-line);
+  background: var(--vmt-panel);
+  color: var(--vmt-ink);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-source:hover {
+  background: var(--vmt-wash);
+  border-color: var(--vmt-accent);
+}
+
+.btn-source.active {
+  background: var(--vmt-green-wash);
+  border-color: var(--vmt-green);
+  color: var(--vmt-green);
+}
+
+.btn-source.btn-system.active {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: var(--vmt-accent);
+  color: var(--vmt-accent);
+}
+
+.btn-source.btn-sim.active {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.source-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  font-size: 12px;
+}
+
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--vmt-wash);
+  border: 1px solid var(--vmt-line);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vmt-accent);
+}
+
+/* Local Media Player Card */
+.local-media-card {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--vmt-accent);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.local-media-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.local-media-title {
+  font-weight: 700;
+  color: var(--vmt-accent);
+  max-width: 75%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-media-card audio {
+  width: 100%;
+  height: 38px;
+}
+
+/* Simulated Lecture Card */
+.sim-lecture-card {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid var(--vmt-green);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sim-lecture-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--vmt-green);
+}
+
+.sim-lecture-bar-wrap {
+  width: 100%;
+  height: 8px;
+  background: #111;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #333;
+}
+
+.sim-lecture-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(to right, #10b981, #06b6d4);
+  transition: width 0.3s ease;
+}
+
+.sim-lecture-text {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--vmt-muted);
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* Voice Studio Enhancements */
+.sample-status-text {
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  min-height: 18px;
+}
+
+.sample-status-text.success {
+  color: var(--vmt-green);
+}
+
+.sample-status-text.recording {
+  color: #ef4444;
+  animation: pulse 1s infinite;
+}
+
+.saved-profiles-list {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.saved-profile-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--vmt-wash);
+  border: 1px solid var(--vmt-line);
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.saved-profile-card .profile-info strong {
+  display: block;
+  font-size: 13px;
+  color: var(--vmt-ink);
+}
+
+.saved-profile-card .profile-info small {
+  color: var(--vmt-muted);
+  font-family: monospace;
+}
+
+.saved-profile-card .profile-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-xs {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.hidden {
+  display: none !important;
+}
+

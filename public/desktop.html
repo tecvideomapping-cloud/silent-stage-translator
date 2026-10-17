@@ -86,19 +86,89 @@
               <span class="status-badge" id="liveStatusBadge">PRONTO PARA ENTRAR NO AR</span>
             </div>
 
+            <!-- SELETOR DE FONTES DE ÁUDIO (MICROFONE, SISTEMA/YOUTUBE, ARQUIVO LOCAL, SIMULADOR) -->
+            <div class="audio-sources-bar">
+              <button type="button" class="btn-source active" id="btnSourceMic">
+                <span data-icon="mic"></span> Microfone / Mesa
+              </button>
+              <button type="button" class="btn-source btn-system" id="btnSourceSystem">
+                <span data-icon="monitor"></span> Saída do PC / YouTube
+              </button>
+              <button type="button" class="btn-source" id="btnSourceFile">
+                <span data-icon="folder-open"></span> Abrir Arquivo (.MP3/.WAV/.MP4)
+              </button>
+              <button type="button" class="btn-source btn-sim" id="btnSourceSim">
+                <span data-icon="sparkles"></span> Dar Play: Palestra Completa
+              </button>
+              <input type="file" id="localMediaFileInput" accept="audio/*,video/*" class="hidden">
+            </div>
+
+            <!-- STATUS DA FONTE E BOTÃO DE TRANSMISSÃO -->
+            <div class="source-status-row">
+              <span class="source-badge" id="activeSourceBadge">
+                <span data-icon="activity"></span> Fonte: Microfone / Interface Física
+              </span>
+              <button type="button" class="vmt-btn" id="btnTriggerSpeechTest" title="Envia uma frase de teste no palco">
+                <span data-icon="message-square"></span> 🧪 Testar Frase de Palco
+              </button>
+            </div>
+
             <div class="control-row">
               <button id="btnToggleBroadcast" class="vmt-btn vmt-primary btn-broadcast">
                 <span data-icon="play"></span> Iniciar Transmissão no Palco
               </button>
               <div class="audio-input-selector">
-                <label for="selAudioInput">Entrada de Áudio da Mesa:</label>
-                <select id="selAudioInput">
-                  <option value="default">Microfone / Linha Padrão (ASIO/WASAPI)</option>
-                </select>
+                <label for="selAudioInput">Interface de Áudio / Entrada:</label>
+                <div style="display:flex; gap:8px;">
+                  <select id="selAudioInput" style="flex:1;">
+                    <option value="default">Microfone / Linha Padrão (ASIO/WASAPI)</option>
+                  </select>
+                  <button type="button" class="vmt-btn" id="btnRefreshAudioDevices" title="Re-escanear dispositivos">🔄</button>
+                </div>
               </div>
             </div>
 
-            <!-- VU METERS ESTÉREO DE ALTA DEFINIÇÃO -->
+            <!-- SELEÇÃO DE CANAIS E SALA -->
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:18px;">
+              <div>
+                <label for="selAudioChannel" style="font-size:11px; color:var(--vmt-muted);">Roteamento de Canais:</label>
+                <select id="selAudioChannel" style="width:100%; font-size:12px;">
+                  <option value="mix" selected>Mix Estéreo L+R (Canais 1+2)</option>
+                  <option value="left">Canal 1 (Left / Entrada 1)</option>
+                  <option value="right">Canal 2 (Right / Entrada 2)</option>
+                </select>
+              </div>
+              <div>
+                <label for="inputRoomId" style="font-size:11px; color:var(--vmt-muted);">Sala do Palco:</label>
+                <input type="text" id="inputRoomId" value="palco1" style="width:100%; font-size:12px; font-family:monospace;">
+              </div>
+            </div>
+
+            <!-- PLAYER EMBUTIDO DE ARQUIVO LOCAL (MP3, WAV, MP4) -->
+            <div id="localMediaBox" class="local-media-card hidden">
+              <div class="local-media-header">
+                <span id="localMediaTitle" class="local-media-title">🎵 Nenhum arquivo carregado</span>
+                <span style="font-size:10px; color:var(--vmt-green);">● Alimentando Áudio & Tradução</span>
+              </div>
+              <audio id="localMediaAudio" controls></audio>
+              <small style="color:var(--vmt-muted); font-size:10px;">
+                Dê play no player acima: o áudio tocará na saída do computador, movimentará o VU Meter em tempo real e alimentará a IA.
+              </small>
+            </div>
+
+            <!-- BARRA DE PROGRESSO DA PALESTRA COMPLETA SIMULADA -->
+            <div id="simLectureBox" class="sim-lecture-card hidden">
+              <div class="sim-lecture-header">
+                <span id="simLectureStatusTitle">🎓 Reproduzindo Palestra Completa de Exemplo...</span>
+                <span id="simLectureProgressText" style="font-family:monospace;">Trecho 1/16 (6%)</span>
+              </div>
+              <div class="sim-lecture-bar-wrap">
+                <div id="simLectureProgressBar" class="sim-lecture-bar"></div>
+              </div>
+              <p id="simLectureCurrentText" class="sim-lecture-text">"Inicializando orador..."</p>
+            </div>
+
+            <!-- VU METERS ESTÉREO DE ALTA DEFINIÇÃO CONECTADOS AO WEB AUDIO ANALYSER -->
             <div class="vu-wrapper">
               <div class="vu-channel">
                 <span class="vu-label">L</span>
@@ -121,7 +191,7 @@
               </div>
               <div class="metric-card">
                 <span class="m-label">Latência Total Ponta a Ponta</span>
-                <strong class="m-val" id="metricLatency">~310ms</strong>
+                <strong class="m-val" id="metricLatency">~28ms</strong>
                 <small>Buffer + Inferência Local</small>
               </div>
               <div class="metric-card">
@@ -176,11 +246,13 @@
                   <span data-icon="save"></span> Salvar Perfil Vocal
                 </button>
               </div>
+              <div id="sampleRecordStatus" class="sample-status-text"></div>
+              <audio id="sampleAudioPlayer" class="hidden" controls style="margin-top:12px; width:100%;"></audio>
             </div>
 
             <div class="voice-sliders-grid">
               <div class="slider-group">
-                <label for="rangePitch">Afinação / Tom (Pitch): <span id="valPitch">0%</span></label>
+                <label for="rangePitch">Afinação / Tom (Pitch): <span id="valPitch">0 st</span></label>
                 <input type="range" id="rangePitch" min="-12" max="12" step="1" value="0">
               </div>
               <div class="slider-group">
@@ -190,6 +262,7 @@
               <div class="slider-group">
                 <label for="selTimbre">Timbre da Voz:</label>
                 <select id="selTimbre">
+                  <option value="auto_match" selected>Detecção Automática do Orador</option>
                   <option value="male_deep">Masculino Grave / Imponente</option>
                   <option value="female_warm">Feminino Quente / Corporativo</option>
                   <option value="neutral_tech">Neutro Tecnológico</option>
@@ -202,6 +275,13 @@
               <button type="button" class="vmt-btn vmt-primary" id="btnTestVoiceSynthesis">
                 <span data-icon="volume-2"></span> Testar Síntese de Voz com IA
               </button>
+            </div>
+
+            <div style="margin-top:24px;">
+              <h3 style="font-size:14px; margin-bottom:10px; color:var(--vmt-ink);">Perfis Vocais Salvos na Estação</h3>
+              <div id="savedProfilesList" class="saved-profiles-list">
+                <p style="font-size:12px; color:var(--vmt-muted); font-style:italic;">Nenhum perfil gravado ainda.</p>
+              </div>
             </div>
           </div>
         </div>
