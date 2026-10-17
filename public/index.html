@@ -534,7 +534,7 @@
 
       socket.onmessage = async (event) => {
         if (event.data instanceof ArrayBuffer) {
-          if (isPlaying && audioContext && currentChannel !== 'text') {
+          if (isPlaying && audioContext && currentChannel === 'original') {
             playRawPCM(event.data);
           }
           // Distribui para pares vizinhos na malha P2P
@@ -746,6 +746,8 @@
     function playRawPCM(arrayBuffer) {
       if (!audioContext) return;
       const u8 = new Uint8Array(arrayBuffer);
+      // Original audio is always framed. Never decode MP3/unknown bytes as PCM.
+      if(u8.length<6||u8[0]!==0xAA||![0,1,2].includes(u8[1]))return;
       let float32Data = null;
       let targetSampleRate = window.hostSampleRate || 16000;
 
@@ -981,8 +983,16 @@
     let isTtsPlaying = false;
     let currentTtsAudioEl = null;
     let ttsWatchdogTimer = null;
+    let ttsPlaybackGeneration = 0;
+    let activeTtsItem = null;
+    let currentTtsObjectUrl = null;
 
     function clearTtsAudioQueue() {
+      ttsPlaybackGeneration++;
+      for(const item of ttsAudioQueue)item.controller?.abort();
+      activeTtsItem?.controller?.abort();
+      activeTtsItem=null;
+      if(currentTtsObjectUrl){URL.revokeObjectURL(currentTtsObjectUrl);currentTtsObjectUrl=null;}
       ttsAudioQueue.length = 0;
       isTtsPlaying = false;
       if (ttsWatchdogTimer) {
@@ -991,8 +1001,10 @@
       }
       if (currentTtsAudioEl) {
         try {
+          currentTtsAudioEl.onended=null;
+          currentTtsAudioEl.onerror=null;
           currentTtsAudioEl.pause();
-          currentTtsAudioEl.src = '';
+          currentTtsAudioEl.removeAttribute('src');
         } catch(e) {}
         currentTtsAudioEl = null;
       }
@@ -1029,7 +1041,11 @@
         if (st) st.innerText = 'Ouvindo ao vivo (' + currentChannel + ')';
       }
 
-      ttsAudioQueue.push({ text: clean, lang });
+      const item={text:clean,lang,voice:currentSpeakerProfile?.voice||'male_deep',speed:currentSpeakerProfile?.speed||1.05,pitch:currentSpeakerProfile?.pitch||0,controller:new AbortController()};
+      const url=`/api/tts?room=${encodeURIComponent(roomId)}&lang=${encodeURIComponent(lang)}&text=${encodeURIComponent(clean)}&voice=${encodeURIComponent(item.voice)}&speed=${item.speed}&pitch=${item.pitch}`;
+      // Prefetch while the preceding sentence plays; playback still follows queue order.
+      item.prepared=fetch(url,{signal:AbortSignal.any([item.controller.signal,AbortSignal.timeout(20000)])}).then(async response=>{if(!response.ok||!String(response.headers.get('content-type')).startsWith('audio/'))throw Error('Síntese indisponível');const blob=await response.blob();if(blob.size<256)throw Error('Áudio vazio');return {blob};}).catch(error=>({error}));
+      ttsAudioQueue.push(item);
       if (!isTtsPlaying) {
         playNextTtsAudio();
       }
@@ -1055,80 +1071,69 @@
       }
     }
 
-    function playNextTtsAudio() {
-      if (ttsAudioQueue.length === 0) {
-        isTtsPlaying = false;
-        if (ttsWatchdogTimer) {
-          clearTimeout(ttsWatchdogTimer);
-          ttsWatchdogTimer = null;
-        }
-        currentTtsAudioEl = null;
-        return;
-      }
-
-      const item = ttsAudioQueue.shift();
-      if (!item || !item.text) {
+    async function playNextTtsAudio() {
+      if(isTtsPlaying)return;
+      const item=ttsAudioQueue.shift();
+      if(!item){currentTtsAudioEl=null;return;}
+      if(!isPlaying||item.lang!==currentChannel)return;
+      const generation=ttsPlaybackGeneration;
+      isTtsPlaying=true;
+      activeTtsItem=item;
+      let finished=false;
+      let fallingBack=false;
+      const audio=ensureSharedTtsPlayer();
+      const finishCurrent=()=>{
+        if(finished||generation!==ttsPlaybackGeneration)return;
+        finished=true;
+        clearTimeout(ttsWatchdogTimer);ttsWatchdogTimer=null;
+        audio.onended=null;audio.onerror=null;
+        audio.pause();
+        if(currentTtsObjectUrl){URL.revokeObjectURL(currentTtsObjectUrl);currentTtsObjectUrl=null;}
+        currentTtsAudioEl=null;activeTtsItem=null;isTtsPlaying=false;
         playNextTtsAudio();
-        return;
-      }
-
-      isTtsPlaying = true;
-      const voice = currentSpeakerProfile?.voice || 'male_deep';
-      const speed = currentSpeakerProfile?.speed || 1.05;
-      const pitch = parseFloat(currentSpeakerProfile?.pitch || 0);
-      const url = `/api/tts?room=${encodeURIComponent(roomId)}&lang=${encodeURIComponent(item.lang)}&text=${encodeURIComponent(item.text)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}`;
-      
-      // Utiliza o player compartilhado pré-desbloqueado no DOM para garantir compatibilidade com iOS Safari e Android
-      const audio = ensureSharedTtsPlayer();
+      };
+      const fallback=()=>{
+        if(finished||fallingBack||generation!==ttsPlaybackGeneration)return;
+        fallingBack=true;
+        audio.onended=null;audio.onerror=null;audio.pause();
+        clearTimeout(ttsWatchdogTimer);ttsWatchdogTimer=null;
+        speakTranslatedText(item.text,item.lang,finishCurrent);
+      };
+      const prepared=await item.prepared;
+      if(generation!==ttsPlaybackGeneration)return;
+      if(prepared.error){fallback();return;}
       setupTtsAudioGraph();
-      currentTtsAudioEl = audio;
-      audio.src = url;
-
-      // Equalização acústica sutil complementar ao modelo neural
-      applyVoiceProfileEq(voice);
-
-      // O servidor (Microsoft Edge Neural Studio) já sintetiza a voz masculina/feminina exata com Pitch (Hz) e Velocidade (%) via SSML!
-      // Mantemos preservesPitch = true para nunca distorcer o timbre neural.
-      audio.preservesPitch = true;
-      audio.mozPreservesPitch = true;
-      audio.webkitPreservesPitch = true;
-      const catchupRate = ttsAudioQueue.length > 1 ? 1.10 : 1.0;
-      audio.defaultPlaybackRate = catchupRate;
-      audio.playbackRate = catchupRate;
-
-      if (gainNode) {
-        audio.volume = gainNode.gain.value;
+      currentTtsAudioEl=audio;
+      currentTtsObjectUrl=URL.createObjectURL(prepared.blob);
+      audio.src=currentTtsObjectUrl;
+      applyVoiceProfileEq(item.voice);
+      audio.preservesPitch=true;audio.mozPreservesPitch=true;audio.webkitPreservesPitch=true;
+      // Speed is applied exactly once by the synthesizer, never again by backlog size.
+      audio.defaultPlaybackRate=1;audio.playbackRate=1;
+      audio.volume=1;
+      audio.onended=finishCurrent;
+      audio.onerror=fallback;
+      let lastPosition=-1,lastProgressAt=Date.now();
+      const watchProgress=()=>{
+        if(finished||generation!==ttsPlaybackGeneration)return;
+        if(audio.ended){finishCurrent();return;}
+        if(audio.currentTime>lastPosition){lastPosition=audio.currentTime;lastProgressAt=Date.now();}
+        if(Date.now()-lastProgressAt>20000){fallback();return;}
+        ttsWatchdogTimer=setTimeout(watchProgress,1000);
+      };
+      ttsWatchdogTimer=setTimeout(watchProgress,1000);
+      try{await audio.play();}catch(error){
+        if(generation!==ttsPlaybackGeneration||finished)return;
+        if(error.name==='NotAllowedError'){
+          clearTimeout(ttsWatchdogTimer);ttsWatchdogTimer=null;
+          audio.onended=null;audio.onerror=null;
+          if(currentTtsObjectUrl){URL.revokeObjectURL(currentTtsObjectUrl);currentTtsObjectUrl=null;}
+          activeTtsItem=null;currentTtsAudioEl=null;isTtsPlaying=false;
+          ttsAudioQueue.unshift(item);
+          const banner=document.getElementById('audioUnlockBanner');if(banner)banner.classList.remove('hidden');
+          const status=document.getElementById('playerStatus');if(status)status.textContent='Toque para liberar o áudio';
+        }else fallback();
       }
-
-      const finishCurrent = () => {
-        if (ttsWatchdogTimer) {
-          clearTimeout(ttsWatchdogTimer);
-          ttsWatchdogTimer = null;
-        }
-        currentTtsAudioEl = null;
-        isTtsPlaying = false;
-        playNextTtsAudio();
-      };
-
-      audio.onended = finishCurrent;
-      audio.onerror = (err) => {
-        console.warn('[Audio TTS] Falha no stream do servidor, utilizando síntese local como contingência:', err);
-        speakTranslatedText(item.text, item.lang);
-        finishCurrent();
-      };
-
-      // Watchdog para destravar a fila caso o navegador suspenda o evento ended
-      const maxMs = Math.max(3000, (item.text.length * 100) + 2000);
-      ttsWatchdogTimer = setTimeout(() => {
-        console.warn('[Audio TTS Watchdog] Liberando fila de áudio');
-        finishCurrent();
-      }, maxMs);
-
-      audio.play().catch(playErr => {
-        console.warn('[Audio TTS] Play bloqueado, fallback para sintetizador:', playErr);
-        speakTranslatedText(item.text, item.lang);
-        finishCurrent();
-      });
     }
 
     const speechQueue = [];
@@ -1169,18 +1174,10 @@
     let lastSpokenText = '';
     let lastSpokenTime = 0;
 
-    function speakTranslatedText(text, lang) {
-      if (!text || !('speechSynthesis' in window)) return;
-      
-      const clean = stripLangPrefix(text);
-      if (!clean) return;
-      // Não repete exatamente a mesma frase falada nos últimos 2.5 segundos
-      if (clean.toLowerCase() === lastSpokenText.toLowerCase() && (Date.now() - lastSpokenTime) < 2500) {
-        return;
-      }
-      lastSpokenText = clean;
-      lastSpokenTime = Date.now();
-
+    function speakTranslatedText(text, lang, onDone = null) {
+      if (!text || !('speechSynthesis' in window)) { if(onDone)onDone(); return; }
+      const clean=stripLangPrefix(text);
+      if(!clean){if(onDone)onDone();return;}
       // Se o usuário selecionou o canal de idioma mas ainda não clicou em play, ativa automaticamente
       if (!isPlaying) {
         ensureAudioContext();
@@ -1195,7 +1192,7 @@
         if (st) st.innerText = 'Ouvindo ao vivo (' + currentChannel + ')';
       }
 
-      speechQueue.push({ text: clean, lang });
+      speechQueue.push({ text: clean, lang, onDone });
 
       if (!isSpeaking) {
         playNextSpeech();
@@ -1203,6 +1200,7 @@
     }
 
     function playNextSpeech() {
+      if(isSpeaking)return;
       if (speechQueue.length === 0) {
         isSpeaking = false;
         if (speechWatchdogTimer) {
@@ -1256,7 +1254,7 @@
         const pitchSemitones = parseFloat(currentSpeakerProfile?.pitch || 0);
         utterance.pitch = Math.max(0.5, Math.min(1.8, Math.pow(2, pitchSemitones / 12)));
         const baseRate = currentSpeakerProfile?.speed || 1.05;
-        utterance.rate = speechQueue.length > 1 ? baseRate * 1.15 : baseRate;
+        utterance.rate = baseRate;
 
         if (gainNode) {
           utterance.volume = gainNode.gain.value;
@@ -1265,13 +1263,17 @@
         // CRÍTICO: Guarda referência no window para o Garbage Collector do Chrome NÃO matar o utterance
         window._activeUtterance = utterance;
 
+        let speechFinished=false;
         const onFinish = () => {
+          if(speechFinished||window._activeUtterance!==utterance)return;
+          speechFinished=true;
           if (speechWatchdogTimer) {
             clearTimeout(speechWatchdogTimer);
             speechWatchdogTimer = null;
           }
           window._activeUtterance = null;
           isSpeaking = false;
+          if(item.onDone)item.onDone();
           playNextSpeech();
         };
 
@@ -1283,10 +1285,10 @@
 
         // Watchdog de segurança para JAMAIS travar a fila se o Chrome esquecer de disparar o onend
         if (speechWatchdogTimer) clearTimeout(speechWatchdogTimer);
-        const maxExpectedMs = Math.max(2200, (item.text.length * 85) + 1200);
+        const maxExpectedMs = Math.max(60000, (item.text.length * 250) + 15000);
         speechWatchdogTimer = setTimeout(() => {
           console.warn('[TTS Watchdog] Forçando liberação da fila para:', item.text);
-          try { window.speechSynthesis.resume(); } catch(e){}
+          try { window.speechSynthesis.cancel(); } catch(e){}
           onFinish();
         }, maxExpectedMs);
 
@@ -1294,6 +1296,7 @@
       } catch (err) {
         console.error('[TTS] Falha ao falar:', err);
         isSpeaking = false;
+        if(item.onDone)item.onDone();
         playNextSpeech();
       }
     }

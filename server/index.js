@@ -964,6 +964,8 @@ app.post('/api/stt-chunk', express.raw({ type: 'audio/wav', limit: '5mb' }), asy
 // ----------------------------------------------------
 // WebSocket Server (Áudio Original + Tradução + Legendas)
 // ----------------------------------------------------
+const roomTranslationQueues = new Map();
+function enqueueRoomTranslation(roomId,task){const previous=roomTranslationQueues.get(roomId)||Promise.resolve();const current=previous.catch(()=>{}).then(task);roomTranslationQueues.set(roomId,current);current.finally(()=>{if(roomTranslationQueues.get(roomId)===current)roomTranslationQueues.delete(roomId)}).catch(()=>{});return current;}
 const roomAudioMeta = new Map(); // roomId -> { type: 'audio_meta', format, sampleRate, kbps, profileName }
 const roomSpeakerProfile = new Map(); // roomId -> { voice, pitch, speed }
 const roomLastFinalTranscript = new Map(); // roomId -> { text, time }
@@ -1194,6 +1196,7 @@ async function handleConnection(ws,req){
           }
 
           if (sttEvent.isFinal) {
+            await enqueueRoomTranslation(roomId,async()=>{
             const translations = await aiPipeline.translateText(sttEvent.text, targetLangs, glossary, null, roomId);
             await saveTranscript(roomId, sttEvent.text, translations);
 
@@ -1217,17 +1220,9 @@ async function handleConnection(ws,req){
               const speed = profile?.speed || 1.05;
               const pitch = profile?.pitch || 0;
 
-              getOrGenerateTts(lang, translatedText, voice, speed, pitch).then(ttsRes => {
-                const ttsAudioBuffer = ttsRes?.buffer;
-                if (ttsAudioBuffer) {
-                  for (const client of roomClients) {
-                    if (client.readyState === WebSocket.OPEN && client.channel === lang) {
-                      client.send(ttsAudioBuffer, { binary: true });
-                    }
-                  }
-                }
-              }).catch(() => {});
+              getOrGenerateTts(lang, translatedText, voice, speed, pitch).catch(() => {});
             }
+            });
           }
         });
       }).catch(()=>{});
@@ -1300,7 +1295,7 @@ async function handleConnection(ws,req){
           }
           roomLastFinalTranscript.set(roomId, { text: cleanText, time: Date.now() });
 
-          getRoom(roomId).then(async (room) => {
+          enqueueRoomTranslation(roomId,()=>getRoom(roomId).then(async (room) => {
             const targetLangs = room?.target_languages || ['en', 'es'];
             const glossary = room?.glossary || {};
 
@@ -1334,16 +1329,7 @@ async function handleConnection(ws,req){
               const speed = profile?.speed || 1.05;
               const pitch = profile?.pitch || 0;
 
-              getOrGenerateTts(lang, translatedText, voice, speed, pitch).then(ttsRes => {
-                const ttsAudioBuffer = ttsRes?.buffer;
-                if (ttsAudioBuffer) {
-                  for (const client of roomClients) {
-                    if (client.readyState === WebSocket.OPEN && client.channel === lang) {
-                      client.send(ttsAudioBuffer, { binary: true });
-                    }
-                  }
-                }
-              }).catch(() => {});
+              getOrGenerateTts(lang, translatedText, voice, speed, pitch).catch(() => {});
             };
 
             const translations = await aiPipeline.translateText(text, targetLangs, glossary, onLangReady, roomId);
@@ -1352,7 +1338,7 @@ async function handleConnection(ws,req){
             saveTranscript(roomId, text, translations).catch(err => {
               console.error('[DB] Erro não-bloqueante ao salvar transcrição:', err.message);
             });
-          }).catch(()=>{});
+          })).catch(()=>{});
         } else {
           // Tradução simultânea em tempo real da fala em andamento (isFinal: false) para exibição imediata nas legendas
           const cleanInterim = (text || '').trim();
