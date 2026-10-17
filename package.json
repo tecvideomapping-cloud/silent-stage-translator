@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test scripts/self-service*.test.js"
+    "desktop": "node desktop/main.js",
+    "test": "node --test scripts/*.test.js"
   },
   "keywords": [
     "silent-theater",

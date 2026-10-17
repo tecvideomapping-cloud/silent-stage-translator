@@ -1,0 +1,25 @@
+{
+  "key": "VMT-PRO-A798138C",
+  "customerId": "CLI-2026",
+  "company": "Produções de Eventos Pro",
+  "fingerprint": "B674BDDCBEF52F119FA7F3F6F0E104A8",
+  "hoursTotal": 5,
+  "hoursRemaining": 4.98,
+  "secondsConsumed": 60,
+  "maxListeners": 500,
+  "languages": [
+    "en",
+    "es",
+    "fr"
+  ],
+  "expiresAt": "2026-10-20T14:55:39.959Z",
+  "features": [
+    "multi_gpu",
+    "srt_export",
+    "stage_dsp",
+    "voice_cloning"
+  ],
+  "issuedAt": "2026-10-17T14:55:39.960Z",
+  "signature": "04dd08238aad29e920b30bdebd3e4eb6f876193279489ae30b74bae1856a9acb",
+  "lastRecordedTime": 1792248939972
+}

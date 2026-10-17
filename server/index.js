@@ -59,6 +59,7 @@ commerce.startWorkers();
 const adminSession = req => getSession(req.headers.authorization?.startsWith('Bearer ')?req.headers.authorization.slice(7):new URL(req.url,'http://localhost').searchParams.get('token'));
 const isAdminRequest = req => ['admin','superadmin'].includes(adminSession(req)?.role);
 const requireAdmin = [requireAuth,(req,res,next)=>['admin','superadmin'].includes(req.user.role)?next():res.status(403).json({error:'Acesso administrativo obrigatório.'})];
+app.use('/api/desktop', require('../desktop/desktop-api'));
 app.use('/api',commerce.router(requireAdmin));
 
 // Existing administrative endpoints must not become a route around customer ownership.

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Silent Stage AI | Workstation Pro Edition</title>
+  <link rel="stylesheet" href="/design-system.css">
+  <link rel="stylesheet" href="/desktop.css">
+  <script src="/design-system.js" defer></script>
+  <script src="/stage-dsp.js" defer></script>
+  <script src="/desktop.js" defer></script>
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
+</head>
+<body class="vmt-app desktop-app">
+
+  <!-- BARRA DE TELEMETRIA DE HARDWARE & STATUS SUPERIOR -->
+  <header class="desktop-header">
+    <div class="header-left">
+      <div class="vmt-brand">
+        <span class="vmt-brand-mark"><span data-icon="audio-lines"></span></span>
+        <span>VIDEOMAPPINGTECH<small>SILENT STAGE AI · WORKSTATION PRO</small></span>
+      </div>
+      <div class="telemetry-chips">
+        <span class="chip chip-gpu" id="chipGpu">
+          <span data-icon="sparkles"></span>
+          <strong id="gpuNameText">NVIDIA RTX Detectando...</strong>
+          <span class="metric-val" id="gpuMetricText">-- MB VRAM • --°C</span>
+        </span>
+        <span class="chip chip-audio" id="chipAudio">
+          <span data-icon="mic"></span>
+          <span id="audioDriverText">ASIO / WASAPI Event-Driven</span>
+          <span class="metric-val" id="audioLatencyText">~2.6ms buffer</span>
+        </span>
+        <span class="chip chip-license" id="chipLicense">
+          <span data-icon="key-round"></span>
+          <span id="licenseStatusText">Licença: Carregando...</span>
+          <strong id="licenseHoursText">--:--:--</strong>
+        </span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <span class="badge-lan" id="badgeLanMode">
+        <span class="pulse-dot"></span> Modo Offline (LAN Pavilhão)
+      </span>
+      <button type="button" class="vmt-theme-toggle" data-theme-toggle aria-label="Alternar tema"></button>
+    </div>
+  </header>
+
+  <!-- WORKSPACE CONTAINER & NAVEGAÇÃO DE ABAS -->
+  <div class="desktop-shell">
+    <nav class="desktop-nav" role="tablist">
+      <button class="nav-tab active" data-tab="live" role="tab" aria-selected="true">
+        <span data-icon="radio"></span> Palco Ao Vivo
+      </button>
+      <button class="nav-tab" data-tab="cloning" role="tab" aria-selected="false">
+        <span data-icon="sparkles"></span> Clonagem & Vozes
+      </button>
+      <button class="nav-tab" data-tab="dsp" role="tab" aria-selected="false">
+        <span data-icon="sliders-horizontal"></span> Filtro DSP & Ruído
+      </button>
+      <button class="nav-tab" data-tab="transcripts" role="tab" aria-selected="false">
+        <span data-icon="captions"></span> Transcrição & Dublagem
+      </button>
+      <button class="nav-tab" data-tab="hardware" role="tab" aria-selected="false">
+        <span data-icon="monitor"></span> Hardware & Topologia
+      </button>
+      <button class="nav-tab" data-tab="branding" role="tab" aria-selected="false">
+        <span data-icon="layers-2"></span> Identidade & Participantes
+      </button>
+      <button class="nav-tab" data-tab="projection" role="tab" aria-selected="false">
+        <span data-icon="maximize"></span> Telão & NDI
+      </button>
+      <button class="nav-tab" data-tab="license" role="tab" aria-selected="false">
+        <span data-icon="key-round"></span> Licença & Recarga
+      </button>
+    </nav>
+
+    <main class="desktop-content">
+      <!-- 1. ABA: PALCO AO VIVO -->
+      <section id="tab-live" class="tab-pane active" role="tabpanel">
+        <div class="stage-grid">
+          <div class="panel vmt-glass stage-control-panel">
+            <div class="panel-header">
+              <h2>Mesa de Transmissão de Palco</h2>
+              <span class="status-badge" id="liveStatusBadge">PRONTO PARA ENTRAR NO AR</span>
+            </div>
+
+            <div class="control-row">
+              <button id="btnToggleBroadcast" class="vmt-btn vmt-primary btn-broadcast">
+                <span data-icon="play"></span> Iniciar Transmissão no Palco
+              </button>
+              <div class="audio-input-selector">
+                <label for="selAudioInput">Entrada de Áudio da Mesa:</label>
+                <select id="selAudioInput">
+                  <option value="default">Microfone / Linha Padrão (ASIO/WASAPI)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- VU METERS ESTÉREO DE ALTA DEFINIÇÃO -->
+            <div class="vu-wrapper">
+              <div class="vu-channel">
+                <span class="vu-label">L</span>
+                <div class="vu-track"><div class="vu-bar" id="vuBarL"></div></div>
+                <span class="vu-db" id="vuDbL">-inf dB</span>
+              </div>
+              <div class="vu-channel">
+                <span class="vu-label">R</span>
+                <div class="vu-track"><div class="vu-bar" id="vuBarR"></div></div>
+                <span class="vu-db" id="vuDbR">-inf dB</span>
+              </div>
+            </div>
+
+            <!-- ESTATÍSTICAS EM TEMPO REAL -->
+            <div class="metrics-grid">
+              <div class="metric-card">
+                <span class="m-label">Ouvintes na Rede Local</span>
+                <strong class="m-val" id="metricListeners">0</strong>
+                <small>Conexões Wi-Fi P2P Mesh</small>
+              </div>
+              <div class="metric-card">
+                <span class="m-label">Latência Total Ponta a Ponta</span>
+                <strong class="m-val" id="metricLatency">~310ms</strong>
+                <small>Buffer + Inferência Local</small>
+              </div>
+              <div class="metric-card">
+                <span class="m-label">Buffer de Captura</span>
+                <strong class="m-val" id="metricBuffer">2.6ms</strong>
+                <small>128 samples @ 48 kHz</small>
+              </div>
+              <div class="metric-card">
+                <span class="m-label">Canais Ativos</span>
+                <strong class="m-val" id="metricChannels">3</strong>
+                <small>PT (Palco) · EN · ES</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- TELÃO PREVIEW LATERAL -->
+          <div class="panel vmt-glass screen-preview-panel">
+            <div class="panel-header">
+              <h3>Preview do Telão de Palco</h3>
+              <button class="vmt-btn" id="btnOpenScreenWindow"><span data-icon="maximize"></span> Projetar no 2º Monitor</button>
+            </div>
+            <div class="screen-monitor">
+              <div class="screen-safe-area">
+                <div class="stage-subtitles-box" id="screenSubtitleBox">
+                  <p class="sub-line sub-primary" id="subPrimaryText">Aguardando início do áudio no palco...</p>
+                  <p class="sub-line sub-secondary" id="subSecondaryText">Waiting for stage audio transmission to begin...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. ABA: CLONAGEM & VOZES (VoiceStudio) -->
+      <section id="tab-cloning" class="tab-pane" role="tabpanel">
+        <div class="voice-studio-grid">
+          <div class="panel vmt-glass">
+            <h2>Estúdio de Clonagem Vocal (VoiceStudio Engine)</h2>
+            <p class="vmt-muted">Capture 5 segundos da voz do palestrante para sintetizar traduções preservando o timbre natural.</p>
+
+            <div class="sample-recorder-box">
+              <canvas id="waveformCanvas" class="waveform-canvas" width="600" height="100"></canvas>
+              <div class="recorder-actions">
+                <button type="button" class="vmt-btn vmt-primary" id="btnRecordSample">
+                  <span data-icon="mic"></span> Gravar Amostra (5s)
+                </button>
+                <button type="button" class="vmt-btn" id="btnPlaySample" disabled>
+                  <span data-icon="play"></span> Ouvir Amostra
+                </button>
+                <input type="text" id="speakerProfileName" placeholder="Nome do Palestrante (ex: Dr. Carlos)" value="Palestrante Principal">
+                <button type="button" class="vmt-btn" id="btnSaveVoiceProfile">
+                  <span data-icon="save"></span> Salvar Perfil Vocal
+                </button>
+              </div>
+            </div>
+
+            <div class="voice-sliders-grid">
+              <div class="slider-group">
+                <label for="rangePitch">Afinação / Tom (Pitch): <span id="valPitch">0%</span></label>
+                <input type="range" id="rangePitch" min="-12" max="12" step="1" value="0">
+              </div>
+              <div class="slider-group">
+                <label for="rangeSpeed">Velocidade da Fala: <span id="valSpeed">1.05x</span></label>
+                <input type="range" id="rangeSpeed" min="0.75" max="1.4" step="0.05" value="1.05">
+              </div>
+              <div class="slider-group">
+                <label for="selTimbre">Timbre da Voz:</label>
+                <select id="selTimbre">
+                  <option value="male_deep">Masculino Grave / Imponente</option>
+                  <option value="female_warm">Feminino Quente / Corporativo</option>
+                  <option value="neutral_tech">Neutro Tecnológico</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="voice-test-row">
+              <input type="text" id="voiceTestPhrase" value="Welcome to our annual innovation summit in São Paulo.">
+              <button type="button" class="vmt-btn vmt-primary" id="btnTestVoiceSynthesis">
+                <span data-icon="volume-2"></span> Testar Síntese de Voz com IA
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. ABA: FILTRO DSP & RUÍDO -->
+      <section id="tab-dsp" class="tab-pane" role="tabpanel">
+        <div class="dsp-grid">
+          <div class="panel vmt-glass">
+            <h2>Processamento de Áudio de Palco (DSP & Noise Gate)</h2>
+            <p class="vmt-muted">Elimina ruídos de ar condicionado, ressonâncias de graves e vazamentos da plateia.</p>
+
+            <div class="dsp-preset-selector">
+              <label>Preset Rápido de Palco:</label>
+              <div class="preset-buttons">
+                <button class="vmt-btn active" data-preset="stage_mic">Microfone de Palco / Lapela</button>
+                <button class="vmt-btn" data-preset="direct">Mesa Digital / Linha Direta</button>
+                <button class="vmt-btn" data-preset="noisy_hall">Galpão / Pavilhão Ruidoso</button>
+              </div>
+            </div>
+
+            <div class="dsp-controls-grid">
+              <div class="dsp-box">
+                <h3>1. High-Pass Filter (Rumble Cut)</h3>
+                <p>Corte de frequências subsônicas abaixo de 80Hz para limpar passos e ventilação.</p>
+                <div class="status-indicator-box">
+                  <span class="active-badge">ATIVO (80 Hz Butterworth)</span>
+                </div>
+              </div>
+
+              <div class="dsp-box">
+                <h3>2. Noise Gate Dinâmico com Histerese</h3>
+                <label for="rangeGateThresh">Limiar do Gate (Threshold): <span id="valGateThresh">-38 dB</span></label>
+                <input type="range" id="rangeGateThresh" min="-60" max="-15" step="1" value="-38">
+
+                <div class="gate-status-row">
+                  <span>Estado do Gate:</span>
+                  <span class="gate-pill open" id="gateStatePill">ABERTO (FALANDO)</span>
+                </div>
+              </div>
+
+              <div class="dsp-box">
+                <h3>3. Compressor de Dinâmica & Limiter</h3>
+                <p>Mantém volume constante e previne estouros e distorções digitais.</p>
+                <div class="status-indicator-box">
+                  <span class="active-badge">LIMITER TETO -0.5 dBFS</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. ABA: TRANSCRIÇÃO & DUBLAGEM -->
+      <section id="tab-transcripts" class="tab-pane" role="tabpanel">
+        <div class="panel vmt-glass transcripts-panel">
+          <div class="panel-header">
+            <h2>Histórico de Falas & Dublagem Sincronizada</h2>
+            <div class="export-actions">
+              <button class="vmt-btn" id="btnExportTxt"><span data-icon="copy"></span> Exportar (.TXT)</button>
+              <button class="vmt-btn vmt-primary" id="btnExportSrt"><span data-icon="captions"></span> Exportar Legendas (.SRT)</button>
+            </div>
+          </div>
+
+          <div class="transcript-table-wrapper">
+            <table class="transcript-table">
+              <thead>
+                <tr>
+                  <th width="100">Horário</th>
+                  <th width="45%">Palco Original (PT)</th>
+                  <th width="45%">Tradução Sincronizada (EN/ES)</th>
+                </tr>
+              </thead>
+              <tbody id="transcriptBody">
+                <tr>
+                  <td>14:00:01</td>
+                  <td>Bem-vindos ao fórum internacional de inovação e inteligência artificial.</td>
+                  <td>Welcome to the international innovation and artificial intelligence forum.</td>
+                </tr>
+                <tr>
+                  <td>14:00:08</td>
+                  <td>Hoje apresentamos a tradução simultânea no palco sem cabines físicas.</td>
+                  <td>Today we present simultaneous stage translation without physical booths.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. ABA: HARDWARE & TOPOLOGIA -->
+      <section id="tab-hardware" class="tab-pane" role="tabpanel">
+        <div class="panel vmt-glass">
+          <div class="panel-header">
+            <h2>Diagnóstico de Hardware & Aceleração Local</h2>
+            <button class="vmt-btn" id="btnRefreshHardware"><span data-icon="radio"></span> Re-escanear Dispositivos</button>
+          </div>
+
+          <div class="hw-summary-grid" id="hwSummaryGrid">
+            <!-- Inserido dinamicamente via JS -->
+            <p class="vmt-muted">Sondando topologia de hardware (GPUs, ASIO e CPU)...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. ABA: IDENTIDADE & PARTICIPANTES (COM SIMULADOR MOBILE) -->
+      <section id="tab-branding" class="tab-pane" role="tabpanel">
+        <div class="branding-stage-grid">
+          <div class="panel vmt-glass branding-form-panel">
+            <h2>Identidade da Sala dos Participantes</h2>
+            <p class="vmt-muted">Personalize o aplicativo que o público acessa nos smartphones.</p>
+
+            <form id="desktopBrandingForm">
+              <label>Nome do Evento:
+                <input type="text" id="brandEventName" value="Congresso Global de Tecnologia 2026">
+              </label>
+
+              <div class="brand-colors-row">
+                <label>Cor Principal:
+                  <input type="color" id="brandColorPrimary" value="#06b6d4">
+                </label>
+                <label>Cor Secundária:
+                  <input type="color" id="brandColorSecondary" value="#3b82f6">
+                </label>
+                <label>Fundo da Sala:
+                  <input type="color" id="brandColorBg" value="#020617">
+                </label>
+              </div>
+
+              <div class="brand-upload-row">
+                <label>URL / Logo do Evento:
+                  <input type="text" id="brandLogoUrl" placeholder="https://.../logo.png ou /uploads/logo.png">
+                </label>
+                <label>URL / Banner Superior:
+                  <input type="text" id="brandBannerUrl" placeholder="https://.../banner.png ou /uploads/banner.png">
+                </label>
+              </div>
+
+              <div class="kit-action-box">
+                <button type="button" class="vmt-btn vmt-primary" id="btnGenerateStageKit">
+                  <span data-icon="qr-code"></span> Gerar Kit de Mesa com QR Code
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- SIMULADOR DE SMARTPHONE EM TEMPO REAL -->
+          <div class="phone-simulator-panel">
+            <span class="vmt-eyebrow">PRÉ-VISUALIZAÇÃO EM TEMPO REAL</span>
+            <div class="smartphone-frame">
+              <div class="phone-notch"></div>
+              <div class="phone-screen" id="simPhoneScreen">
+                <div class="sim-header" id="simHeader">
+                  <img id="simLogo" src="" alt="Logo" class="hidden">
+                  <strong id="simTitle">Palestra Ao Vivo</strong>
+                  <span class="sim-pill">⚡ 28ms</span>
+                </div>
+                <div class="sim-banner hidden" id="simBanner"></div>
+                <div class="sim-content">
+                  <div class="sim-card-channel active">
+                    <span>🎙️ Áudio Original (Palco)</span>
+                    <small>0ms latência</small>
+                  </div>
+                  <div class="sim-card-channel">
+                    <span>🌐 Inglês (EN-US)</span>
+                    <small>Voz Neural Clonada</small>
+                  </div>
+                  <div class="sim-sub-box">
+                    <span class="sim-sub-tag">LEGENDA AO VIVO</span>
+                    <p id="simSubText">"Tradução simultânea com IA no smartphone."</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. ABA: TELÃO & PROJEÇÃO NDI -->
+      <section id="tab-projection" class="tab-pane" role="tabpanel">
+        <div class="panel vmt-glass projection-panel">
+          <h2>Configuração de Telão & Transmissão de Vídeo</h2>
+          <p class="vmt-muted">Controle as saídas para painéis de LED, projetores e mesas de corte (vMix / OBS / Tricaster).</p>
+
+          <div class="projection-grid">
+            <div class="proj-card">
+              <h3>Saída HDMI / DisplayPort (Tela Secundária)</h3>
+              <p>Abre uma janela de legenda translúcida sem bordas no segundo monitor conectado.</p>
+              <button class="vmt-btn vmt-primary" id="btnLaunchProjector"><span data-icon="maximize"></span> Lançar em Tela Cheia</button>
+            </div>
+
+            <div class="proj-card">
+              <h3>Feed NDI com Transparência (Alpha Channel)</h3>
+              <p>Envia a legenda como camada gráfica via rede Ethernet para mesas de corte de vídeo.</p>
+              <button class="vmt-btn" id="btnToggleNdi"><span data-icon="wifi"></span> Ativar Saída NDI</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 8. ABA: LICENÇA & RECARGA RÁPIDA -->
+      <section id="tab-license" class="tab-pane" role="tabpanel">
+        <div class="panel vmt-glass license-panel">
+          <div class="panel-header">
+            <h2>Licenciamento On-Demand & Recarga no Palco</h2>
+            <span class="lease-badge" id="leaseTypeBadge">Lease Criptográfico Ed25519</span>
+          </div>
+
+          <div class="license-form-grid">
+            <div class="license-info-card">
+              <span class="vmt-eyebrow">CHAVE ATIVA NO HARDWARE</span>
+              <div class="vmt-password-field">
+                <input type="password" id="inputLicenseKey" placeholder="VMT-PRO-XXXX-XXXX-XXXX">
+              </div>
+              <button class="vmt-btn vmt-primary" id="btnActivateKey">Validar e Ativar Chave</button>
+              <div id="licenseDetailsBox" class="license-details"></div>
+            </div>
+
+            <div class="upsell-stage-card">
+              <span class="vmt-eyebrow">RECARGA RÁPIDA DE HORAS (PIX DIRETO NO PALCO)</span>
+              <p>Adicione mais horas de transmissão sem interromper o áudio dos participantes.</p>
+              <div class="upsell-options">
+                <button class="vmt-btn" data-hours="2">+2 Horas (R$ 180,00)</button>
+                <button class="vmt-btn" data-hours="4">+4 Horas (R$ 320,00)</button>
+                <button class="vmt-btn" data-hours="8">Diária Completa 8h (R$ 550,00)</button>
+              </div>
+
+              <div id="pixCheckoutBox" class="pix-box hidden">
+                <img id="pixQrImg" alt="QR Code PIX">
+                <div class="pix-code-row">
+                  <input type="text" id="pixPayloadInput" readonly>
+                  <button class="vmt-btn" id="btnCopyPix"><span data-icon="copy"></span> Copiar</button>
+                </div>
+                <button class="vmt-btn vmt-primary" id="btnSimulatePixPayment">Confirmar Pagamento e Liberar Horas</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+</body>
+</html>
