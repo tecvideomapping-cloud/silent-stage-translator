@@ -88,7 +88,11 @@
 .access-content>p { font-size:14px; }
 .access-form { display:flex; flex-direction:column; gap:25px; margin-top:38px; }
 .access-form label { margin-bottom:10px!important; display:block; font-weight:500!important; }
-.vmt-login .access-form input { width:100%; padding:15px; min-height:52px; font-family:inherit; }
+.vmt-login .access-form input:not([type="checkbox"]):not([type="radio"]) { width:100%; padding:15px; min-height:52px; font-family:inherit; }
+.access-options { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px 16px; font-size:12px; color:var(--vmt-muted); }
+.access-form .access-remember { display:inline-flex; align-items:center; gap:8px; margin:0!important; min-height:32px; cursor:pointer; white-space:nowrap; }
+.vmt-login .access-form .access-remember input { width:18px; height:18px; min-width:18px; min-height:18px; margin:0; padding:0; flex:0 0 18px; accent-color:var(--vmt-accent); cursor:pointer; }
+.access-options a { color:var(--vmt-accent); white-space:nowrap; text-decoration:none; }
 .access-form button[type="submit"] { width:100%; min-height:52px; margin-top:4px; }
 .access-protection { display:flex; gap:8px; color:var(--vmt-muted); font-size:11px; margin-top:30px; align-items:center; justify-content:center; text-align:center; }
 .access-protection svg { width:14px!important; height:14px!important; }
