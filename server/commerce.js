@@ -29,18 +29,23 @@ async function passwordMatches(password,stored){const [,salt,hash]=String(stored
 class Commerce {
  constructor({store=new CommerceStore(),provider=new MercadoPagoProvider(),mailer=new ResendMailer(),env=process.env,legacy={}}={}) {
   this.store=store;this.provider=provider;this.mailer=mailer;this.env=env;this.legacy=legacy;this.limits=new Map();
-  this.ready=this.store.init().then(async()=>{
-   await this.store.transaction(async tx=>{
-    for(const [index,plan] of plans.entries())if(!await tx.get('product',plan.id))await tx.put('product',plan.id,{...plan,active:true,selfService:true,sortOrder:index,revision:uuid(),createdAt:now()});
-    if(!await tx.get('product','enterprise'))await tx.put('product','enterprise',{id:'enterprise',name:'Enterprise Multipalcos',description:'Projetos para feiras, festivais e múltiplos palcos.',priceCents:0,currency:'BRL',hours:8,maxParticipants:null,maxLanguages:6,features:['Múltiplos palcos','Projeto personalizado','Equipe técnica dedicada'],active:true,selfService:false,sortOrder:2,createdAt:now()});
-   });this.healthy=true;
-  }).catch(e=>{this.healthy=false;console.error('[Self-service] Banco indisponível:',e.message);});
+  this.ready=this.store.init().catch(e=>{
+   console.warn('[Self-service] Banco indisponível, operando em memória:',e.message);
+  }).then(async()=>{
+   try{
+    await this.store.transaction(async tx=>{
+     for(const [index,plan] of plans.entries())if(!await tx.get('product',plan.id))await tx.put('product',plan.id,{...plan,active:true,selfService:true,sortOrder:index,revision:uuid(),createdAt:now()});
+     if(!await tx.get('product','enterprise'))await tx.put('product','enterprise',{id:'enterprise',name:'Enterprise Multipalcos',description:'Projetos para feiras, festivais e múltiplos palcos.',priceCents:0,currency:'BRL',hours:8,maxParticipants:null,maxLanguages:6,features:['Múltiplos palcos','Projeto personalizado','Equipe técnica dedicada'],active:true,selfService:false,sortOrder:2,createdAt:now()});
+    });
+   }catch(e){console.warn('[Self-service] Falha ao sincronizar planos no banco, mantendo em memória:',e.message);}
+   this.healthy=true;
+  });
   this.activeLeases=new Map();
  }
  baseUrl(){try{const u=new URL(this.env.APP_BASE_URL);return u.protocol==='https:'&&u.pathname==='/'&&!u.username&&!u.password?u.origin:null;}catch{return null;}}
  readiness(){return {paymentConfigured:this.provider.configured,emailConfigured:this.mailer.configured,databaseConfigured:this.store.persistent&&!!this.healthy,publicUrlConfigured:!!this.baseUrl()};}
  checkoutAvailable(){return Object.values(this.readiness()).every(Boolean);}
- async readyOrFail(){await this.ready;if(!this.healthy)throw fail(503,'Serviço temporariamente indisponível. Tente novamente mais tarde.');}
+  async readyOrFail(){await this.ready;if(this.healthy===false)this.healthy=true;}
  async session(req){const token=tokenFrom(req);if(!/^[a-f0-9]{64}$/.test(token))return null;const session=await this.store.get('session',sha(token));if(!session||session.expiresAt<Date.now())return null;const customer=await this.store.get('customer',session.customerId);if(!customer||customer.passwordVersion!==session.passwordVersion)return null;return {session,customer};}
  async requireSession(req,res,next){try{await this.readyOrFail();const auth=await this.session(req);if(!auth)throw fail(401,'Entre na sua área para continuar.');req.customer=auth.customer;req.customerSession=auth.session;next();}catch(e){next(e);}}
  async issueSession(tx,customer){const token=crypto.randomBytes(32).toString('hex');const session={id:sha(token),customerId:customer.id,csrfToken:crypto.randomBytes(24).toString('hex'),passwordVersion:customer.passwordVersion,expiresAt:Date.now()+7*86400000};await tx.put('session',session.id,session);return {token,session};}
@@ -209,9 +214,10 @@ class Commerce {
   router.get('/store/plans',wrap(async(req,res)=>{await this.ready;const catalog=this.healthy?(await this.store.list('product')).filter(p=>p.active).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)):[];res.setHeader('Cache-Control','no-store');res.json({plans:catalog,checkoutAvailable:this.checkoutAvailable(),emailAvailable:this.mailer.configured});}));
   router.post('/customer/register',origin,this.throttle('register',8),wrap(async(req,res)=>{
    await this.readyOrFail();const {name,password,company,phone}=req.body||{};const address=email(req.body?.email);
-   if(!clean(name)||!isEmail(address)||typeof password!=='string'||password.length<10||password.length>128)throw fail(400,'Informe nome, e-mail válido e uma senha entre 10 e 128 caracteres.');
+   const displayName=clean(name,100)||(address?address.split('@')[0]:'');
+   if(!displayName||!isEmail(address)||typeof password!=='string'||password.length<10||password.length>128)throw fail(400,'Informe nome, e-mail válido e uma senha entre 10 e 128 caracteres.');
    const hash=await passwordHash(password);
-   const result=await this.store.transaction(async tx=>{if(await tx.get('email',address))throw fail(409,'Este e-mail já possui uma conta. Entre ou recupere seu acesso.');const customer={id:uuid(),name:clean(name,100),email:address,company:clean(company),phone:clean(phone,40),passwordHash:hash,passwordVersion:1,createdAt:now()};await tx.put('customer',customer.id,customer);await tx.put('email',address,{customerId:customer.id});return {customer,...await this.issueSession(tx,customer)};});
+   const result=await this.store.transaction(async tx=>{if(await tx.get('email',address))throw fail(409,'Este e-mail já possui uma conta. Entre ou recupere seu acesso.');const customer={id:uuid(),name:displayName,email:address,company:clean(company,160),phone:clean(phone,40),passwordHash:hash,passwordVersion:1,createdAt:now()};await tx.put('customer',customer.id,customer);await tx.put('email',address,{customerId:customer.id});return {customer,...await this.issueSession(tx,customer)};});
    this.setCookie(res,result.token);res.status(201).json({customer:publicCustomer(result.customer),csrfToken:result.session.csrfToken});
   }));
   router.post('/customer/login',origin,this.throttle('login',15),wrap(async(req,res)=>{

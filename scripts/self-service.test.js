@@ -104,3 +104,32 @@ test('falha no Resend permanece na fila e pode ser retomada',async()=>{
  await commerce.drainOutbox();const queued=await store.get('outbox','test-email');assert.equal(queued.status,'pending');assert.equal(queued.attempts,1);assert.ok(queued.dueAt>Date.now());
  await store.transaction(async tx=>{const item=await tx.get('outbox','test-email');item.dueAt=0;await tx.put('outbox',item.id,item);});mailer.send=async()=>({id:'resent-test'});await commerce.drainOutbox();assert.equal((await store.get('outbox','test-email')).status,'sent');assert.equal((await store.get('order','email-order')).emailStatus,'sent');
 });
+
+test('resiliência de cadastro: funciona sem banco e com pool com falha',async()=>{
+ const failingPool={
+  query:async()=>{throw new Error('Connection refused');},
+  connect:async()=>{throw new Error('Connection refused');}
+ };
+ const store=new CommerceStore({pool:failingPool});
+ const commerce=new Commerce({store,env:{}});
+ await commerce.ready;
+ const app=express();app.use(express.json());
+ app.use('/api',commerce.router(()=>{}));
+ const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+ const base='http://127.0.0.1:'+server.address().port;
+ try{
+  const res=await fetch(base+'/api/customer/register',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({email:'fallback@example.test',password:'Senha-Forte-2026'})
+  });
+  assert.equal(res.status,201);
+  const data=await res.json();
+  assert.equal(data.customer.email,'fallback@example.test');
+  assert.equal(data.customer.name,'fallback');
+ }finally{
+  commerce.stopWorkers();
+  await new Promise(r=>server.close(r));
+ }
+});
+

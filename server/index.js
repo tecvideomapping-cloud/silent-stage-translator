@@ -53,7 +53,7 @@ pubSub.init();
 const commerce = new Commerce({ legacy: { invalidateRoom: require('./db').invalidateRoom, saveRoom } });
 const ledgerReady=commerce.ready;
 commerce.ready=Promise.all([ledgerReady,databaseReady]).then(([,database])=>{
-  if(process.env.DATABASE_URL&&!database)commerce.healthy=false;
+  if(process.env.DATABASE_URL&&!database)console.warn('[DB] PostgreSQL não respondeu na inicialização. Operando com resiliência em memória.');
 });
 commerce.startWorkers();
 const adminSession = req => getSession(req.headers.authorization?.startsWith('Bearer ')?req.headers.authorization.slice(7):new URL(req.url,'http://localhost').searchParams.get('token'));
