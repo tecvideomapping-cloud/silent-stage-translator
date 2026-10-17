@@ -11,7 +11,7 @@
 class StageAudioDSP {
   constructor(audioContext) {
     this.ctx = audioContext;
-    this.mode = 'stage_mic'; // 'direct' | 'stage_mic' | 'noisy_hall'
+    this.mode = 'direct'; // 'direct' (puro/transparente sem cortes) | 'stage_mic' | 'noisy_hall'
     this.gateThresholdDb = -42; // Limiar de corte do portão em dB
     this.gateHysteresisDb = 4; // Histerese para evitar trepidação (chattering)
     this.gateFloorGain = 0.08; // Atenuação de ~-22dB durante pausas (não silêncio digital artificial)

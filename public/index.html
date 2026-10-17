@@ -426,25 +426,12 @@
         updateP2PBadge();
       };
       dc.onmessage = (e) => {
-        // Recebeu chunk de áudio PCM diretamente de um par (P2P - Zero consumo de banda do servidor!)
-        if (e.data instanceof ArrayBuffer) {
-          if (isPlaying && audioContext && currentChannel === 'original') {
-            playRawPCM(e.data);
-          }
-          // Retransmite para outros vizinhos na malha (Mesh Gossip)
-          relayAudioP2P(e.data, peerId);
-        }
+        // P2P DataChannel reservado para dados leves/telemetria (áudio 100% via WebSocket direto)
       };
     }
 
     function relayAudioP2P(arrayBuffer, excludePeerId = null) {
-      for (const [peerId, conn] of peerConnections.entries()) {
-        if (peerId !== excludePeerId && conn.dc && conn.dc.readyState === 'open') {
-          try {
-            conn.dc.send(arrayBuffer);
-          } catch (e) {}
-        }
-      }
+      // Desativado: áudio direto do servidor garante zero eco, zero duplicação e zero chiado
     }
 
     async function handleP2PSignal(fromClientId, signal) {
@@ -761,24 +748,16 @@
       let float32Data = null;
       let targetSampleRate = window.hostSampleRate || 16000;
 
-      // Medição contínua de Jitter entre pacotes
-      const perfNow = performance.now();
-      if (lastPacketArrivalPerfMs > 0) {
-        const deltaMs = perfNow - lastPacketArrivalPerfMs;
-        // Pacotes chegam tipicamente a cada ~128ms; desvios grandes indicam jitter da rede
-        const dev = Math.abs(deltaMs - 128);
-        packetJitterEwmaMs = (packetJitterEwmaMs * 0.85) + (dev * 0.15);
-      }
-      lastPacketArrivalPerfMs = perfNow;
-
-      // Verifica se o pacote possui cabeçalho de compressão dinâmica (0xAA)
+      // Verifica se o pacote possui cabeçalho de compressão (0xAA)
       if (u8.length >= 4 && u8[0] === 0xAA) {
         const codecId = u8[1];
-        targetSampleRate = u8[2] | (u8[3] << 8);
-        if (targetSampleRate < 4000 || targetSampleRate > 48000) targetSampleRate = 16000;
+        const packetRate = u8[2] | (u8[3] << 8);
+        if (packetRate >= 8000 && packetRate <= 48000) {
+          targetSampleRate = packetRate;
+        }
 
         if (codecId === 1) {
-          // G.711 μ-law (Compressão Acústica / Degrade Quality Stateless)
+          // G.711 μ-law
           const numSamples = u8.length - 4;
           float32Data = new Float32Array(numSamples);
           for (let i = 0; i < numSamples; i++) {
@@ -794,21 +773,21 @@
             float32Data[i * 2 + 1] = decodeAdpcmNibble((byte >> 4) & 0x0F);
           }
         } else {
-          // PCM16 Linear Sem Compressão
-          const sampleCount = Math.floor((arrayBuffer.byteLength - 4) / 2);
-          const int16View = new Int16Array(arrayBuffer, 4, sampleCount);
+          // PCM16 Linear Puro Sem Compressão (Fidelidade Máxima)
+          const sampleCount = Math.floor((u8.length - 4) / 2);
           float32Data = new Float32Array(sampleCount);
+          const dataView = new DataView(arrayBuffer, 4, sampleCount * 2);
           for (let i = 0; i < sampleCount; i++) {
-            float32Data[i] = int16View[i] / 32768;
+            float32Data[i] = dataView.getInt16(i * 2, true) / 32768;
           }
         }
       } else {
-        // Legado / PCM16 puro sem cabeçalho
-        const sampleCount = Math.floor(arrayBuffer.byteLength / 2);
-        const int16View = new Int16Array(arrayBuffer, 0, sampleCount);
+        // PCM16 puro sem cabeçalho
+        const sampleCount = Math.floor(u8.length / 2);
         float32Data = new Float32Array(sampleCount);
+        const dataView = new DataView(arrayBuffer, 0, sampleCount * 2);
         for (let i = 0; i < sampleCount; i++) {
-          float32Data[i] = int16View[i] / 32768;
+          float32Data[i] = dataView.getInt16(i * 2, true) / 32768;
         }
       }
 
@@ -822,40 +801,17 @@
       source.connect(gainNode);
 
       const now = audioContext.currentTime;
-      const minBufSec = currentAbrMode === 'saver' ? 0.28 : 0.065;
-      const maxBufSec = currentAbrMode === 'high' ? 0.18 : 0.65;
 
+      // Agendamento limpo e linear sem distorção de pitch ('rádio dessintonizado')
       if (nextAudioTime < now) {
-        // Ocorreu um underrun (a fila secou por oscilação da internet):
-        // Expande automaticamente o Buffer Elástico para absorver as próximas oscilações sem picotar a voz
-        windowUnderrunCount++;
-        targetJitterBufferSec = Math.min(maxBufSec, Math.max(minBufSec, targetJitterBufferSec + 0.075));
-        if (now - nextAudioTime < 0.045) { nextAudioTime = now + 0.004; } else { nextAudioTime = now + targetJitterBufferSec; }
-        updateQualityAndBufferBadges();
-      } else {
-        // Rede fluindo sem falhas: reduz suavemente o buffer de volta ao mínimo de baixa latência
-        if (targetJitterBufferSec > minBufSec) {
-          targetJitterBufferSec = Math.max(minBufSec, targetJitterBufferSec - 0.0015);
-          if (Math.random() < 0.12) updateQualityAndBufferBadges();
-        }
+        nextAudioTime = now + 0.025; // 25ms pré-buffer seguro contra underrun
+      } else if (nextAudioTime > now + 0.5) {
+        nextAudioTime = now + 0.035; // Se acumular mais de 500ms, reseta para tempo real
       }
 
-      const bufferedAhead = nextAudioTime - now;
-      let playbackRate = 1.0;
-
-      if (bufferedAhead > 5.0) {
-        // Apenas se o navegador ficou congelado por mais de 5 segundos inteiros, ressincroniza mantendo os últimos 600ms
-        nextAudioTime = now + 0.60;
-      } else if (bufferedAhead > targetJitterBufferSec + 0.30) {
-        // Time-Scaling Catch-Up Suave (1.07x a 1.12x):
-        // Quando a internet trava por 1–3s e entrega os pacotes acumulados de uma vez,
-        // NUNCA descartamos palavras! Reproduzimos todas as sílabas levemente aceleradas até alcançar o tempo real.
-        playbackRate = bufferedAhead > 1.35 ? 1.12 : 1.07;
-      }
-
-      source.playbackRate.value = playbackRate;
+      source.playbackRate.value = 1.0; // Afinação 100% natural, sem alteração de velocidade
       source.start(nextAudioTime);
-      nextAudioTime += (audioBuffer.duration / playbackRate);
+      nextAudioTime += audioBuffer.duration;
     }
 
     function selectChannel(channel) {

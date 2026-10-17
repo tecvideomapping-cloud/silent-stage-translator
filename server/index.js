@@ -1148,49 +1148,12 @@ wss.on('connection', async (ws, req) => {
     if (isBinary) {
       if (ws.role !== 'host') return;
 
-      // Cache sob demanda para pacotes degradados neste frame (só calcula se algum ouvinte precisar)
-      let cachedTier1Packet = null;
-      let cachedTier2Packet = null;
-
-      // Broadcast inteligente do Áudio Original com Degrade Quality individual por ouvinte
+      // Broadcast direto do Áudio Original limpo em alta fidelidade (100% puro, sem degradação ou decimação com ruído)
       for (const client of roomClients) {
         if (client !== ws && client.readyState === WebSocket.OPEN && client.channel === 'original') {
-          const backpressureBytes = client.bufferedAmount || 0;
-
-          // Proteção contra congelamento total de TCP (se acumular >192KB na fila do sistema operacional, aguarda esvaziar)
-          if (backpressureBytes > 196608) {
-            client.abrTier = 2;
-            client.lastAbrChangeTime = Date.now();
-            continue;
-          }
-
-          // Adaptação automática por fila de congestão TCP individual daquele ouvinte
-          let effectiveTier = client.abrTier || 0;
-          if (client.abrMode === 'saver') {
-            effectiveTier = 2;
-          } else if (client.abrMode === 'high') {
-            effectiveTier = backpressureBytes > 65536 ? 1 : 0;
-          } else {
-            if (backpressureBytes > 32768) {
-              effectiveTier = 2;
-              client.abrTier = 2;
-              client.lastAbrChangeTime = Date.now();
-            } else if (backpressureBytes > 12288 && effectiveTier < 1) {
-              effectiveTier = 1;
-              client.abrTier = 1;
-              client.lastAbrChangeTime = Date.now();
-            }
-          }
-
-          if (effectiveTier === 0) {
+          try {
             client.send(data, { binary: true });
-          } else if (effectiveTier === 1) {
-            if (!cachedTier1Packet) cachedTier1Packet = buildDegradedAudioPacket(data, 1);
-            client.send(cachedTier1Packet, { binary: true });
-          } else {
-            if (!cachedTier2Packet) cachedTier2Packet = buildDegradedAudioPacket(data, 2);
-            client.send(cachedTier2Packet, { binary: true });
-          }
+          } catch {}
         }
       }
 

@@ -483,10 +483,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function broadcastAudioMeta() {
     if (socket && socket.readyState === WebSocket.OPEN) {
+      const actualRate = (audioContext && audioContext.sampleRate) ? audioContext.sampleRate : (currentAudioProfile.sampleRate || 48000);
       socket.send(JSON.stringify({
         type: 'audio_meta',
         format: currentAudioProfile.codec,
-        sampleRate: currentAudioProfile.sampleRate,
+        sampleRate: actualRate,
         kbps: currentAudioProfile.kbps,
         profileName: currentAudioProfile.name
       }));
