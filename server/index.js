@@ -45,7 +45,7 @@ app.get('/',(req,res,next)=>{
   next();
 });
 app.use(express.static(path.join(__dirname, '../public')));
-app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 0));
+app.set('trust proxy', process.env.TRUST_PROXY_HOPS !== undefined ? (isNaN(Number(process.env.TRUST_PROXY_HOPS)) ? process.env.TRUST_PROXY_HOPS : Number(process.env.TRUST_PROXY_HOPS)) : (process.env.NODE_ENV === 'production' ? 1 : true));
 
 // Inicializa Banco e Redis
 const databaseReady = initDb();

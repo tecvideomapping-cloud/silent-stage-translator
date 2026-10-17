@@ -47,7 +47,31 @@ class Commerce {
  setCookie(res,token){res.cookie(cookieName,token,{httpOnly:true,secure:this.env.NODE_ENV==='production'||!!this.baseUrl(),sameSite:'lax',maxAge:7*86400000,path:'/'});res.setHeader('Cache-Control','no-store');}
  csrf(req,res,next){if(!safeEqual(req.get('x-csrf-token'),req.customerSession.csrfToken))return next(fail(403,'Sessão desatualizada. Atualize a página e tente novamente.'));next();}
  throttle(scope,max=12,windowMs=900000){return(req,res,next)=>{const key=scope+':'+(req.ip||req.socket.remoteAddress);const time=Date.now();if(this.limits.size>10000)for(const [k,v] of this.limits)if(v.until<time)this.limits.delete(k);const entry=this.limits.get(key)||{count:0,until:time+windowMs};if(entry.until<time){entry.count=0;entry.until=time+windowMs;}entry.count++;this.limits.set(key,entry);if(entry.count>max){res.setHeader('Retry-After',Math.ceil((entry.until-time)/1000));return next(fail(429,'Muitas tentativas. Aguarde alguns minutos.'));}next();};}
- origin(req,res,next){const allowed=this.baseUrl();const origin=req.get('origin');if(origin&&(allowed?origin!==allowed:origin!==`${req.protocol}://${req.get('host')}`))return next(fail(403,'Origem não autorizada.'));next();}
+  origin(req,res,next){
+    const origin=req.get('origin');
+    if(!origin)return next();
+    try{
+      const originUrl=new URL(origin);
+      const hostHeader=(req.get('x-forwarded-host')||req.get('host')||'').split(',')[0].trim();
+      const hostName=hostHeader.split(':')[0].toLowerCase();
+      if(hostName&&originUrl.hostname.toLowerCase()===hostName)return next();
+      const allowed=this.baseUrl();
+      if(allowed){
+        const allowedUrl=new URL(allowed);
+        const allowedHost=allowedUrl.hostname.toLowerCase();
+        const originHost=originUrl.hostname.toLowerCase();
+        if(originHost===allowedHost||originHost===`www.${allowedHost}`||allowedHost===`www.${originHost}`)return next();
+      }
+      if(this.env.ALLOWED_ORIGINS){
+        const list=this.env.ALLOWED_ORIGINS.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+        if(list.includes(origin.toLowerCase())||list.includes(originUrl.origin.toLowerCase()))return next();
+      }
+      if(this.env.NODE_ENV!=='production'||['localhost','127.0.0.1'].includes(originUrl.hostname)){
+        if(['localhost','127.0.0.1'].includes(originUrl.hostname))return next();
+      }
+    }catch(e){return next(fail(403,'Origem não autorizada.'));}
+    return next(fail(403,'Origem não autorizada.'));
+  }
  async eventFor(customerId,id,tx=this.store){const event=await tx.get('event',id);if(!event||event.customerId!==customerId)throw fail(404,'Evento não encontrado.');return event;}
  async eventView(event){const stored=await this.store.get('order',event.orderId);const order={...stored,plan:await this.entitlement(event)};const remaining=Math.max(0,order.plan.hours*3600-event.usedSeconds);return {...event,hostKey:undefined,customerId:undefined,plan:order.plan,status:order.status!=='paid'?order.status:remaining<=0?'expired':event.published?'active':'draft',remainingSeconds:remaining,participantUrl:(this.baseUrl()||'')+'/?room='+event.id,hostUrl:'/host.html?room='+event.id,screenUrl:'/screen.html?room='+event.id,published:event.published&&order.status==='paid'&&remaining>0};}
  orderView(order){return {id:order.id,kind:order.kind||'base',grants:order.grants||null,offerId:order.kind==='upsell'?order.plan.id:null,offerVersion:order.kind==='upsell'?order.plan.revision:null,planName:order.plan.name,status:order.status,amountCents:order.amountCents,priceCents:order.amountCents,currency:order.currency,eventName:order.eventName,createdAt:order.createdAt,checkoutUrl:order.status==='pending'?order.checkoutUrl:null,eventId:order.eventId||null,emailStatus:order.emailStatus||(order.status==='paid'?'pending':'not_sent'),duplicatePayment:!!order.duplicatePayment};}
