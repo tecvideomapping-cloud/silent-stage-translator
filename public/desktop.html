@@ -129,7 +129,7 @@
             </div>
 
             <!-- SELEÇÃO DE CANAIS E SALA -->
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:18px;">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:14px;">
               <div>
                 <label for="selAudioChannel" style="font-size:11px; color:var(--vmt-muted);">Roteamento de Canais:</label>
                 <select id="selAudioChannel" style="width:100%; font-size:12px;">
@@ -141,6 +141,44 @@
               <div>
                 <label for="inputRoomId" style="font-size:11px; color:var(--vmt-muted);">Sala do Palco:</label>
                 <input type="text" id="inputRoomId" value="palco1" style="width:100%; font-size:12px; font-family:monospace;">
+              </div>
+            </div>
+
+            <!-- COMPRESSÃO, BITRATE & QUALIDADE SPOTIFY-STYLE -->
+            <div style="background:rgba(255,255,255,0.02); border:1px solid var(--vmt-line, #334155); border-radius:12px; padding:12px; margin-bottom:18px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+                <span style="font-size:11px; font-weight:700; color:var(--vmt-accent, #06b6d4); display:flex; align-items:center; gap:6px;">
+                  <span>🎧</span> Compressão & Taxa de Bits (kbps)
+                </span>
+                <span id="compressionBadge" style="font-size:10px; background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.4); padding:2px 8px; border-radius:999px; font-weight:600;">
+                  256 kbps • Linear PCM Sem Compressão
+                </span>
+              </div>
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                <div>
+                  <label for="audioBitrateSelect" style="font-size:11px; color:var(--vmt-muted, #94a3b8); display:block; margin-bottom:4px;">Qualidade & Taxa de Bits:</label>
+                  <select id="audioBitrateSelect" style="width:100%; font-size:12px;">
+                    <option value="pcm256" selected>⚡ 256 kbps • Linear PCM Sem Compressão (Áudio Original Limpo)</option>
+                    <option value="320">💎 384 kbps • Estúdio Master Hi-Fi 24kHz (Linear PCM Puro)</option>
+                    <option value="160">🎧 160 kbps • Alta Fidelidade (G.711 20kHz)</option>
+                    <option value="96">🎵 128 kbps • Econômico Balanceado (G.711 16kHz)</option>
+                    <option value="48">📻 48 kbps • Voz Compacta (ADPCM 12kHz)</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="audioCodecSelect" style="font-size:11px; color:var(--vmt-muted, #94a3b8); display:block; margin-bottom:4px;">Algoritmo de Codificação:</label>
+                  <select id="audioCodecSelect" style="width:100%; font-size:12px;">
+                    <option value="pcm16" selected>Linear PCM 16-bit (Sem Compressão • Som Limpo Original)</option>
+                    <option value="mulaw">Compressão Acústica Dinâmica (G.711 μ-law)</option>
+                    <option value="adpcm">ADPCM Adaptativo 4:1 (Ultra Econômico em Banda)</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:11px; color:var(--vmt-muted, #94a3b8);">
+                <span id="bandwidthEstimate">~32 KB/s por ouvinte (Broadcast Direto)</span>
+                <span id="p2pStatusBadge" style="color:#10b981; font-weight:600; display:flex; align-items:center; gap:4px;">
+                  👥 P2P Mesh Ativo (Economia de Banda)
+                </span>
               </div>
             </div>
 
@@ -472,6 +510,66 @@
         <div class="panel vmt-glass projection-panel">
           <h2>Configuração de Telão & Transmissão de Vídeo</h2>
           <p class="vmt-muted">Controle as saídas para painéis de LED, projetores e mesas de corte (vMix / OBS / Tricaster).</p>
+
+          <!-- CONTROLES REMOTOS DO TELÃO DE PALCO -->
+          <div style="background:rgba(255,255,255,0.02); border:1px solid var(--vmt-line, #334155); border-radius:12px; padding:16px; margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <span style="font-size:12px; font-weight:700; color:var(--vmt-accent, #06b6d4); text-transform:uppercase; letter-spacing:0.05em; display:flex; align-items:center; gap:6px;">
+                <span>📺</span> Controle Remoto do Telão de Projeção
+              </span>
+              <span style="font-size:11px; color:var(--vmt-muted, #94a3b8);">Comando em tempo real para todos os receptores</span>
+            </div>
+
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+              <div>
+                <label for="hostScreenModeSelect" style="display:block; font-size:11px; color:var(--vmt-muted, #94a3b8); margin-bottom:4px;">Modo de Exibição:</label>
+                <select id="hostScreenModeSelect" style="width:100%; font-size:12px;">
+                  <option value="single">Idioma Único</option>
+                  <option value="bilingual">Bilíngue (Original + Traduzido)</option>
+                  <option value="multi">Multilíngue (Todos Disponíveis)</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="hostScreenLangSelect" style="display:block; font-size:11px; color:var(--vmt-muted, #94a3b8); margin-bottom:4px;">Idioma Principal:</label>
+                <select id="hostScreenLangSelect" style="width:100%; font-size:12px;">
+                  <option value="en">🇺🇸 Inglês (English)</option>
+                  <option value="es">🇪🇸 Espanhol (Español)</option>
+                  <option value="original">🎙️ Original (Transcrição do Palco)</option>
+                  <option value="all">🌐 Todos os Idiomas</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="hostScreenPositionSelect" style="display:block; font-size:11px; color:var(--vmt-muted, #94a3b8); margin-bottom:4px;">Posicionamento:</label>
+                <select id="hostScreenPositionSelect" style="width:100%; font-size:12px;">
+                  <option value="pos-bottom" selected>⬇️ Rodapé (Inferior)</option>
+                  <option value="pos-top">⬆️ Topo (Superior)</option>
+                  <option value="pos-center">⏺️ Centro da Tela</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="hostScreenThemeSelect" style="display:block; font-size:11px; color:var(--vmt-muted, #94a3b8); margin-bottom:4px;">Fundo da Legenda:</label>
+                <select id="hostScreenThemeSelect" style="width:100%; font-size:12px;">
+                  <option value="theme-transparent">🪟 100% Transparente (Overlay)</option>
+                  <option value="theme-lowerthird">⬛ Tarja Translúcida (Lower-Third)</option>
+                  <option value="theme-chroma" selected>🟢 Verde Chroma Key (vMix/OBS)</option>
+                  <option value="theme-black">⚫ Preto Puro (Painel LED/Projetor)</option>
+                  <option value="theme-dark">🔵 Azul Escuro Stage</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="hostScreenLogoSelect" style="display:block; font-size:11px; color:var(--vmt-muted, #94a3b8); margin-bottom:4px;">Marca d'água / Logo:</label>
+                <select id="hostScreenLogoSelect" style="width:100%; font-size:12px;">
+                  <option value="vmp" selected>Video Mapping (Padrão)</option>
+                  <option value="client">Logo do Cliente / Evento</option>
+                  <option value="none">Nenhuma (Sem Marca)</option>
+                </select>
+              </div>
+            </div>
+          </div>
 
           <div class="projection-grid">
             <div class="proj-card">

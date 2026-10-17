@@ -348,7 +348,10 @@ app.post('/api/rooms', requireAuth, async (req, res) => {
       sponsors,
       allowOriginalAudio,
       allowTranslation,
-      allowSubtitles
+      allowSubtitles,
+      audioQuality,
+      screenLogo,
+      p2pEnabled
     } = req.body;
 
     const roomId = (id || `evento-${Date.now().toString(36)}`).trim().toLowerCase();
@@ -374,6 +377,9 @@ app.post('/api/rooms', requireAuth, async (req, res) => {
       allow_original_audio: allowOriginalAudio !== false,
       allow_translation: allowTranslation !== false,
       allow_subtitles: allowSubtitles !== false,
+      audio_quality: audioQuality || 'pcm256',
+      screen_logo: screenLogo || 'vmp',
+      p2p_enabled: p2pEnabled !== false,
       status: 'active',
       created_at: existing?.created_at || new Date()
     };
@@ -1000,12 +1006,13 @@ function encodeMuLawServerSample(sample) {
  * - tier 2: G.711 μ-law com decimação passa-baixas 2:1 (-75% de consumo de banda, 100% stateless)
  */
 function buildDegradedAudioPacket(rawBuffer, targetTier) {
+  if (!targetTier || targetTier <= 0) return rawBuffer;
   const buf = Buffer.isBuffer(rawBuffer) ? rawBuffer : Buffer.from(rawBuffer);
   if (buf.length < 6 || buf[0] !== 0xAA) return buf;
   const codecId = buf[1];
   const sampleRate = buf[2] | (buf[3] << 8);
 
-  // Se o Host já estiver enviando comprimido (mulaw/adpcm), mantém ou reduz taxa no Tier 2
+  // Se o Host já estiver enviando comprimido (mulaw/adpcm), mantém
   if (codecId !== 0) {
     return buf;
   }
@@ -1025,7 +1032,7 @@ function buildDegradedAudioPacket(rawBuffer, targetTier) {
       out[4 + i] = encodeMuLawServerSample(s);
     }
     return out;
-  } else {
+  } else if (targetTier >= 2) {
     // Tier 2: Reduz 75% da banda (Filtro anti-aliasing 2:1 + G.711 8-bit para conexões críticas)
     const halfSamples = Math.floor(numSamples / 2);
     const halfRate = Math.max(6000, Math.round(sampleRate / 2));
@@ -1042,6 +1049,7 @@ function buildDegradedAudioPacket(rawBuffer, targetTier) {
     }
     return out;
   }
+  return rawBuffer;
 }
 
 wss.on('connection', async (ws, req) => {
@@ -1125,11 +1133,17 @@ wss.on('connection', async (ws, req) => {
   }
 
   // Notifica imediatamente anfitrião e telões sobre métricas de ouvintes online
-  broadcastRoomStats(roomId);
-
+  let lastConsumeCheckTime = 0;
   ws.on('message', async (data, isBinary) => {
-    try{if(managed&&role==='host'&&isBinary&&!await commerce.consumeSocket(managed)){ws.close(1008,'As horas de transmissão foram utilizadas.');return;}}
-    catch{ws.close(1011,'Verificação de horas indisponível.');return;}
+    if (managed && role === 'host') {
+      const now = Date.now();
+      if (now - lastConsumeCheckTime > 5000) {
+        lastConsumeCheckTime = now;
+        commerce.consumeSocket(managed).then(ok => {
+          if (!ok) ws.close(1008, 'As horas de transmissão foram utilizadas.');
+        }).catch(() => {});
+      }
+    }
     // 1. Mensagens Binárias: Chunks de Áudio
     if (isBinary) {
       if (ws.role !== 'host') return;

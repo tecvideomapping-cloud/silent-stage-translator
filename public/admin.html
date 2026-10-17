@@ -29,7 +29,6 @@
   </aside>
   <header class="admin-topbar"><div><span class="admin-breadcrumb">Workspace</span><span class="admin-breadcrumb-divider">/</span><strong>Painel administrativo</strong></div><button class="vmt-btn admin-theme" data-theme-toggle aria-label="Alternar tema"><span data-icon="sun-moon"></span><span>Tema</span></button></header>
   <main class="admin-main">
-    <div class="admin-page-intro"><span class="admin-eyebrow">CONTROLE COM CLAREZA</span><h1>Seu próximo evento.<br>Uma experiência extraordinária.</h1><p>Organize seus eventos, conecte pessoas e cuide de cada detalhe em um só lugar.</p></div>
     <section id="sectionEvents" class="flex flex-col gap-6">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -243,6 +242,37 @@
               <input type="checkbox" id="formAllowSubtitles" checked class="accent-cyan-500">
               <span>📝 Legendas em Tela</span>
             </label>
+          </div>
+        </div>
+
+        <!-- Qualidade de Áudio, P2P Mesh & Telão -->
+        <div class="border-t border-slate-800 pt-3">
+          <p class="font-bold text-slate-200 uppercase tracking-wider text-[11px] mb-2 text-cyan-400">🎧 Qualidade de Áudio & Distribuição P2P Mesh</p>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="block font-semibold text-slate-400 mb-1">Qualidade de Áudio Padrão:</label>
+              <select id="formAudioQuality" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200">
+                <option value="pcm256" selected>⚡ 256 kbps (PCM Sem Compressão)</option>
+                <option value="320">💎 384 kbps (Hi-Fi Master 24kHz)</option>
+                <option value="160">🎧 160 kbps (Alta Fidelidade G.711)</option>
+                <option value="96">🎵 128 kbps (Balanceado G.711)</option>
+                <option value="48">📻 48 kbps (ADPCM Econômico)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-400 mb-1">Marca d'água no Telão:</label>
+              <select id="formScreenLogo" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200">
+                <option value="vmp" selected>Video Mapping (Padrão)</option>
+                <option value="client">Logo do Cliente / Evento</option>
+                <option value="none">Nenhuma (Sem Marca)</option>
+              </select>
+            </div>
+            <div class="flex items-end">
+              <label class="flex items-center gap-2 p-2.5 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer w-full">
+                <input type="checkbox" id="formEnableP2P" checked class="accent-cyan-500">
+                <span>👥 P2P Mesh Ativo (Até 80% Economia)</span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -1037,6 +1067,9 @@
         allowSubtitles: document.getElementById('formAllowSubtitles')?.checked !== false,
         sourceLanguage: document.getElementById('formSourceLang')?.value || 'pt-BR',
         targetLanguages: targetLangs.length ? targetLangs : ['en', 'es'],
+        audioQuality: document.getElementById('formAudioQuality')?.value || 'pcm256',
+        screenLogo: document.getElementById('formScreenLogo')?.value || 'vmp',
+        p2pEnabled: document.getElementById('formEnableP2P')?.checked !== false,
         glossary: preloadGlossaryTerms
       };
 

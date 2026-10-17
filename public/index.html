@@ -830,7 +830,7 @@
         // Expande automaticamente o Buffer Elástico para absorver as próximas oscilações sem picotar a voz
         windowUnderrunCount++;
         targetJitterBufferSec = Math.min(maxBufSec, Math.max(minBufSec, targetJitterBufferSec + 0.075));
-        nextAudioTime = now + targetJitterBufferSec;
+        if (now - nextAudioTime < 0.045) { nextAudioTime = now + 0.004; } else { nextAudioTime = now + targetJitterBufferSec; }
         updateQualityAndBufferBadges();
       } else {
         // Rede fluindo sem falhas: reduz suavemente o buffer de volta ao mínimo de baixa latência

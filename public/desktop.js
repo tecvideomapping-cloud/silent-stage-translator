@@ -401,6 +401,171 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================
+  // 6.5 PERFIS DE ÁUDIO & CONFIGURAÇÃO DO TELÃO
+  // ==========================================
+  const AUDIO_PROFILES = {
+    '48': {
+      name: 'Voz Compacta',
+      kbps: 48,
+      codec: 'adpcm',
+      sampleRate: 12000,
+      badgeText: '48 kbps • Voz Compacta',
+      bandwidthText: '~6 KB/s por ouvinte (-81% banda)'
+    },
+    '96': {
+      name: 'Econômico Balanceado',
+      kbps: 128,
+      codec: 'mulaw',
+      sampleRate: 16000,
+      badgeText: '128 kbps • Econômico Balanceado',
+      bandwidthText: '~16 KB/s por ouvinte (-50% banda)'
+    },
+    '160': {
+      name: 'Alta Fidelidade',
+      kbps: 160,
+      codec: 'mulaw',
+      sampleRate: 20000,
+      badgeText: '160 kbps • Alta Fidelidade',
+      bandwidthText: '~20 KB/s por ouvinte (-38% banda)'
+    },
+    '320': {
+      name: 'Estúdio Master Hi-Fi (24kHz PCM)',
+      kbps: 384,
+      codec: 'pcm16',
+      sampleRate: 24000,
+      badgeText: '384 kbps • Estúdio Master Hi-Fi',
+      bandwidthText: '~48 KB/s por ouvinte (Hi-Fi Master)'
+    },
+    'pcm256': {
+      name: 'Linear PCM Sem Compressão',
+      kbps: 256,
+      codec: 'pcm16',
+      sampleRate: 16000,
+      badgeText: '256 kbps • Linear PCM Sem Compressão',
+      bandwidthText: '~32 KB/s por ouvinte (Broadcast Direto)'
+    }
+  };
+
+  let currentAudioProfile = {
+    id: 'pcm256',
+    ...AUDIO_PROFILES['pcm256']
+  };
+
+  function updateAudioProfile(profileKey) {
+    const p = AUDIO_PROFILES[profileKey];
+    if (!p) return;
+    currentAudioProfile = { id: profileKey, ...p };
+    const codecSelect = document.getElementById('audioCodecSelect');
+    if (codecSelect) codecSelect.value = p.codec;
+    updateAudioUI();
+    broadcastAudioMeta();
+  }
+
+  function updateCustomCodec(codecKey) {
+    currentAudioProfile.codec = codecKey;
+    if (codecKey === 'adpcm') {
+      currentAudioProfile.sampleRate = Math.min(24000, Math.round((currentAudioProfile.kbps * 1000) / 4));
+    } else if (codecKey === 'mulaw') {
+      currentAudioProfile.sampleRate = Math.min(24000, Math.round((currentAudioProfile.kbps * 1000) / 8));
+    } else {
+      currentAudioProfile.sampleRate = Math.min(24000, Math.round((currentAudioProfile.kbps * 1000) / 16));
+    }
+    updateAudioUI();
+    broadcastAudioMeta();
+  }
+
+  function updateAudioUI() {
+    const badge = document.getElementById('compressionBadge');
+    const bw = document.getElementById('bandwidthEstimate');
+    if (badge) badge.innerText = currentAudioProfile.badgeText || `${currentAudioProfile.kbps} kbps`;
+    if (bw) bw.innerText = currentAudioProfile.bandwidthText || `~${Math.round(currentAudioProfile.kbps / 8)} KB/s por ouvinte`;
+  }
+
+  function broadcastAudioMeta() {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: 'audio_meta',
+        format: currentAudioProfile.codec,
+        sampleRate: currentAudioProfile.sampleRate,
+        kbps: currentAudioProfile.kbps,
+        profileName: currentAudioProfile.name
+      }));
+    }
+  }
+
+  function encodeMuLawSample(sample) {
+    const BIAS = 0x84;
+    const CLIP = 32635;
+    let sign = (sample >> 8) & 0x80;
+    if (sign !== 0) sample = -sample;
+    if (sample > CLIP) sample = CLIP;
+    sample += BIAS;
+    let exponent = 7;
+    for (let expMask = 0x4000; (sample & expMask) === 0 && exponent > 0; exponent--, expMask >>= 1) {}
+    let mantissa = (sample >> (exponent + 3)) & 0x0F;
+    return ~(sign | (exponent << 4) | mantissa) & 0xFF;
+  }
+
+  const IMA_STEP_TABLE = [
+    7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+    50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230,
+    253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+    1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327,
+    3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487,
+    12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767
+  ];
+  const IMA_INDEX_TABLE = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8];
+  let desktopAdpcmPredictor = 0;
+  let desktopAdpcmStepIndex = 0;
+
+  function encodeAdpcmNibble(sample) {
+    let step = IMA_STEP_TABLE[desktopAdpcmStepIndex];
+    let diff = sample - desktopAdpcmPredictor;
+    let nibble = 0;
+    if (diff < 0) {
+      nibble = 8;
+      diff = -diff;
+    }
+    let mask = 4;
+    let delta = step >> 3;
+    for (let i = 0; i < 3; i++) {
+      if (diff >= step) {
+        nibble |= mask;
+        diff -= step;
+        delta += step;
+      }
+      step >>= 1;
+      mask >>= 1;
+    }
+    desktopAdpcmPredictor += (nibble & 8) ? -delta : delta;
+    if (desktopAdpcmPredictor > 32767) desktopAdpcmPredictor = 32767;
+    else if (desktopAdpcmPredictor < -32768) desktopAdpcmPredictor = -32768;
+    desktopAdpcmStepIndex += IMA_INDEX_TABLE[nibble];
+    if (desktopAdpcmStepIndex < 0) desktopAdpcmStepIndex = 0;
+    else if (desktopAdpcmStepIndex > 88) desktopAdpcmStepIndex = 88;
+    return nibble;
+  }
+
+  function broadcastScreenConfig() {
+    const mode = document.getElementById('hostScreenModeSelect')?.value || 'single';
+    const lang = document.getElementById('hostScreenLangSelect')?.value || 'en';
+    const logo = document.getElementById('hostScreenLogoSelect')?.value || 'vmp';
+    const theme = document.getElementById('hostScreenThemeSelect')?.value || 'theme-chroma';
+    const position = document.getElementById('hostScreenPositionSelect')?.value || 'pos-bottom';
+
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: 'set_screen_lang',
+        screenMode: mode,
+        screenLogo: logo,
+        screenTheme: theme,
+        screenPosition: position,
+        selectedLangs: lang === 'all' ? ['original', 'en', 'es'] : (mode === 'bilingual' ? ['original', lang] : [lang])
+      }));
+    }
+  }
+
+  // ==========================================
   // 7. CONEXÃO WEBSOCKET DE TRANSMISSÃO DE PALCO
   // ==========================================
   function connectStageWebSocket() {
@@ -418,6 +583,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       socket.onopen = () => {
         socket.send(JSON.stringify({ type: 'join', role: 'host', roomId }));
+        broadcastAudioMeta();
+        broadcastScreenConfig();
       };
 
       socket.onmessage = (event) => {
@@ -599,17 +766,46 @@ document.addEventListener('DOMContentLoaded', () => {
           pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         }
 
-        // Pacote binário Silent Stage: 0xAA (header), 0 (PCM), sampleRate
+        // Pacote binário Silent Stage: 0xAA (header), codecId, sampleRate
         const sampleRate = audioContext.sampleRate;
-        const packet = new Uint8Array(4 + numSamples * 2);
-        packet[0] = 0xAA;
-        packet[1] = 0;
-        packet[2] = sampleRate & 0xFF;
-        packet[3] = (sampleRate >> 8) & 0xFF;
-        new Uint8Array(packet.buffer, 4).set(new Uint8Array(pcm16.buffer));
+        const codec = currentAudioProfile.codec || 'pcm16';
+        let packetBuffer = null;
+
+        if (codec === 'mulaw') {
+          packetBuffer = new Uint8Array(4 + numSamples);
+          packetBuffer[0] = 0xAA;
+          packetBuffer[1] = 1;
+          packetBuffer[2] = sampleRate & 0xFF;
+          packetBuffer[3] = (sampleRate >> 8) & 0xFF;
+          for (let i = 0; i < numSamples; i++) {
+            packetBuffer[4 + i] = encodeMuLawSample(pcm16[i]);
+          }
+        } else if (codec === 'adpcm') {
+          const halfLen = Math.ceil(numSamples / 2);
+          packetBuffer = new Uint8Array(4 + halfLen);
+          packetBuffer[0] = 0xAA;
+          packetBuffer[1] = 2;
+          packetBuffer[2] = sampleRate & 0xFF;
+          packetBuffer[3] = (sampleRate >> 8) & 0xFF;
+          for (let i = 0; i < halfLen; i++) {
+            const s1 = pcm16[i * 2];
+            const s2 = (i * 2 + 1 < numSamples) ? pcm16[i * 2 + 1] : 0;
+            const n1 = encodeAdpcmNibble(s1);
+            const n2 = encodeAdpcmNibble(s2);
+            packetBuffer[4 + i] = (n1 & 0x0F) | ((n2 & 0x0F) << 4);
+          }
+        } else {
+          const byteLen = numSamples * 2;
+          packetBuffer = new Uint8Array(4 + byteLen);
+          packetBuffer[0] = 0xAA;
+          packetBuffer[1] = 0;
+          packetBuffer[2] = sampleRate & 0xFF;
+          packetBuffer[3] = (sampleRate >> 8) & 0xFF;
+          new Uint8Array(packetBuffer.buffer, 4).set(new Uint8Array(pcm16.buffer));
+        }
 
         try {
-          socket.send(packet.buffer);
+          socket.send(packetBuffer.buffer);
         } catch {}
       };
 
@@ -628,6 +824,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       startRealVuMeterLoop();
+      broadcastAudioMeta();
+      broadcastScreenConfig();
     } catch (err) {
       alert('Erro ao iniciar áudio: ' + err.message);
       stopBroadcastCleanly();
@@ -1438,5 +1636,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btnToggleNdi')?.addEventListener('click', () => {
     alert('Saída NDI Broadcast Alpha Channel ativada na porta local 5960.');
+  });
+
+  // Controles de Bitrate, Codec e Projeção Remota de Telão
+  document.getElementById('audioBitrateSelect')?.addEventListener('change', (e) => {
+    updateAudioProfile(e.target.value);
+  });
+  document.getElementById('audioCodecSelect')?.addEventListener('change', (e) => {
+    updateCustomCodec(e.target.value);
+  });
+  ['hostScreenModeSelect', 'hostScreenLangSelect', 'hostScreenPositionSelect', 'hostScreenThemeSelect', 'hostScreenLogoSelect'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', broadcastScreenConfig);
   });
 });
