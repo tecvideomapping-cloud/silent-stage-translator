@@ -121,3 +121,19 @@ test('desktop API router: endpoints respond correctly', async () => {
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('desktop host: startServer opens port and serves desktop.html', async () => {
+  const { startServer, server } = require('../server/index');
+  const port = await startServer(0);
+  assert.ok(port > 0);
+  assert.equal(server.listening, true);
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/desktop.html`);
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.ok(html.includes('Workstation Pro'));
+  } finally {
+    await new Promise(r => server.close(r));
+  }
+});
+

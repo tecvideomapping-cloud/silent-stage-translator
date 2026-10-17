@@ -1500,7 +1500,42 @@ wss.on('connection', async (ws, req) => {
   });
 });
 
-if(require.main===module)server.listen(PORT, () => {
-  console.log(`🚀 Videomappingtech Silent Translator no ar na porta ${PORT}`);
-});
-module.exports={app,server,wss,commerce};
+function startServer(port = PORT) {
+  return new Promise((resolve, reject) => {
+    if (server.listening) {
+      const addr = server.address();
+      const currentPort = typeof addr === 'object' && addr ? addr.port : port;
+      return resolve(currentPort);
+    }
+    const tryPort = (targetPort) => {
+      const onError = (err) => {
+        if (err.code === 'EADDRINUSE' && targetPort < Number(port) + 20) {
+          console.warn(`[Server] Porta ${targetPort} ocupada, tentando ${targetPort + 1}...`);
+          server.removeListener('error', onError);
+          tryPort(targetPort + 1);
+        } else {
+          server.removeListener('error', onError);
+          reject(err);
+        }
+      };
+      server.once('error', onError);
+      server.listen(targetPort, () => {
+        server.removeListener('error', onError);
+        const actualPort = server.address().port;
+        console.log(`🚀 Videomappingtech Silent Translator no ar na porta ${actualPort}`);
+        resolve(actualPort);
+      });
+    };
+    tryPort(Number(port));
+  });
+}
+
+if (require.main === module) {
+  startServer(PORT).catch(err => {
+    console.error('Falha ao iniciar servidor:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { app, server, wss, commerce, startServer };
+
