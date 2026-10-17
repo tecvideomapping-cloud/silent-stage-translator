@@ -234,14 +234,21 @@
 
             <div class="sample-recorder-box">
               <canvas id="waveformCanvas" class="waveform-canvas" width="600" height="100"></canvas>
-              <div class="recorder-actions">
+              <div class="recorder-actions" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
                 <button type="button" class="vmt-btn vmt-primary" id="btnRecordSample">
-                  <span data-icon="mic"></span> Gravar Amostra (5s)
+                  <span data-icon="mic"></span> Gravar do Mic (5s)
                 </button>
+                <button type="button" class="vmt-btn" id="btnRecordSystemSample">
+                  <span data-icon="monitor"></span> Gravar PC / YouTube (5s)
+                </button>
+                <button type="button" class="vmt-btn" id="btnUploadSample">
+                  <span data-icon="folder-open"></span> Carregar Áudio (.MP3/.WAV)
+                </button>
+                <input type="file" id="sampleFileInput" accept="audio/*,video/*" class="hidden">
                 <button type="button" class="vmt-btn" id="btnPlaySample" disabled>
                   <span data-icon="play"></span> Ouvir Amostra
                 </button>
-                <input type="text" id="speakerProfileName" placeholder="Nome do Palestrante (ex: Dr. Carlos)" value="Palestrante Principal">
+                <input type="text" id="speakerProfileName" placeholder="Nome do Palestrante (ex: Dr. Carlos)" value="Palestrante Principal" style="flex:1; min-width:180px;">
                 <button type="button" class="vmt-btn" id="btnSaveVoiceProfile">
                   <span data-icon="save"></span> Salvar Perfil Vocal
                 </button>

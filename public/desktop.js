@@ -343,6 +343,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!analyserNode) return;
     const timeDomainData = new Float32Array(analyserNode.fftSize);
+    let smoothL = 0;
+    let smoothR = 0;
 
     function tick() {
       if (!isBroadcasting && !isSimLectureRunning) {
@@ -363,24 +365,31 @@ document.addEventListener('DOMContentLoaded', () => {
         stageDsp.processRms(rms);
       }
 
-      // Se for silêncio absoluto ou ruído de piso abaixo de -60dB, zera VU
+      // Se for silêncio absoluto ou ruído de piso abaixo de -60dB, decai suavemente até zero
       if (rms < 0.0001) {
-        if (barL) barL.style.width = '0%';
-        if (barR) barR.style.width = '0%';
-        if (dbL) dbL.innerText = '-inf dB';
-        if (dbR) dbR.innerText = '-inf dB';
+        smoothL = Math.max(0, smoothL * 0.82);
+        smoothR = Math.max(0, smoothR * 0.82);
+        if (smoothL < 0.5) {
+          if (barL) barL.style.width = '0%';
+          if (barR) barR.style.width = '0%';
+          if (dbL) dbL.innerText = '-inf dB';
+          if (dbR) dbR.innerText = '-inf dB';
+        } else {
+          if (barL) barL.style.width = `${Math.round(smoothL)}%`;
+          if (barR) barR.style.width = `${Math.round(smoothR)}%`;
+        }
       } else {
         // Cálculo real de dBFS: 20 * log10(rms)
         const calcDb = Math.max(-60, Math.min(0, Math.round(20 * Math.log10(rms))));
         // Converte escala -60dB .. 0dB em 0% .. 100%
-        const pct = Math.min(100, Math.max(0, Math.round(((calcDb + 60) / 60) * 100)));
+        const targetPct = Math.min(100, Math.max(0, Math.round(((calcDb + 60) / 60) * 100)));
 
-        // Leve diferenciação estéreo para simular micro-ambitonia de palco
-        const pctL = pct;
-        const pctR = Math.max(0, Math.min(100, pct + Math.round((Math.random() * 2) - 1)));
+        // Balística profissional: ataque rápido e decaimento exponencial suave
+        smoothL = targetPct >= smoothL ? targetPct : (smoothL * 0.85 + targetPct * 0.15);
+        smoothR = targetPct >= smoothR ? targetPct : (smoothR * 0.85 + targetPct * 0.15);
 
-        if (barL) barL.style.width = `${pctL}%`;
-        if (barR) barR.style.width = `${pctR}%`;
+        if (barL) barL.style.width = `${Math.round(smoothL)}%`;
+        if (barR) barR.style.width = `${Math.round(smoothR)}%`;
         if (dbL) dbL.innerText = `${calcDb} dB`;
         if (dbR) dbR.innerText = `${calcDb} dB`;
       }
@@ -883,9 +892,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ==========================================
-  // 10. VOICE STUDIO (GRAVAÇÃO, WAVEFORM, PERFIS, TESTE SÍNTESE)
+  // 10. VOICE STUDIO (GRAVAÇÃO, ARQUIVO LOCAL, PC/YOUTUBE, PERFIS, TESTE SÍNTESE)
   // ==========================================
   const btnRecord = document.getElementById('btnRecordSample');
+  const btnRecordSystem = document.getElementById('btnRecordSystemSample');
+  const btnUpload = document.getElementById('btnUploadSample');
+  const sampleFileInput = document.getElementById('sampleFileInput');
   const btnPlay = document.getElementById('btnPlaySample');
   const recordStatus = document.getElementById('sampleRecordStatus');
   const playerSample = document.getElementById('sampleAudioPlayer');
@@ -906,7 +918,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (valSpeed) valSpeed.innerText = `${parseFloat(rangeSpeed.value).toFixed(2)}x`;
   });
 
-  // Gravação de Amostra de Voz com MediaRecorder
+  function getSupportedRecorderMimeType() {
+    if (typeof MediaRecorder === 'undefined') return '';
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/mp4'
+    ];
+    for (const t of types) {
+      if (MediaRecorder.isTypeSupported(t)) return t;
+    }
+    return '';
+  }
+
+  // 1. Gravação de Amostra de Microfone (5s)
   btnRecord?.addEventListener('click', async () => {
     if (isRecordingSample) {
       if (sampleRecorder && sampleRecorder.state === 'recording') {
@@ -917,77 +943,147 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       const stream = audioStream || await navigator.mediaDevices.getUserMedia({ audio: true });
-      sampleRecordedChunks = [];
-      sampleRecorder = new MediaRecorder(stream);
-
-      sampleRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) sampleRecordedChunks.push(e.data);
-      };
-
-      sampleRecorder.onstop = () => {
-        isRecordingSample = false;
-        if (waveformAnimId) cancelAnimationFrame(waveformAnimId);
-
-        if (btnRecord) {
-          btnRecord.innerHTML = '<span data-icon="mic"></span> Gravar Amostra (5s)';
-          btnRecord.classList.remove('vmt-danger');
-        }
-
-        sampleAudioBlob = new Blob(sampleRecordedChunks, { type: 'audio/wav' });
-        if (sampleAudioUrl) URL.revokeObjectURL(sampleAudioUrl);
-        sampleAudioUrl = URL.createObjectURL(sampleAudioBlob);
-
-        if (playerSample) {
-          playerSample.src = sampleAudioUrl;
-          playerSample.classList.remove('hidden');
-        }
-        if (btnPlay) btnPlay.disabled = false;
-
-        if (recordStatus) {
-          recordStatus.innerHTML = '✅ Amostra de 5 segundos capturada! Perfil vocal pronto para síntese.';
-          recordStatus.className = 'sample-status-text success';
-        }
-
-        drawStaticWaveform(waveformCanvas);
-      };
-
-      isRecordingSample = true;
-      sampleRecorder.start();
-
-      if (btnRecord) {
-        btnRecord.innerHTML = '<span data-icon="pause"></span> Parando em (<span id="sampleSecLeft">5</span>s)...';
-        btnRecord.classList.add('vmt-danger');
-      }
-      if (recordStatus) {
-        recordStatus.innerHTML = '🎙️ Gravando... Fale normalmente com clareza no microfone.';
-        recordStatus.className = 'sample-status-text recording';
-      }
-
-      startWaveformAnimation(waveformCanvas);
-
-      let timeLeft = 5;
-      const countEl = document.getElementById('sampleSecLeft');
-      const timer = setInterval(() => {
-        timeLeft--;
-        if (countEl) countEl.innerText = String(timeLeft);
-        if (timeLeft <= 0) {
-          clearInterval(timer);
-          if (sampleRecorder && sampleRecorder.state === 'recording') {
-            sampleRecorder.stop();
-          }
-        }
-      }, 1000);
-
+      startSampleCapture(stream, 'Microfone', btnRecord);
     } catch (e) {
-      alert('Não foi possível gravar o microfone: ' + e.message);
+      alert('Não foi possível capturar o microfone: ' + e.message);
       isRecordingSample = false;
     }
   });
 
+  // 2. Gravação de Amostra da Saída do PC / YouTube (5s)
+  btnRecordSystem?.addEventListener('click', async () => {
+    if (isRecordingSample) {
+      if (sampleRecorder && sampleRecorder.state === 'recording') {
+        sampleRecorder.stop();
+      }
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+
+      const audioTracks = stream.getAudioTracks();
+      if (!audioTracks.length) {
+        stream.getTracks().forEach(t => t.stop());
+        alert('⚠️ O áudio não foi compartilhado!\n\nNa janela de seleção, marque a caixinha:\n☑️ "Compartilhar áudio da guia" (para YouTube/Navegador)\nou\n☑️ "Compartilhar áudio do sistema" (para PC/Players).');
+        return;
+      }
+
+      startSampleCapture(stream, 'Saída do PC / YouTube', btnRecordSystem, true);
+    } catch (e) {
+      if (e.name !== 'NotAllowedError') {
+        alert('Não foi possível capturar o áudio do sistema: ' + e.message);
+      }
+      isRecordingSample = false;
+    }
+  });
+
+  // 3. Carregar Amostra Direto de Arquivo Local (.MP3, .WAV, .M4A, etc.)
+  btnUpload?.addEventListener('click', () => {
+    sampleFileInput?.click();
+  });
+
+  sampleFileInput?.addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    sampleAudioBlob = file;
+    if (sampleAudioUrl) URL.revokeObjectURL(sampleAudioUrl);
+    sampleAudioUrl = URL.createObjectURL(file);
+
+    if (playerSample) {
+      playerSample.src = sampleAudioUrl;
+      playerSample.classList.remove('hidden');
+      playerSample.load();
+    }
+    if (btnPlay) btnPlay.disabled = false;
+
+    if (recordStatus) {
+      recordStatus.innerHTML = `✅ Amostra carregada de arquivo: <strong>${file.name}</strong> (${Math.round(file.size / 1024)} KB)`;
+      recordStatus.className = 'sample-status-text success';
+    }
+
+    drawStaticWaveform(waveformCanvas);
+  });
+
+  // Função unificada para captura de 5s de stream (Mic ou PC/YouTube)
+  function startSampleCapture(stream, sourceName, triggerBtn, stopTracksOnEnd = false) {
+    sampleRecordedChunks = [];
+    const mime = getSupportedRecorderMimeType();
+    sampleRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    const recordedMime = sampleRecorder.mimeType || mime || 'audio/webm';
+
+    sampleRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) sampleRecordedChunks.push(e.data);
+    };
+
+    sampleRecorder.onstop = () => {
+      isRecordingSample = false;
+      if (waveformAnimId) cancelAnimationFrame(waveformAnimId);
+      if (stopTracksOnEnd) stream.getTracks().forEach(t => t.stop());
+
+      if (triggerBtn) {
+        triggerBtn.innerHTML = triggerBtn === btnRecord
+          ? '<span data-icon="mic"></span> Gravar do Mic (5s)'
+          : '<span data-icon="monitor"></span> Gravar PC / YouTube (5s)';
+        triggerBtn.classList.remove('vmt-danger');
+      }
+
+      sampleAudioBlob = new Blob(sampleRecordedChunks, { type: recordedMime });
+      if (sampleAudioUrl) URL.revokeObjectURL(sampleAudioUrl);
+      sampleAudioUrl = URL.createObjectURL(sampleAudioBlob);
+
+      if (playerSample) {
+        playerSample.src = sampleAudioUrl;
+        playerSample.classList.remove('hidden');
+        playerSample.load();
+      }
+      if (btnPlay) btnPlay.disabled = false;
+
+      if (recordStatus) {
+        recordStatus.innerHTML = `✅ Amostra de 5s capturada com sucesso de [${sourceName}]! Perfil pronto para síntese.`;
+        recordStatus.className = 'sample-status-text success';
+      }
+
+      drawStaticWaveform(waveformCanvas);
+    };
+
+    isRecordingSample = true;
+    sampleRecorder.start();
+
+    if (triggerBtn) {
+      triggerBtn.innerHTML = '<span data-icon="pause"></span> Parando em (<span id="sampleSecLeft">5</span>s)...';
+      triggerBtn.classList.add('vmt-danger');
+    }
+    if (recordStatus) {
+      recordStatus.innerHTML = `🎙️ Gravando amostra de ${sourceName}...`;
+      recordStatus.className = 'sample-status-text recording';
+    }
+
+    startWaveformAnimation(waveformCanvas);
+
+    let timeLeft = 5;
+    const countEl = document.getElementById('sampleSecLeft');
+    const timer = setInterval(() => {
+      timeLeft--;
+      if (countEl) countEl.innerText = String(timeLeft);
+      if (timeLeft <= 0) {
+        clearInterval(timer);
+        if (sampleRecorder && sampleRecorder.state === 'recording') {
+          sampleRecorder.stop();
+        }
+      }
+    }, 1000);
+  }
+
+  // Reprodução da amostra no player nativo
   btnPlay?.addEventListener('click', () => {
-    if (sampleAudioUrl) {
-      const a = new Audio(sampleAudioUrl);
-      a.play().catch(e => alert('Erro na reprodução: ' + e.message));
+    if (playerSample && sampleAudioUrl) {
+      playerSample.currentTime = 0;
+      playerSample.play().catch(e => alert('Erro na reprodução de áudio: ' + e.message));
     }
   });
 
@@ -1001,11 +1097,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!isRecordingSample) return;
       ctx.clearRect(0, 0, width, height);
 
-      const bars = 50;
+      const bars = 48;
       const barW = width / bars;
+      const now = Date.now() / 250;
       for (let i = 0; i < bars; i++) {
-        const mag = Math.sin((Date.now() / 80) + (i * 0.3)) * 0.5 + 0.5;
-        const h = Math.max(6, mag * (height * 0.75));
+        const mag = (Math.sin(now + (i * 0.28)) * 0.35 + 0.45) + (Math.cos(now * 0.7 + i * 0.15) * 0.2);
+        const h = Math.max(8, Math.min(height - 10, mag * (height * 0.8)));
         const x = i * barW;
         const y = (height - h) / 2;
 
@@ -1025,11 +1122,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const height = canvas.height;
     ctx.clearRect(0, 0, width, height);
 
-    const bars = 50;
+    const bars = 48;
     const barW = width / bars;
     for (let i = 0; i < bars; i++) {
-      const mag = Math.sin(i * 0.25) * 0.4 + 0.5;
-      const h = Math.max(6, mag * (height * 0.7));
+      const mag = (Math.sin(i * 0.18) * 0.35 + 0.5) * Math.sin((i / bars) * Math.PI);
+      const h = Math.max(6, mag * (height * 0.75));
       const x = i * barW;
       const y = (height - h) / 2;
 
@@ -1163,14 +1260,34 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btn) btn.innerHTML = '<span data-icon="sparkles"></span> Sintetizando Voz com IA...';
 
     try {
-      const url = `/api/tts?lang=en&text=${encodeURIComponent(phrase)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}&t=${Date.now()}`;
-      const audio = new Audio(url);
+      const url = `/api/tts?lang=en&text=${encodeURIComponent(phrase)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}&test=1&room=palco1&t=${Date.now()}`;
+      const token = localStorage.getItem('vmt_admin_token');
+      const res = await fetch(url, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      if (!res.ok) {
+        let errDesc = `HTTP ${res.status}`;
+        try {
+          const errJson = await res.json();
+          errDesc = errJson.error || errDesc;
+        } catch {
+          const errText = await res.text();
+          if (errText) errDesc = errText;
+        }
+        throw new Error(errDesc);
+      }
+
+      const audioBlob = await res.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
       audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
         if (btn) btn.innerHTML = '<span data-icon="volume-2"></span> Testar Síntese de Voz com IA';
       };
       audio.onerror = () => {
+        URL.revokeObjectURL(audioUrl);
         if (btn) btn.innerHTML = '<span data-icon="volume-2"></span> Testar Síntese de Voz com IA';
-        alert('Falha na síntese de áudio.');
+        alert('Falha na reprodução de áudio no dispositivo de saída do computador.');
       };
       await audio.play();
     } catch (e) {

@@ -458,16 +458,25 @@
 
     function getAuthHeaders() {
       const token = getAuthToken();
-      return {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-      };
+      const h = { 'Content-Type': 'application/json' };
+      if (token) h['Authorization'] = `Bearer ${token}`;
+      return h;
     }
 
-    // Headers autenticados reativos via Proxy para retrocompatibilidade
+    // Headers autenticados reativos via Proxy com suporte total a iteração/Headers constructor
     const authHeaders = new Proxy({}, {
       get(target, prop) {
         return getAuthHeaders()[prop];
+      },
+      ownKeys(target) {
+        return Object.keys(getAuthHeaders());
+      },
+      getOwnPropertyDescriptor(target, prop) {
+        const val = getAuthHeaders()[prop];
+        return val !== undefined ? { value: val, writable: true, enumerable: true, configurable: true } : undefined;
+      },
+      has(target, prop) {
+        return prop in getAuthHeaders();
       }
     });
 
@@ -478,7 +487,7 @@
     function handleAuthError(res) {
       if (res && res.status === 401) {
         authFailures++;
-        if (authFailures >= 3) {
+        if (authFailures >= 5 && res.url && res.url.includes('/api/auth/me')) {
           handleLogout();
         }
       }
@@ -486,7 +495,7 @@
 
     async function checkAuthSession() {
       try {
-        const res = await fetch('/api/auth/me', { headers: authHeaders });
+        const res = await fetch('/api/auth/me', { headers: getAuthHeaders() });
         if (res.status === 401) {
           handleAuthError(res);
           return;
@@ -504,7 +513,7 @@
 
     async function loadRooms() {
       try {
-        const res = await fetch('/api/rooms', { headers: authHeaders });
+        const res = await fetch('/api/rooms', { headers: getAuthHeaders() });
         if (res.status === 401) return handleAuthError(res);
         if (res.ok) {
           authFailures = 0;
@@ -517,7 +526,7 @@
 
     async function loadClients() {
       try {
-        const res = await fetch('/api/clients', { headers: authHeaders });
+        const res = await fetch('/api/clients', { headers: getAuthHeaders() });
         if (res.status === 401) return handleAuthError(res);
         if (res.ok) {
           const data = await res.json();
@@ -531,7 +540,7 @@
 
     async function loadLeads() {
       try {
-        const res = await fetch('/api/leads', { headers: authHeaders });
+        const res = await fetch('/api/leads', { headers: getAuthHeaders() });
         if (res.status === 401) return handleAuthError(res);
         if (res.ok) {
           const data = await res.json();
@@ -1088,7 +1097,7 @@
       try {
         const res = await fetch('/api/clients', {
           method: 'POST',
-          headers: authHeaders,
+          headers: getAuthHeaders(),
           body: JSON.stringify(payload)
         });
         if (res.ok) {
@@ -1106,7 +1115,7 @@
       try {
         const res = await fetch('/api/auth/password', {
           method: 'PUT',
-          headers: authHeaders,
+          headers: getAuthHeaders(),
           body: JSON.stringify({ newPassword })
         });
         if (res.ok) {
@@ -1121,7 +1130,7 @@
     async function deleteRoom(id) {
       if (!confirm(`Deseja realmente excluir a sala "${id}"?`)) return;
       try {
-        await fetch(`/api/rooms/${id}`, { method: 'DELETE', headers: authHeaders });
+        await fetch(`/api/rooms/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
         loadRooms();
       } catch (e) {}
     }
@@ -1129,7 +1138,7 @@
     async function deleteClient(id) {
       if (!confirm(`Deseja excluir este cliente?`)) return;
       try {
-        await fetch(`/api/clients/${id}`, { method: 'DELETE', headers: authHeaders });
+        await fetch(`/api/clients/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
         loadClients();
       } catch (e) {}
     }
@@ -1149,7 +1158,7 @@
     }
 
     function handleLogout() {
-      fetch('/api/auth/logout', { method: 'POST', headers: authHeaders }).finally(() => {
+      fetch('/api/auth/logout', { method: 'POST', headers: getAuthHeaders() }).finally(() => {
         localStorage.removeItem('vmt_admin_token');
         localStorage.removeItem('vmt_user');
         window.location.href = '/login.html';
