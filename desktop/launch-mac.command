@@ -25,5 +25,6 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
+echo "💡 Dica: Para compilar o instalador .DMG, execute: ./desktop/build-dmg.command"
 echo "🚀 Iniciando estação Silent Stage AI com aceleração Metal e CoreAudio..."
 npm run desktop

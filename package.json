@@ -10,8 +10,10 @@
     "desktop:web": "node desktop/main.js",
     "pack:win": "electron-builder --win nsis",
     "dist:win": "electron-builder --win",
-    "pack:mac": "electron-builder --mac zip",
-    "dist:mac": "electron-builder --mac dmg zip",
+    "pack:mac": "electron-builder --mac",
+    "dist:mac": "electron-builder --mac dmg",
+    "dist:mac:arm64": "electron-builder --mac dmg --arm64",
+    "dist:mac:x64": "electron-builder --mac dmg --x64",
     "test": "node --test scripts/*.test.js"
   },
   "build": {
@@ -28,9 +30,9 @@
     "mac": {
       "category": "public.app-category.business",
       "target": [
-        "dmg",
-        "zip"
+        "dmg"
       ],
+      "identity": null,
       "hardenedRuntime": false,
       "gatekeeperAssess": false
     },
