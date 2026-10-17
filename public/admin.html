@@ -173,12 +173,12 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div>
               <label class="block font-semibold text-slate-400 mb-1">Logo URL da Marca / Cliente:</label>
-              <input type="url" id="formLogoUrl" placeholder="https://exemplo.com/logo.png"
+              <input type="text" id="formLogoUrl" placeholder="https://exemplo.com/logo.png ou /logo.png"
                 class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
             </div>
             <div>
               <label class="block font-semibold text-slate-400 mb-1">Banner URL (Capa / Topo do App):</label>
-              <input type="url" id="formBannerUrl" placeholder="https://exemplo.com/banner.jpg"
+              <input type="text" id="formBannerUrl" placeholder="https://exemplo.com/banner.jpg ou /banner.jpg"
                 class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
             </div>
           </div>
@@ -285,11 +285,13 @@
           </div>
         </div>
 
+        <div id="eventFormFeedback" class="hidden text-xs text-rose-300 p-2.5 bg-rose-950/80 rounded-lg border border-rose-800"></div>
+
         <div class="flex items-center justify-end gap-3 border-t border-slate-800 pt-3">
           <button type="button" onclick="closeModal('eventModal')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">
             Cancelar
           </button>
-          <button type="submit" class="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg">
+          <button type="submit" id="submitEventBtn" class="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
             Salvar Evento
           </button>
         </div>
@@ -445,16 +447,29 @@
     function inlineText(value) { return encodeURIComponent(String(value ?? '')).replace(/'/g, '%27'); }
 
     // 1. CHECAGEM ESTRITA DE AUTENTICAÇÃO
-    const authToken = localStorage.getItem('vmt_admin_token');
+    function getAuthToken() {
+      return localStorage.getItem('vmt_admin_token') || '';
+    }
+
+    const authToken = getAuthToken();
     if (!authToken) {
       window.location.href = '/login.html';
     }
 
-    // Headers autenticados
-    const authHeaders = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken}`
-    };
+    function getAuthHeaders() {
+      const token = getAuthToken();
+      return {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      };
+    }
+
+    // Headers autenticados reativos via Proxy para retrocompatibilidade
+    const authHeaders = new Proxy({}, {
+      get(target, prop) {
+        return getAuthHeaders()[prop];
+      }
+    });
 
     let roomsList = [];
     let clientsList = [];
@@ -691,29 +706,63 @@
       });
     }
 
-    function openNewEventModal() {
-      document.getElementById('eventForm').reset();
-      document.getElementById('formRoomId').value = 'palco-' + Math.random().toString(36).substring(2, 7);
-      document.getElementById('eventModal').classList.remove('hidden');
-    }
-
-    function openNewClientModal() {
-      document.getElementById('clientModal').classList.remove('hidden');
-    }
-
-    function openChangePasswordModal() {
-      document.getElementById('passwordModal').classList.remove('hidden');
+    function showModal(id) {
+      const modal = document.getElementById(id);
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+      }
     }
 
     function closeModal(id) {
-      document.getElementById(id).classList.add('hidden');
+      const modal = document.getElementById(id);
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+    }
+
+    function openNewEventModal() {
+      const form = document.getElementById('eventForm');
+      if (form) form.reset();
+      
+      const feedbackEl = document.getElementById('eventFormFeedback');
+      if (feedbackEl) {
+        feedbackEl.innerText = '';
+        feedbackEl.classList.add('hidden');
+      }
+
+      const roomIdEl = document.getElementById('formRoomId');
+      if (roomIdEl) {
+        roomIdEl.value = 'palco-' + Math.random().toString(36).substring(2, 7);
+      }
+
+      const primaryColor = document.getElementById('formPrimaryColor');
+      const primaryText = document.getElementById('formPrimaryColorText');
+      if (primaryColor && primaryText) {
+        primaryColor.value = '#06b6d4';
+        primaryText.value = '#06b6d4';
+      }
+
+      showModal('eventModal');
+      setTimeout(() => {
+        document.getElementById('formName')?.focus();
+      }, 50);
+    }
+
+    function openNewClientModal() {
+      showModal('clientModal');
+    }
+
+    function openChangePasswordModal() {
+      showModal('passwordModal');
     }
 
     let adminGlossariesCache = [];
 
     async function loadAdminGlossaries() {
       try {
-        const res = await fetch('/api/glossaries');
+        const res = await fetch('/api/glossaries', { headers: getAuthHeaders() });
         if (res.ok) {
           const data = await res.json();
           adminGlossariesCache = data.glossaries || [];
@@ -899,6 +948,40 @@
 
     async function handleSaveEvent(e) {
       e.preventDefault();
+      const submitBtn = document.getElementById('submitEventBtn') || e.target.querySelector('button[type="submit"]');
+      const originalText = submitBtn ? submitBtn.innerText : 'Salvar Evento';
+      const feedbackEl = document.getElementById('eventFormFeedback');
+
+      if (feedbackEl) {
+        feedbackEl.innerText = '';
+        feedbackEl.classList.add('hidden');
+      }
+
+      const roomId = (document.getElementById('formRoomId')?.value || '').trim();
+      const roomName = (document.getElementById('formName')?.value || '').trim();
+
+      if (!roomId) {
+        if (feedbackEl) {
+          feedbackEl.innerText = 'Por favor, informe o ID da Sala (slug).';
+          feedbackEl.classList.remove('hidden');
+        } else {
+          alert('Por favor, informe o ID da Sala (slug).');
+        }
+        document.getElementById('formRoomId')?.focus();
+        return;
+      }
+
+      if (!roomName) {
+        if (feedbackEl) {
+          feedbackEl.innerText = 'Por favor, informe o Nome do Evento.';
+          feedbackEl.classList.remove('hidden');
+        } else {
+          alert('Por favor, informe o Nome do Evento.');
+        }
+        document.getElementById('formName')?.focus();
+        return;
+      }
+
       const targetLangs = Array.from(document.querySelectorAll('input[name="targetLang"]:checked')).map(el => el.value);
 
       let preloadGlossaryTerms = {};
@@ -911,36 +994,64 @@
       }
 
       const payload = {
-        id: document.getElementById('formRoomId').value.trim(),
-        name: document.getElementById('formName').value.trim(),
-        clientId: document.getElementById('formClientId').value || null,
-        bannerUrl: document.getElementById('formBannerUrl').value.trim(),
-        logoUrl: document.getElementById('formLogoUrl').value.trim(),
-        primaryColor: document.getElementById('formPrimaryColor').value,
-        secondaryColor: document.getElementById('formSecondaryColor').value,
-        bgColor: document.getElementById('formBgColor').value,
-        fontFamily: document.getElementById('formFontFamily').value,
-        customCss: document.getElementById('formCustomCss').value.trim(),
-        allowOriginalAudio: document.getElementById('formAllowOriginal').checked,
-        allowTranslation: document.getElementById('formAllowTranslation').checked,
-        allowSubtitles: document.getElementById('formAllowSubtitles').checked,
-        sourceLanguage: document.getElementById('formSourceLang').value,
-        targetLanguages: targetLangs,
+        id: roomId,
+        name: roomName,
+        clientId: document.getElementById('formClientId')?.value || null,
+        bannerUrl: (document.getElementById('formBannerUrl')?.value || '').trim(),
+        logoUrl: (document.getElementById('formLogoUrl')?.value || '').trim(),
+        primaryColor: document.getElementById('formPrimaryColor')?.value || '#06b6d4',
+        secondaryColor: document.getElementById('formSecondaryColor')?.value || '#3b82f6',
+        bgColor: document.getElementById('formBgColor')?.value || '#020617',
+        fontFamily: document.getElementById('formFontFamily')?.value || 'Inter',
+        customCss: (document.getElementById('formCustomCss')?.value || '').trim(),
+        allowOriginalAudio: document.getElementById('formAllowOriginal')?.checked !== false,
+        allowTranslation: document.getElementById('formAllowTranslation')?.checked !== false,
+        allowSubtitles: document.getElementById('formAllowSubtitles')?.checked !== false,
+        sourceLanguage: document.getElementById('formSourceLang')?.value || 'pt-BR',
+        targetLanguages: targetLangs.length ? targetLangs : ['en', 'es'],
         glossary: preloadGlossaryTerms
       };
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerText = 'Salvando Evento...';
+      }
 
       try {
         const res = await fetch('/api/rooms', {
           method: 'POST',
-          headers: authHeaders,
+          headers: getAuthHeaders(),
           body: JSON.stringify(payload)
         });
+
+        const data = await res.json().catch(() => ({}));
+
         if (res.ok) {
           closeModal('eventModal');
-          loadRooms();
+          await loadRooms();
+        } else {
+          const errMsg = data.error || ('Erro ao salvar evento (Código HTTP ' + res.status + ')');
+          if (feedbackEl) {
+            feedbackEl.innerText = errMsg;
+            feedbackEl.classList.remove('hidden');
+          }
+          alert(errMsg);
+          if (res.status === 401) {
+            handleLogout();
+          }
         }
       } catch (err) {
-        alert('Erro ao salvar evento: ' + err.message);
+        const errMsg = 'Falha na conexão com o servidor: ' + err.message;
+        if (feedbackEl) {
+          feedbackEl.innerText = errMsg;
+          feedbackEl.classList.remove('hidden');
+        }
+        alert(errMsg);
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerText = originalText;
+        }
       }
     }
 
