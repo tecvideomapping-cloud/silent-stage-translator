@@ -44,13 +44,49 @@
     'save':'<path d="M3 3h15l3 3v15H3V3Z"/><path d="M7 3v6h10V3M7 21v-8h10v8"/>',
     'trash-2':'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>',
     'qr-code':'<path d="M3 3h6v6H3zm12 0h6v6h-6zM3 15h6v6H3zM15 15h3v3h3v3h-6v-6Zm-3-3v3m0 3v3m6-9h3M3 12h6"/>',
-    'wifi':'<path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-11 4a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r="1"/>'
+    'wifi':'<path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-11 4a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r="1"/>',
+    'eye':'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+    'eye-off':'<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24m-6.36-6.36L2 2m20 20-5.12-5.12M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>'
   };
   function paintIcons(scope=document) {
     scope.querySelectorAll('[data-icon]:not([data-icon-ready])').forEach(el=>{
       const paths=icons[el.dataset.icon]||icons['audio-lines'];
       el.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
       el.dataset.iconReady='true';
+    });
+  }
+  function setupPasswordToggles(scope=document) {
+    const inputs = scope.querySelectorAll('input[type="password"]:not([data-pwd-toggle-ready])');
+    inputs.forEach(input => {
+      input.dataset.pwdToggleReady = 'true';
+      let wrapper = input.parentElement;
+      if (!wrapper || !wrapper.classList.contains('vmt-password-field')) {
+        wrapper = document.createElement('div');
+        wrapper.className = 'vmt-password-field';
+        input.parentNode.insertBefore(wrapper, input);
+        wrapper.appendChild(input);
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'vmt-password-toggle';
+      btn.setAttribute('aria-label', 'Visualizar senha');
+      btn.setAttribute('title', 'Visualizar senha');
+      btn.tabIndex = -1;
+      btn.innerHTML = '<span data-icon="eye"></span>';
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const isPass = input.type === 'password';
+        input.type = isPass ? 'text' : 'password';
+        btn.innerHTML = `<span data-icon="${isPass ? 'eye-off' : 'eye'}"></span>`;
+        const label = isPass ? 'Ocultar senha' : 'Visualizar senha';
+        btn.setAttribute('aria-label', label);
+        btn.setAttribute('title', label);
+        paintIcons(wrapper);
+        input.focus();
+      });
+      wrapper.appendChild(btn);
+      paintIcons(wrapper);
     });
   }
   function setTheme(theme) {
@@ -67,10 +103,16 @@
     let theme='dark'; try { theme=localStorage.getItem('vmt-theme')||'dark'; } catch {}
     setTheme(theme==='light'?'light':'dark');
     document.addEventListener('click',e=>{if(e.target.closest('[data-theme-toggle]'))setTheme(document.documentElement.dataset.theme==='light'?'dark':'light');});
+    setupPasswordToggles();
     let scheduled=false;
     new MutationObserver(records=>{
-      if(scheduled||!records.some(r=>Array.from(r.addedNodes).some(n=>n.nodeType===1&&(!n.matches?.('svg,path,circle,rect')&&(n.matches?.('[data-icon]')||n.querySelector?.('[data-icon]:not([data-icon-ready])'))))))return;
-      scheduled=true;requestAnimationFrame(()=>{scheduled=false;paintIcons();});
+      if(scheduled) return;
+      scheduled=true;
+      requestAnimationFrame(()=>{
+        scheduled=false;
+        paintIcons();
+        setupPasswordToggles();
+      });
     }).observe(document.body,{childList:true,subtree:true});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
