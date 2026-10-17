@@ -481,10 +481,7 @@
       return localStorage.getItem('vmt_admin_token') || '';
     }
 
-    const authToken = getAuthToken();
-    if (!authToken) {
-      window.location.href = '/login.html';
-    }
+    // A sessão HttpOnly é validada pelo servidor, inclusive sem token legado local.
 
     function getAuthHeaders() {
       const token = getAuthToken();
@@ -516,10 +513,9 @@
     let authFailures = 0;
     function handleAuthError(res) {
       if (res && res.status === 401) {
-        authFailures++;
-        if (authFailures >= 5 && res.url && res.url.includes('/api/auth/me')) {
-          handleLogout();
-        }
+        localStorage.removeItem('vmt_admin_token');
+        localStorage.removeItem('vmt_user');
+        window.location.replace('/login.html?reason=session-expired');
       }
     }
 
@@ -541,17 +537,24 @@
       }
     }
 
+    let roomsLoading = false;
     async function loadRooms() {
+      if (roomsLoading) return;
+      roomsLoading = true;
       try {
-        const res = await fetch('/api/rooms', { headers: getAuthHeaders() });
+        const res = await fetch('/api/rooms', { headers: getAuthHeaders(), signal: AbortSignal.timeout(10000) });
         if (res.status === 401) return handleAuthError(res);
-        if (res.ok) {
-          authFailures = 0;
-          const data = await res.json();
-          roomsList = data.rooms || [];
-          renderRooms();
-        }
-      } catch (e) {}
+        if (!res.ok) throw new Error('Eventos indisponíveis');
+        const data = await res.json();
+        if (!Array.isArray(data.rooms)) throw new Error('Resposta inválida');
+        roomsList = data.rooms;
+        authFailures = 0;
+        renderRooms();
+      } catch (e) {
+        if (!roomsList.length) document.getElementById('eventsGrid').innerHTML = '<div role="alert" class="p-8 text-center text-slate-400 col-span-full">Não foi possível carregar os eventos. Seus dados não foram alterados.<br><button type="button" class="mt-4 text-violet-300 underline" onclick="loadRooms()">Tentar novamente</button></div>';
+      } finally {
+        roomsLoading = false;
+      }
     }
 
     async function loadClients() {

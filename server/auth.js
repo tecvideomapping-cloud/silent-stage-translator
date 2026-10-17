@@ -6,9 +6,8 @@ const digest = token => crypto.createHash('sha256').update(token).digest('hex');
 function setSessionStore(store, wait) { sessionStore = store; ready = wait || ready; }
 function tokenFrom(req) {
  const header=req.headers?.authorization;
- if(header?.startsWith('Bearer '))return header.slice(7);
  const cookie=String(req.headers?.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('vmt_admin_session='));
- return cookie?.slice(18)||req.headers?.['x-admin-token']||req.query?.token||new URL(req.url||'/','http://localhost').searchParams.get('token')||'';
+ return cookie?.slice(18)||(header?.startsWith('Bearer ')?header.slice(7):'')||req.headers?.['x-admin-token']||req.query?.token||new URL(req.url||'/','http://localhost').searchParams.get('token')||'';
 }
 function hashPassword(password,salt=null) {
  const generatedSalt=salt||crypto.randomBytes(16).toString('hex');
