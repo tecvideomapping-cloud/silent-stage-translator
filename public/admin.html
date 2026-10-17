@@ -21,7 +21,7 @@
       <button onclick="switchTab('clients')" id="tabBtnClients" class="text-slate-400"><span data-icon="building-2"></span><span>Clientes</span><span id="clientsBadge" class="admin-count">0</span></button>
       <button onclick="switchTab('leads')" id="tabBtnLeads" class="text-slate-400"><span data-icon="inbox"></span><span>Propostas</span><span id="leadsBadge" class="admin-count">0</span></button>
       <button onclick="switchTab('glossaries')" id="tabBtnGlossaries" class="text-slate-400"><span data-icon="book-open"></span><span>Glossários</span><span id="glossariesBadge" class="admin-count">0</span></button>
-    </nav>
+    <a href="/sales.html" class="vmt-btn admin-sales-link"><span data-icon="building-2"></span> Vendas e produtos</a></nav>
     <div class="admin-sidebar-foot">
       <div class="admin-user"><span class="admin-avatar" data-icon="user-round"></span><div><p id="userNameDisplay">Administrador</p><p id="userEmailDisplay">admin@videomappingtech.com</p></div></div>
       <div class="admin-account-actions"><button onclick="openChangePasswordModal()"><span data-icon="key-round"></span>Senha</button><button onclick="handleLogout()"><span data-icon="log-out"></span>Sair</button></div>
@@ -439,6 +439,11 @@
   </div>
 
   <script>
+    function escapeMarkup(value) {
+      return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function inlineText(value) { return encodeURIComponent(String(value ?? '')).replace(/'/g, '%27'); }
+
     // 1. CHECAGEM ESTRITA DE AUTENTICAÇÃO
     const authToken = localStorage.getItem('vmt_admin_token');
     if (!authToken) {
@@ -543,7 +548,7 @@
 
         return `
           <div class="admin-event vmt-glass flex flex-col">
-            <div class="admin-event-art ${room.banner_url ? 'has-banner' : ''}" ${room.banner_url ? `style="background-image: linear-gradient(0deg,rgba(15,12,30,.75),rgba(15,12,30,.08)),url('${room.banner_url}');"` : ''}><span class="admin-event-art-label">SILENT TRANSLATOR</span><strong>${room.name}</strong></div>
+            <div class="admin-event-art ${room.banner_url ? 'has-banner' : ''}" ${room.banner_url ? `style="background-image: linear-gradient(0deg,rgba(15,12,30,.75),rgba(15,12,30,.08)),url('${room.banner_url}');"` : ''}><span class="admin-event-art-label">SILENT TRANSLATOR</span><strong>${escapeMarkup(room.name)}</strong></div>
             <div>
               <div class="flex items-center justify-between mb-2">
                 <span class="text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded-full">
@@ -568,7 +573,7 @@
                   ` : ''}
                 </div>
               </div>
-              <h3 class="font-bold text-base text-white truncate">${room.name}</h3>
+              <h3 class="font-bold text-base text-white truncate">${escapeMarkup(room.name)}</h3>
               ${room.client_company ? `<p class="text-xs text-cyan-400">Cliente: ${room.client_company}</p>` : ''}
               <p class="text-xs text-slate-400 mt-1">Palco: <strong>${room.source_language || 'pt-BR'}</strong> → Tradução: <strong>${(room.target_languages || []).join(', ').toUpperCase()}</strong></p>
               
@@ -589,7 +594,7 @@
               <div class="flex items-center justify-between">
                 <span class="text-slate-400">📱 Ouvinte:</span>
                 <div class="flex gap-1.5">
-                  <button onclick="showQRCode('${listenerUrl}', '${room.name}')" class="text-slate-300 hover:text-white bg-slate-800 px-2 py-0.5 rounded">QR</button>
+                  <button onclick="showQRCode('${listenerUrl}', decodeURIComponent('${inlineText(room.name)}'))" class="text-slate-300 hover:text-white bg-slate-800 px-2 py-0.5 rounded">QR</button>
                   <button onclick="copyLink('${listenerUrl}')" class="text-cyan-400 hover:text-cyan-300 bg-slate-800 px-2 py-0.5 rounded">Copiar</button>
                   <a href="${listenerUrl}" target="_blank" class="text-slate-400 hover:text-white bg-slate-800 px-2 py-0.5 rounded">Abrir</a>
                 </div>

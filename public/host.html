@@ -8,12 +8,23 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <link rel="stylesheet" href="/design-system.css">
   <link rel="stylesheet" href="/host-v2.css">
+  <link rel="stylesheet" href="/host-upsells.css">
+  <script src="/host-upsells.js" defer></script>
+  <script src="/stage-dsp.js" defer></script>
+  <script src="/stage-studios.js" defer></script>
   <script src="/design-system.js" defer></script>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
 </head>
 <body class="vmt-app vmt-host">
 
-<aside class="host-sidebar"><a href="/admin.html" class="vmt-brand"><span class="host-brand-mark" data-icon="waves"></span><span>videomapping<small>SILENT TRANSLATOR</small></span></a><div class="host-nav-caption">WORKSPACE</div><nav aria-label="Navegação do estúdio"><a href="/admin.html"><span data-icon="layout-grid"></span> Visão geral</a><a href="#" class="is-active" aria-current="page"><span data-icon="radio"></span> Estúdio ao vivo</a><a href="#host-monitor"><span data-icon="captions"></span> Transcrição</a><a href="#host-settings"><span data-icon="sliders-horizontal"></span> Configurações</a><a href="#host-glossary"><span data-icon="book-open"></span> Glossário</a></nav><div class="host-sidebar-bottom"><span class="host-eyebrow">VIDEOMAPPINGTECH</span><p>Tradução que conecta.<br>Experiência sem barreiras.</p></div></aside>
+<aside class="host-sidebar"><a href="/admin.html" class="vmt-brand"><span class="host-brand-mark" data-icon="waves"></span><span>videomapping<small>SILENT TRANSLATOR</small></span></a><div class="host-nav-caption">WORKSPACE</div><nav aria-label="Navegação do estúdio">
+      <a href="/admin.html"><span data-icon="layout-grid"></span> Visão geral</a>
+      <a href="javascript:void(0)" onclick="switchStudioTab('view-live')" class="is-active"><span data-icon="radio"></span> Palco Ao Vivo</a>
+      <a href="javascript:void(0)" onclick="switchStudioTab('view-cloning')"><span data-icon="mic-vocal"></span> Clonagem de Voz</a>
+      <a href="javascript:void(0)" onclick="switchStudioTab('view-dsp')"><span data-icon="sliders"></span> Filtro DSP & Ruído</a>
+      <a href="javascript:void(0)" onclick="switchStudioTab('view-transcripts')"><span data-icon="file-text"></span> Atas & Legendas</a>
+      <a href="#host-glossary" onclick="switchStudioTab('view-live')"><span data-icon="book-open"></span> Glossário</a>
+    </nav><div class="host-sidebar-bottom"><span class="host-eyebrow">VIDEOMAPPINGTECH</span><p>Tradução que conecta.<br>Experiência sem barreiras.</p></div></aside>
   <!-- Header -->
   <header class="host-topbar border-b border-slate-800 bg-slate-900/90 px-6 py-4 flex items-center justify-between sticky top-0 z-30">
     <div class="flex items-center gap-3">
@@ -43,7 +54,37 @@
     </div>
   </header>
 
-  <main class="host-main"><div class="host-page-heading"><div><span class="host-eyebrow">CONTROLE DO PALCO</span><h1>Estúdio de transmissão<span>.</span></h1><p>Áudio, tradução e projeção em uma só mesa de operação.</p></div></div><div class="host-live-grid"><section class="host-studio vmt-glass bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
+  <main class="host-main">
+    <div class="host-page-heading">
+      <div>
+        <span class="host-eyebrow">CONTROLE DO PALCO & WORKSPACES</span>
+        <h1>Estúdio de transmissão<span>.</span></h1>
+        <p>Áudio, inteligência acústica, tradução e projeção em uma só mesa de operação.</p>
+      </div>
+    </div>
+
+    <!-- SELETOR DE ESTÚDIOS / WORKSPACES (Estilo VoiceStudio) -->
+    <div class="flex items-center gap-2 border-b border-slate-800 pb-3 mb-6 overflow-x-auto select-none">
+      <button type="button" onclick="switchStudioTab('view-live')" data-target-tab="view-live"
+        class="studio-tab-btn is-active flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition border border-cyan-500 bg-cyan-950/40 text-cyan-300">
+        <span>🎙️</span> Palco Ao Vivo
+      </button>
+      <button type="button" onclick="switchStudioTab('view-cloning')" data-target-tab="view-cloning"
+        class="studio-tab-btn flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40">
+        <span>🧬</span> Clonagem & Perfis de Voz
+      </button>
+      <button type="button" onclick="switchStudioTab('view-dsp')" data-target-tab="view-dsp"
+        class="studio-tab-btn flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40">
+        <span>🎛️</span> Filtro DSP & Redução de Ruído
+      </button>
+      <button type="button" onclick="switchStudioTab('view-transcripts')" data-target-tab="view-transcripts"
+        class="studio-tab-btn flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40">
+        <span>🎬</span> Atas, Dublagem & Exportação
+      </button>
+    </div>
+
+    <!-- ABA 1: PALCO AO VIVO -->
+    <div id="view-live" class="studio-tab-view flex flex-col gap-6"><div class="host-live-grid"><section class="host-studio vmt-glass bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
         <div class="flex items-center justify-between">
           <div>
             <h2 class="text-base font-bold text-white">Estúdio de transmissão</h2>
@@ -581,7 +622,238 @@
         <div id="glossaryList" class="flex flex-wrap gap-2 min-h-[40px] max-h-48 overflow-y-auto p-2.5 bg-slate-950 rounded-lg border border-slate-800">
           <!-- Renderizado via JS -->
         </div>
-      </section></main>
+      </section>
+    </div><!-- Fim de view-live -->
+
+    <!-- ABA 2: CLONAGEM & PERFIS DE VOZ (VOICE CLONING STUDIO) -->
+    <div id="view-cloning" class="studio-tab-view hidden flex flex-col gap-6">
+      <section class="vmt-glass bg-slate-900/90 border border-purple-500/30 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl">🧬</span>
+            <div>
+              <h2 class="text-base font-bold text-white">Voice Cloning & Studio Timbre</h2>
+              <p class="text-xs text-slate-400">Clone a identidade acústica e ressonância vocal do palestrante para os canais traduzidos</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs bg-purple-950/80 text-purple-300 border border-purple-800/60 px-3 py-1 rounded-full font-mono">
+              IA Neural: 646 Idiomas Suportados
+            </span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Bloco A: Captura de Amostra de Voz -->
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 flex flex-col gap-4">
+            <span class="host-eyebrow text-purple-400">AMOSTRA DE REFERÊNCIA DA VOZ</span>
+            <p class="text-xs text-slate-300">
+              Grave uma fala contínua de 5 segundos do palestrante para extrair a frequência fundamental (F0), envelope harmônico e timbre vocal.
+            </p>
+
+            <div class="flex items-center gap-3">
+              <button type="button" id="recordSampleBtn" onclick="recordVoiceSampleNow()"
+                class="text-xs bg-purple-600 hover:bg-purple-500 text-white font-semibold px-4 py-2 rounded-xl transition shadow flex items-center gap-2 active:scale-95">
+                <span>🎙️</span> Gravar Amostra de Voz (5s)
+              </button>
+              <span id="sampleRecordStatus" class="text-xs text-slate-400 italic">Aguardando início...</span>
+            </div>
+
+            <!-- Waveform Canvas -->
+            <div class="w-full bg-slate-900/80 border border-slate-800 rounded-lg p-2 flex flex-col items-center justify-center">
+              <canvas id="sampleWaveformCanvas" width="480" height="60" class="w-full h-14 rounded"></canvas>
+            </div>
+
+            <audio id="sampleAudioPlayer" controls class="w-full h-8 hidden"></audio>
+          </div>
+
+          <!-- Bloco B: Ajustes Acústicos & Modelagem Vocal -->
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 flex flex-col gap-4">
+            <span class="host-eyebrow text-cyan-400">MODELAGEM VOCAL & TIMBRE IA</span>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Ajuste de Tom (Pitch):</label>
+                <div class="flex items-center gap-2">
+                  <input type="range" id="studioPitchRange" min="-6" max="6" value="0" step="1"
+                    oninput="document.getElementById('studioPitchVal').innerText = (this.value > 0 ? '+' : '') + this.value + ' st'; document.getElementById('speakerPitchRange').value = this.value; onSpeakerVoiceControlChanged(false);"
+                    onchange="onSpeakerVoiceControlChanged(true)"
+                    class="w-full accent-purple-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg">
+                  <span id="studioPitchVal" class="text-xs text-purple-300 font-mono w-12 text-right">0 st</span>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Cadência / Velocidade:</label>
+                <div class="flex items-center gap-2">
+                  <input type="range" id="studioSpeedRange" min="0.80" max="1.35" value="1.05" step="0.05"
+                    oninput="document.getElementById('studioSpeedVal').innerText = parseFloat(this.value).toFixed(2) + 'x'; document.getElementById('speakerSpeedRange').value = this.value; onSpeakerVoiceControlChanged(false);"
+                    onchange="onSpeakerVoiceControlChanged(true)"
+                    class="w-full accent-purple-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg">
+                  <span id="studioSpeedVal" class="text-xs text-purple-300 font-mono w-12 text-right">1.05x</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-800 flex flex-col gap-2">
+              <label class="text-xs font-semibold text-slate-300">Salvar Perfil de Voz para a Biblioteca:</label>
+              <div class="flex gap-2">
+                <input type="text" id="saveProfileNameInput" placeholder="Ex: Palestrante Carlos (Barítono)"
+                  class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-400">
+                <button type="button" onclick="saveCurrentVoiceProfile()"
+                  class="bg-purple-600 hover:bg-purple-500 text-white font-semibold px-3 py-1.5 rounded-lg text-xs transition whitespace-nowrap">
+                  Salvar Perfil
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Biblioteca de Perfis Salvos -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span class="host-eyebrow text-slate-400">PERFIS DE VOZ SALVOS NESTE EVENTO</span>
+            <span class="text-xs text-slate-500">Clique em Carregar para aplicar imediatamente ao palco</span>
+          </div>
+          <div id="savedProfilesList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <!-- Renderizado via stage-studios.js -->
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ABA 3: FILTRO DSP & REDUÇÃO DE RUÍDO (AUDIO DSP STUDIO) -->
+    <div id="view-dsp" class="studio-tab-view hidden flex flex-col gap-6">
+      <section class="vmt-glass bg-slate-900/90 border border-cyan-500/30 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl">🎛️</span>
+            <div>
+              <h2 class="text-base font-bold text-white">Inteligência Acústica & Filtro de Ruído (DSP)</h2>
+              <p class="text-xs text-slate-400">Cadeia de processamento em tempo real em Web Audio API para palcos ruidosos</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="dspGateBadge" class="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800">
+              🟢 ABERTO (Voz Ativa)
+            </span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <!-- Card 1: Modo de Entrada Acústica -->
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
+            <span class="host-eyebrow text-cyan-400">1. PERFIL DE ENTRADA</span>
+            <label class="text-xs text-slate-300 font-semibold">Cenário Acústico:</label>
+            <select id="dspAcousticModeSelect" onchange="if(window.stageDsp) window.stageDsp.setMode(this.value);"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-cyan-200 font-semibold focus:outline-none focus:border-cyan-400">
+              <option value="stage_mic" selected>🎙️ Microfone de Palco / Lapela (DSP Ativo)</option>
+              <option value="direct">🎚️ Mesa de Som Digital (Flat / Bypass)</option>
+              <option value="noisy_hall">📢 Salão Ruidoso / Eco de PA (Denoise Agressivo)</option>
+            </select>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              O modo palco ativa o corte de graves em 80Hz para anular batidas de púlpito e respiração no microfone.
+            </p>
+          </div>
+
+          <!-- Card 2: Noise Gate Dinâmico -->
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
+            <span class="host-eyebrow text-purple-400">2. NOISE GATE DINÂMICO</span>
+            <div class="flex justify-between text-xs text-slate-300">
+              <span>Limiar de Corte (Threshold):</span>
+              <span id="dspThresholdVal" class="font-mono text-purple-300">-42 dB</span>
+            </div>
+            <input type="range" id="dspGateThresholdRange" min="-55" max="-25" value="-42" step="1"
+              oninput="document.getElementById('dspThresholdVal').innerText = this.value + ' dB'; if(window.stageDsp) window.stageDsp.setGateThreshold(parseFloat(this.value));"
+              class="w-full accent-purple-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg">
+            <div class="flex justify-between text-[10px] text-slate-500">
+              <span>-55dB (Permissivo)</span>
+              <span>-25dB (Agressivo)</span>
+            </div>
+            <div class="mt-1">
+              <span class="text-[10px] text-slate-400 block mb-1">Atenuação de Ruído de Fundo:</span>
+              <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                <div id="dspReductionBar" class="h-full bg-cyan-500 transition-all duration-100 w-0"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Nivelamento Dinâmico (Compressor) -->
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
+            <span class="host-eyebrow text-emerald-400">3. PROTEÇÃO ANTI-CLIPPING</span>
+            <div class="flex items-center gap-2">
+              <span class="text-xl text-emerald-400">🛡️</span>
+              <div class="text-xs text-slate-300 font-semibold">Brickwall Limiter Ativo</div>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              Comprime picos sonoros abruptos (ataque de 8ms, ratio 2.8:1) para proteger os tímpanos dos ouvintes no fone de ouvido contra estalos.
+            </p>
+            <div class="text-[10px] font-mono text-emerald-300 bg-emerald-950/60 border border-emerald-800/40 p-2 rounded-lg">
+              High-Pass: 80Hz • Knee: 6dB • Attack: 8ms
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ABA 4: ATAS, DUBLAGEM & EXPORTAÇÃO (TRANSCRIPTS STUDIO) -->
+    <div id="view-transcripts" class="studio-tab-view hidden flex flex-col gap-6">
+      <section class="vmt-glass bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl">🎬</span>
+            <div>
+              <h2 class="text-base font-bold text-white">Atas da Palestra & Exportação Multilíngue</h2>
+              <p class="text-xs text-slate-400">Consulte todo o histórico falado com carimbos de data/hora e baixe em formatos profissionais</p>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <span id="transcriptsCountBadge" class="text-xs bg-slate-800 text-cyan-300 border border-slate-700 px-3 py-1 rounded-full font-mono">
+              0 trechos gravados
+            </span>
+            <select id="exportLangSelect" class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200">
+              <option value="en" selected>🇺🇸 Inglês (EN)</option>
+              <option value="es">🇪🇸 Espanhol (ES)</option>
+              <option value="pt">🇧🇷 Original (PT)</option>
+            </select>
+            <button type="button" onclick="downloadRoomExport('txt')"
+              class="text-xs bg-cyan-600 hover:bg-cyan-500 text-white font-semibold px-3 py-1.5 rounded-lg transition shadow flex items-center gap-1 active:scale-95">
+              <span>📄</span> Baixar Ata (.TXT)
+            </button>
+            <button type="button" onclick="downloadRoomExport('srt')"
+              class="text-xs bg-purple-600 hover:bg-purple-500 text-white font-semibold px-3 py-1.5 rounded-lg transition shadow flex items-center gap-1 active:scale-95">
+              <span>🎬</span> Baixar Legendas (.SRT)
+            </button>
+            <button type="button" onclick="refreshTranscriptsStudio()" title="Atualizar tabela de atas"
+              class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 p-1.5 rounded-lg transition">
+              🔄
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabela de Transcrições & Traduções -->
+        <div class="w-full overflow-x-auto max-h-[500px] overflow-y-auto bg-slate-950 rounded-xl border border-slate-800">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-slate-800 bg-slate-900/90 text-[11px] uppercase tracking-wider text-slate-400 font-semibold sticky top-0 z-10">
+                <th class="p-3 w-28">Horário</th>
+                <th class="p-3">Fala Original (Palco)</th>
+                <th class="p-3">Tradução em Inglês</th>
+                <th class="p-3">Tradução em Espanhol</th>
+              </tr>
+            </thead>
+            <tbody id="transcriptsTableBody">
+              <tr>
+                <td colspan="4" class="p-6 text-center text-slate-500 italic">
+                  Carregando atas da sessão...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
 
   <!-- Modal: Salvar Glossário Atual como Modelo Reutilizável -->
   <div id="saveTemplateModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
@@ -683,6 +955,11 @@
   </div>
 
   <script>
+    function escapeMarkup(value) {
+      return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function inlineText(value) { return encodeURIComponent(String(value ?? '')).replace(/'/g, '%27'); }
+
     const urlParams = new URLSearchParams(window.location.search);
     let roomId = decodeURIComponent(urlParams.get('room') || urlParams.get('roomId') || 'palco1').trim().toLowerCase();
     document.getElementById('roomIdInput').value = roomId;
@@ -849,7 +1126,7 @@
 
     async function loadRoomDetails() {
       try {
-        const res = await fetch(`/api/rooms/${roomId}`);
+        const res = await operatorFetch(`/api/rooms/${roomId}`);
         if (res.ok) {
           const room = await res.json();
           document.getElementById('eventSubtitle').innerText = `${room.name} • Idioma: ${room.source_language}`;
@@ -1248,7 +1525,7 @@
 
     async function loadTtsKeyStatus() {
       try {
-        const res = await fetch('/api/config/tts-keys');
+        const res = await operatorFetch('/api/config/tts-keys');
         if (res.ok) {
           const data = await res.json();
           const badge = document.getElementById('ttsActiveProviderBadge');
@@ -1265,7 +1542,7 @@
       const openAiKey = document.getElementById('openAiKeyInput')?.value?.trim();
       const elevenLabsKey = document.getElementById('elevenLabsKeyInput')?.value?.trim();
       try {
-        const res = await fetch('/api/config/tts-keys', {
+        const res = await operatorFetch('/api/config/tts-keys', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ openAiKey, elevenLabsKey })
@@ -1306,9 +1583,9 @@
           pt: "Olá a todos, esta é a calibração de voz do palestrante com entonação e timbre neural de estúdio."
         };
         const sampleText = samplePhrases[previewLang] || samplePhrases.en;
-        const url = `/api/tts?lang=${encodeURIComponent(previewLang)}&text=${encodeURIComponent(sampleText)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}&t=${Date.now()}`;
+        const url = operatorUrl(`/api/tts?lang=${encodeURIComponent(previewLang)}&text=${encodeURIComponent(sampleText)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}&t=${Date.now()}`);
 
-        const response = await fetch(url);
+        const response = await operatorFetch(url);
         if (!response.ok) throw new Error('Falha ao sintetizar áudio no servidor');
         const provider = response.headers.get('X-TTS-Provider') || 'edge-neural';
         const blob = await response.blob();
@@ -1343,7 +1620,7 @@
         await previewAudioEl.play();
         if (previewBtn) {
           previewBtn.disabled = false;
-          previewBtn.innerHTML = `<span>🔊</span> Ouvindo (${SPEAKER_VOICE_LABELS[voice] || voice})...`;
+          previewBtn.innerHTML = `<span>🔊</span> Ouvindo (${escapeMarkup(SPEAKER_VOICE_LABELS[voice] || voice)})...`;
         }
       } catch (err) {
         console.error('Erro na prévia de áudio:', err);
@@ -1381,7 +1658,7 @@
 
     async function fetchRoomStats() {
       try {
-        const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/stats`);
+        const res = await operatorFetch(`/api/rooms/${encodeURIComponent(roomId)}/stats`);
         if (res.ok) {
           const data = await res.json();
           updateHostOnlineStats(data);
@@ -1389,9 +1666,37 @@
       } catch (e) {}
     }
 
+
+    let operatorCsrf = '';
+    function operatorUrl(input) {
+      const url = new URL(input, location.origin);
+      url.searchParams.set('room', roomId);
+      const token = localStorage.getItem('vmt_admin_token');
+      if (token) url.searchParams.set('token', token);
+      return url.pathname + url.search;
+    }
+    async function operatorFetch(input, options = {}) {
+      const url = new URL(input, location.origin);
+      const token = localStorage.getItem('vmt_admin_token');
+      const headers = new Headers(options.headers || {});
+      if (url.origin !== location.origin) return window.fetch(input, options);
+      url.searchParams.set('room', roomId);
+      if (token) headers.set('Authorization', 'Bearer ' + token);
+      if (!token && url.pathname.startsWith('/api/glossaries')) url.pathname = url.pathname.replace('/api/glossaries', '/api/customer/glossaries');
+      if (!token && !['GET', 'HEAD'].includes((options.method || 'GET').toUpperCase())) {
+        if (!operatorCsrf) {
+          const session = await window.fetch('/api/customer/me', { credentials: 'same-origin' });
+          const data = await session.json();
+          operatorCsrf = data.csrfToken || '';
+        }
+        headers.set('X-CSRF-Token', operatorCsrf);
+      }
+      return window.fetch(url.pathname + url.search, { ...options, credentials: 'same-origin', headers });
+    }
+
     function connectHostWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=host`;
+      const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=host&token=${encodeURIComponent(localStorage.getItem('vmt_admin_token') || '')}`;
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
@@ -1405,7 +1710,8 @@
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'room_online_stats' && data.stats) {
+          if (data.type === 'connected') { broadcastAudioMeta(); broadcastSpeakerVoiceProfile(); fetchRoomStats(); }
+          else if (data.type === 'room_online_stats' && data.stats) {
             updateHostOnlineStats(data.stats);
           } else if (data.type === 'subtitle_translated') {
             if (data.lang === 'en') {
@@ -1428,7 +1734,8 @@
         } catch (e) {}
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
+        if (event.code === 1008) { if(isBroadcasting)stopActiveBroadcastCleanly(); document.getElementById('connStatus').innerText = event.reason || 'Acesso de operador obrigatório'; document.getElementById('broadcastBtn').disabled = true; window.dispatchEvent(new CustomEvent('vmt-host-policy-stop', { detail: { reason: event.reason || '' } })); return; }
         document.getElementById('connStatus').className = 'text-xs bg-red-950/80 text-red-400 border border-red-800/80 px-3 py-1 rounded-full font-medium';
         document.getElementById('connStatus').innerText = '● Desconectado';
         setTimeout(connectHostWS, 2500);
@@ -1552,11 +1859,35 @@
         }
 
         const source = audioContext.createMediaStreamSource(audioStream);
+
+        // Inicializa a cadeia de DSP e Noise Gate em Web Audio API
+        let dspProcessedSource = source;
+        if (typeof StageAudioDSP !== 'undefined') {
+          window.stageDsp = new StageAudioDSP(audioContext);
+          dspProcessedSource = window.stageDsp.init(source);
+          const initialDspMode = document.getElementById('dspAcousticModeSelect')?.value || 'stage_mic';
+          window.stageDsp.setMode(initialDspMode);
+
+          window.stageDsp.onGateStateChange = (isOpen) => {
+            const badge = document.getElementById('dspGateBadge');
+            const reductionBar = document.getElementById('dspReductionBar');
+            if (badge) {
+              badge.innerText = isOpen ? '🟢 ABERTO (Voz Ativa)' : '🟡 FECHADO (Silenciado)';
+              badge.className = isOpen
+                ? 'text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800'
+                : 'text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-800';
+            }
+            if (reductionBar) {
+              reductionBar.style.width = isOpen ? '0%' : (window.stageDsp.getReductionPercent() + '%');
+            }
+          };
+        }
+
         const analyser = audioContext.createAnalyser();
         // 2048 amostras (~42ms em 48kHz) permite medir com exatidão vozes graves masculinas (70Hz-150Hz) e femininas (165Hz-340Hz)
         analyser.fftSize = 2048;
         analyser.smoothingTimeConstant = 0.3;
-        source.connect(analyser);
+        dspProcessedSource.connect(analyser);
 
         const floatTimeData = new Float32Array(analyser.fftSize);
         let lastPitchCalcTime = 0;
@@ -1573,6 +1904,7 @@
           }
           const rms = Math.sqrt(sum / floatTimeData.length);
           currentRmsLevel = rms;
+          if (window.stageDsp) window.stageDsp.processRms(rms);
           const pct = Math.min(100, Math.round(rms * 400));
           const vuBar = document.getElementById('vuBar');
           const vuText = document.getElementById('vuLevelText');
@@ -1613,7 +1945,7 @@
         scriptProcessor = audioContext.createScriptProcessor(2048, 2, 1);
         const silentSinkGain = audioContext.createGain();
         silentSinkGain.gain.value = 0;
-        source.connect(scriptProcessor);
+        dspProcessedSource.connect(scriptProcessor);
         scriptProcessor.connect(silentSinkGain);
         silentSinkGain.connect(audioContext.destination);
 
@@ -1698,7 +2030,7 @@
                 isSendingDigitalStt = true;
                 const lang = document.getElementById('sourceLang')?.value || 'pt-BR';
                 const wavBlob = encodeWavFromInt16Chunks(chunksToSend, totalToSend, targetRate);
-                fetch(`/api/stt-chunk?lang=${encodeURIComponent(lang)}`, {
+                operatorFetch(`/api/stt-chunk?lang=${encodeURIComponent(lang)}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'audio/wav' },
                   body: wavBlob
@@ -1910,7 +2242,7 @@
 
         // 1. Toca a voz da palestra na saída de áudio do computador (/api/tts respeitando a calibração de voz do palestrante)
         const { voice: simVoice, pitch: simPitch, speed: simSpeed } = getResolvedSpeakerVoiceProfile();
-        const voiceUrl = `/api/tts?lang=pt&text=${encodeURIComponent(paragraph)}&voice=${encodeURIComponent(simVoice)}&speed=${simSpeed}&pitch=${simPitch}&t=${Date.now()}`;
+        const voiceUrl = operatorUrl(`/api/tts?lang=pt&text=${encodeURIComponent(paragraph)}&voice=${encodeURIComponent(simVoice)}&speed=${simSpeed}&pitch=${simPitch}&t=${Date.now()}`);
         fullLectureAudioEl = new Audio(voiceUrl);
         let audioFinished = false;
         fullLectureAudioEl.onended = () => { audioFinished = true; };
@@ -2614,15 +2946,15 @@
     async function fetchSavedGlossaries() {
       const select = document.getElementById('savedGlossarySelect');
       try {
-        const res = await fetch('/api/glossaries');
+        const res = await operatorFetch('/api/glossaries');
         if (res.ok) {
           const data = await res.json();
           savedGlossariesCache = data.glossaries || [];
-          localStorage.setItem('vmp_saved_glossaries', JSON.stringify(savedGlossariesCache));
+          if (localStorage.getItem('vmt_admin_token')) localStorage.setItem('vmp_saved_glossaries:' + roomId, JSON.stringify(savedGlossariesCache));
         }
       } catch (err) {
         console.warn('Erro ao carregar glossários do servidor. Usando cache local:', err);
-        const cached = localStorage.getItem('vmp_saved_glossaries');
+        const cached = localStorage.getItem('vmt_admin_token') ? localStorage.getItem('vmp_saved_glossaries:' + roomId) : null;
         if (cached) {
           try { savedGlossariesCache = JSON.parse(cached); } catch (e) {}
         }
@@ -2692,7 +3024,7 @@
       for (const [k, v] of Object.entries(glossaryMap)) {
         const chip = document.createElement('span');
         chip.className = 'bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded';
-        chip.innerHTML = `<strong>${k}:</strong> ${v}`;
+        chip.innerHTML = `<strong>${escapeMarkup(k)}:</strong> ${escapeMarkup(v)}`;
         preview.appendChild(chip);
       }
 
@@ -2709,7 +3041,7 @@
       if (!name) return;
 
       try {
-        const res = await fetch('/api/glossaries', {
+        const res = await operatorFetch('/api/glossaries', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2773,18 +3105,18 @@
         const termCount = termEntries.length;
 
         const previewChips = termEntries.slice(0, 4).map(([k, v]) => 
-          `<span class="bg-slate-900 border border-slate-800 text-slate-300 px-1.5 py-0.5 rounded text-[10px] truncate max-w-[140px]">${k}</span>`
+          `<span class="bg-slate-900 border border-slate-800 text-slate-300 px-1.5 py-0.5 rounded text-[10px] truncate max-w-[140px]">${escapeMarkup(k)}</span>`
         ).join('');
         const moreBadge = termCount > 4 ? `<span class="text-slate-500 text-[10px]">+${termCount - 4} mais</span>` : '';
 
         card.innerHTML = `
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 mb-1">
-              <span class="text-xs font-bold text-white truncate">${g.name}</span>
-              <span class="text-[10px] bg-cyan-950 text-cyan-400 border border-cyan-800 px-2 py-0.5 rounded-full">${g.category || 'Geral'}</span>
+              <span class="text-xs font-bold text-white truncate">${escapeMarkup(g.name)}</span>
+              <span class="text-[10px] bg-cyan-950 text-cyan-400 border border-cyan-800 px-2 py-0.5 rounded-full">${escapeMarkup(g.category || 'Geral')}</span>
               <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">${termCount} termos</span>
             </div>
-            ${g.description ? `<p class="text-[11px] text-slate-400 mb-2 truncate">${g.description}</p>` : ''}
+            ${g.description ? `<p class="text-[11px] text-slate-400 mb-2 truncate">${escapeMarkup(g.description)}</p>` : ''}
             <div class="flex items-center flex-wrap gap-1">
               ${previewChips}
               ${moreBadge}
@@ -2801,7 +3133,7 @@
             <button onclick="exportGlossaryAsJson('${g.id}')" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 px-2 py-1.5 rounded-lg transition" title="Exportar JSON">
               📥
             </button>
-            <button onclick="deleteSavedGlossaryItem('${g.id}', '${g.name.replace(/'/g, "\\'")}')" class="text-[11px] bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1.5 rounded-lg transition" title="Excluir este modelo">
+            <button onclick="deleteSavedGlossaryItem('${g.id}', decodeURIComponent('${inlineText(g.name)}'))" class="text-[11px] bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1.5 rounded-lg transition" title="Excluir este modelo">
               🗑️
             </button>
           </div>
@@ -2825,7 +3157,7 @@
     async function deleteSavedGlossaryItem(id, name) {
       if (!confirm(`Deseja realmente excluir o modelo de glossário "${name}" da biblioteca?`)) return;
       try {
-        const res = await fetch(`/api/glossaries/${id}`, { method: 'DELETE' });
+        const res = await operatorFetch(`/api/glossaries/${id}`, { method: 'DELETE' });
         if (res.ok) {
           await fetchSavedGlossaries();
           alert(`Modelo "${name}" excluído com sucesso.`);
@@ -2871,7 +3203,7 @@
             return;
           }
 
-          const res = await fetch('/api/glossaries', {
+          const res = await operatorFetch('/api/glossaries', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, category, description, terms })
@@ -2933,7 +3265,7 @@
       for (const [k, v] of Object.entries(glossaryMap)) {
         const span = document.createElement('span');
         span.className = 'text-xs bg-slate-900 border border-slate-800 text-slate-300 px-2.5 py-1 rounded-md flex items-center gap-1.5 shadow-sm';
-        span.innerHTML = `<strong>${k}:</strong> ${v} <button onclick="removeGlossaryItem('${k}')" class="text-rose-400 hover:text-rose-300 font-bold ml-1 text-sm">×</button>`;
+        span.innerHTML = `<strong>${escapeMarkup(k)}:</strong> ${escapeMarkup(v)} <button onclick="removeGlossaryItem(decodeURIComponent('${inlineText(k)}'))" class="text-rose-400 hover:text-rose-300 font-bold ml-1 text-sm">×</button>`;
         container.appendChild(span);
       }
     }
@@ -2945,7 +3277,7 @@
 
     async function saveGlossary() {
       try {
-        await fetch(`/api/rooms/${roomId}/glossary`, {
+        await operatorFetch(`/api/rooms/${roomId}/glossary`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ hostKey: 'admin', glossary: glossaryMap })
@@ -3109,6 +3441,11 @@
     fetchRoomStats();
     setInterval(fetchRoomStats, 4000);
   </script>
-</body>
+<script>
+if (!localStorage.getItem('vmt_admin_token')) {
+ document.querySelectorAll('a[href="/admin.html"]').forEach(a=>a.href='/customer.html');
+ document.querySelectorAll('[onclick*="TtsKeys"],[onclick*="ttsKeys"]').forEach(b=>b.hidden=true);
+}
+</script></body>
 </html>
 

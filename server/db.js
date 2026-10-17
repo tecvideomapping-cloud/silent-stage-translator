@@ -83,17 +83,18 @@ defaultGlossaryPresets.forEach(g => memoryStore.savedGlossaries.set(g.id, g));
 
 async function initDb() {
   // Inicializa usuário admin em memória
-  const defaultAdminPass = hashPassword('Videomapping2026!');
+  const bootstrapPassword = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'production' ? null : 'Videomapping2026!');
+  const defaultAdminPass = hashPassword(bootstrapPassword || require('crypto').randomBytes(32).toString('hex'));
   const defaultAdmin = {
     id: 1,
-    email: 'admin@videomappingtech.com',
+    email: (process.env.ADMIN_EMAIL || 'admin@videomappingtech.com').toLowerCase().trim(),
     password_hash: defaultAdminPass.hash,
     password_salt: defaultAdminPass.salt,
     name: 'Administrador Videomappingtech',
     role: 'superadmin',
     created_at: new Date()
   };
-  memoryStore.users.set(defaultAdmin.email, defaultAdmin);
+  if(process.env.NODE_ENV !== 'production')memoryStore.users.set(defaultAdmin.email, defaultAdmin);
 
   if (!process.env.DATABASE_URL) {
     console.log('[DB] DATABASE_URL não configurada. Operando em modo In-Memory.');
@@ -201,12 +202,19 @@ async function initDb() {
     // Cria o primeiro admin padrão no Postgres se não houver usuários cadastrados
     const userCheck = await pool.query('SELECT count(*) FROM users');
     if (parseInt(userCheck.rows[0].count) === 0) {
+      if(!bootstrapPassword || bootstrapPassword.length<12)throw new Error('Configure ADMIN_PASSWORD com pelo menos 12 caracteres para inicializar o administrador.');
       await pool.query(
         `INSERT INTO users (email, password_hash, password_salt, name, role)
          VALUES ($1, $2, $3, $4, $5)`,
         [defaultAdmin.email, defaultAdmin.password_hash, defaultAdmin.password_salt, defaultAdmin.name, defaultAdmin.role]
       );
       console.log('[DB] Usuário administrador padrão criado com sucesso: admin@videomappingtech.com');
+    }
+    // Upgrade only the known development bootstrap credential; preserve other admins.
+    if(process.env.NODE_ENV==='production'&&process.env.ADMIN_PASSWORD){
+      const seeded=await pool.query('SELECT password_hash,password_salt FROM users WHERE email=$1',[defaultAdmin.email]);
+      const old=seeded.rows[0];
+      if(old&&require('./auth').verifyPassword('Videomapping2026!',old.password_hash,old.password_salt))await pool.query('UPDATE users SET password_hash=$1,password_salt=$2 WHERE email=$3',[defaultAdminPass.hash,defaultAdminPass.salt,defaultAdmin.email]);
     }
 
     // Inicializa glossários padrão no Postgres se a tabela estiver vazia
@@ -627,6 +635,7 @@ async function deleteSavedGlossary(id) {
 }
 
 module.exports = {
+  invalidateRoom: roomId => memoryStore.rooms.delete(roomId),
   initDb,
   getUserByEmail,
   createUser,

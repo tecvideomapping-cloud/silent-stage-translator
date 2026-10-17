@@ -624,7 +624,8 @@
         } catch (e) {}
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
+        if (event.code === 1008) { if(isPlaying)toggleAudio(); document.getElementById('playerStatus').innerText = event.reason || 'Evento indisponível'; document.getElementById('togglePlayBtn').disabled = true; return; }
         document.getElementById('statusIndicator').className = 'w-2.5 h-2.5 rounded-full bg-red-500';
         document.getElementById('playerStatus').innerText = 'Reconectando...';
         setTimeout(connectWS, 2000);
@@ -1118,7 +1119,7 @@
       const voice = currentSpeakerProfile?.voice || 'male_deep';
       const speed = currentSpeakerProfile?.speed || 1.05;
       const pitch = parseFloat(currentSpeakerProfile?.pitch || 0);
-      const url = `/api/tts?lang=${encodeURIComponent(item.lang)}&text=${encodeURIComponent(item.text)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}`;
+      const url = `/api/tts?room=${encodeURIComponent(roomId)}&lang=${encodeURIComponent(item.lang)}&text=${encodeURIComponent(item.text)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}`;
       
       // Utiliza o player compartilhado pré-desbloqueado no DOM para garantir compatibilidade com iOS Safari e Android
       const audio = ensureSharedTtsPlayer();

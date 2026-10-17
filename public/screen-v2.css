@@ -66,3 +66,5 @@ html:fullscreen[data-screen-view=studio] body.vmt-screen.theme-black { backgroun
 .vmt-screen #screenMainArea .subtitle-line .text-white { color:#fff; }
 .vmt-screen #screenMainArea .subtitle-line .text-cyan-300 { color:#d1c3ff; }
 .vmt-screen #screenMainArea .subtitle-line { max-width:100%; overflow-wrap:anywhere; }
+
+.vmt-screen #screenMainArea .subtitle-text.text-white{color:#fff}.vmt-screen #screenMainArea .subtitle-text.text-cyan-300{color:#d1c3ff}

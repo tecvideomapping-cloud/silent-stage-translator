@@ -61,5 +61,6 @@ module.exports = {
   createSession,
   getSession,
   removeSession,
-  requireAuth
+  requireAuth,
+  getSession
 };

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vendas e pedidos | Videomappingtech</title>
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
+  <link rel="stylesheet" href="/design-system.css">
+  <link rel="stylesheet" href="/sales.css">
+  <link rel="stylesheet" href="/sales-upsells.css">
+  <script src="/design-system.js" defer></script>
+  <script src="/sales.js" defer></script>
+  <script src="/sales-upsells.js" defer></script>
+</head>
+<body class="vmt-app vmt-sales">
+  <header class="sales-topbar">
+    <a class="vmt-brand" href="/admin.html"><span class="vmt-icon" data-icon="waves" aria-hidden="true"></span> videomapping</a>
+    <div class="sales-top-actions"><a class="vmt-btn" href="/admin.html"><span data-icon="arrow-left" aria-hidden="true"></span> Voltar ao painel</a><button class="vmt-btn" data-theme-toggle aria-label="Alternar tema" type="button"><span data-icon="sun" aria-hidden="true"></span> Tema</button></div>
+  </header>
+  <main class="sales-main">
+    <div class="sales-title"><div><span class="sales-eyebrow">GESTÃO COMERCIAL</span><h1>Vendas e pedidos<span>.</span></h1><p>Acompanhe pagamentos e o envio de acesso aos clientes.</p></div><button class="vmt-btn" id="refreshSales" type="button"><span data-icon="refresh-cw" aria-hidden="true"></span> Atualizar</button></div>
+    <div id="salesFeedback" class="sales-feedback" role="status" aria-live="polite" hidden></div>
+    <section class="sales-totals" aria-label="Resumo de vendas">
+      <article class="vmt-glass sales-stat"><span>Receita de pedidos pagos</span><strong id="paidRevenue">—</strong><small>Pagamentos confirmados</small></article>
+      <article class="vmt-glass sales-stat"><span>Pedidos pagos</span><strong id="paidOrders">—</strong><small>Compras confirmadas</small></article>
+      <article class="vmt-glass sales-stat"><span>Pedidos pendentes</span><strong id="pendingOrders">—</strong><small>Aguardando pagamento</small></article>
+    </section>
+    <section class="vmt-glass sales-readiness" aria-labelledby="readinessTitle"><div><span class="sales-eyebrow">OPERAÇÃO</span><h2 id="readinessTitle">Configuração dos serviços</h2></div><ul id="readinessList"><li>Carregando configuração…</li></ul></section>
+    <section class="vmt-glass sales-orders" aria-labelledby="ordersTitle" aria-busy="true" id="ordersPanel">
+      <div class="sales-orders-heading"><div><h2 id="ordersTitle">Histórico de pedidos</h2><p>Do mais recente para o mais antigo.</p></div><span id="orderCount" class="sales-count">—</span></div>
+      <div id="ordersState" class="sales-empty" role="status">Carregando pedidos…</div>
+      <div class="sales-table-wrap" id="ordersTableWrap" hidden><table><caption class="sales-sr-only">Pedidos, pagamentos e entrega de acesso por e-mail</caption><thead><tr><th scope="col">Cliente / pedido</th><th scope="col">Plano</th><th scope="col">Pagamento</th><th scope="col">Valor</th><th scope="col">Data</th><th scope="col">Entrega por e-mail</th></tr></thead><tbody id="ordersRows"></tbody></table></div>
+    </section>
+    <section class="vmt-glass sales-catalog" aria-labelledby="catalogTitle" id="catalogPanel" aria-busy="true">
+      <div class="sales-orders-heading"><div><span class="sales-eyebrow">PRODUTOS E VANTAGENS</span><h2 id="catalogTitle">Catálogo de planos</h2><p>Defina preços, limites e o que cada produto oferece.</p></div><div class="sales-catalog-actions"><button class="vmt-btn" id="refreshProducts" type="button">Atualizar catálogo</button><button class="vmt-btn vmt-primary" id="newProduct" type="button">Novo produto</button></div></div>
+      <div class="sales-catalog-feedback" id="catalogFeedback" role="status" aria-live="polite" hidden></div>
+      <div class="sales-empty" id="catalogState" role="status">Carregando catálogo…</div><div class="sales-product-grid" id="productList"></div>
+    </section>
+    <section class="vmt-glass sales-upsells" id="upsellsPanel" aria-labelledby="upsellsTitle" aria-busy="true">
+      <div class="sales-orders-heading"><div><span class="sales-eyebrow">MAIS POSSIBILIDADES PARA CADA EVENTO</span><h2 id="upsellsTitle">Ofertas adicionais configuráveis</h2><p>Ofereça mais horas, participantes ou idiomas quando o cliente se aproximar dos limites.</p></div><div class="sales-catalog-actions"><button type="button" id="refreshUpsells" class="vmt-btn">Atualizar ofertas</button><button type="button" id="newUpsell" class="vmt-btn vmt-primary">Nova oferta</button></div></div>
+      <div id="upsellsFeedback" class="sales-catalog-feedback" role="status" aria-live="polite" hidden></div><div id="upsellsState" class="sales-empty" role="status">Carregando ofertas…</div><div id="upsellsList" class="upsells-grid"></div>
+    </section>
+  </main>
+  <dialog class="sales-product-dialog" id="productDialog" aria-labelledby="productDialogTitle" aria-describedby="productDialogDescription">
+    <div class="sales-dialog-heading"><div><span class="sales-eyebrow">CATÁLOGO</span><h2 id="productDialogTitle">Novo produto</h2></div><button class="vmt-btn" id="closeProductDialog" type="button" aria-label="Fechar edição do produto">Fechar</button></div>
+    <p id="productDialogDescription">Configure os detalhes exibidos aos clientes e os limites do plano.</p>
+    <form id="productForm">
+      <div class="sales-form-error" id="productFormError" role="alert" tabindex="-1" hidden></div>
+      <div class="sales-form-grid">
+        <label class="sales-field sales-field-wide">Nome do produto<input id="productName" name="name" required maxlength="80" autocomplete="off"></label>
+        <label class="sales-field sales-field-wide">Descrição<textarea id="productDescription" name="description" rows="3" maxlength="500"></textarea></label>
+        <label class="sales-field sales-field-wide" id="productSlugField">Identificador <span>Opcional. Letras minúsculas, números e hífens; gerado automaticamente se vazio.</span><input id="productSlug" name="slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxlength="50" placeholder="ex.: evento-profissional" autocomplete="off"></label>
+        <label class="sales-field">Preço (R$)<input id="productPrice" name="price" inputmode="decimal" placeholder="Ex.: 299,90" aria-describedby="productPriceHelp"><span id="productPriceHelp">Em reais. Para cotação, pode ficar vazio.</span></label>
+        <label class="sales-field">Duração (horas)<input id="productHours" name="hours" type="number" min="0.25" max="720" step="0.25" required inputmode="decimal"></label>
+        <label class="sales-field">Máximo de participantes<input id="productParticipants" name="maxParticipants" type="number" min="1" step="1" inputmode="numeric" placeholder="Ilimitado"><span>Deixe vazio para participantes ilimitados.</span></label>
+        <label class="sales-field">Máximo de idiomas<input id="productLanguages" name="maxLanguages" type="number" min="0" max="11" step="1" required inputmode="numeric"></label>
+        <label class="sales-field sales-field-wide">Vantagens incluídas<textarea id="productFeatures" name="features" rows="5" placeholder="Uma vantagem por linha" maxlength="10000"></textarea><span>Cada linha será exibida como uma vantagem do produto.</span></label>
+      </div>
+      <div class="sales-product-options"><label><input type="checkbox" id="productActive" checked> Produto ativo</label><label><input type="checkbox" id="productSelfService" checked> Compra direta pelo site</label><p>Desative a compra direta para produtos sob cotação. Produtos inativos deixam de ser oferecidos.</p></div>
+      <div class="sales-dialog-footer"><button class="vmt-btn" type="button" id="cancelProduct">Cancelar</button><button class="vmt-btn vmt-primary" type="submit" id="saveProduct">Criar produto</button></div>
+    </form>
+  </dialog>
+  <dialog id="upsellDialog" class="sales-product-dialog upsell-dialog" aria-labelledby="upsellDialogTitle" aria-describedby="upsellDialogDescription">
+    <div class="sales-dialog-heading"><div><span class="sales-eyebrow">OFERTA ADICIONAL</span><h2 id="upsellDialogTitle">Nova oferta</h2></div><button id="closeUpsell" class="vmt-btn" type="button">Fechar</button></div><p id="upsellDialogDescription">Defina o benefício, o preço e o momento certo para apresentar esta oferta.</p>
+    <form id="upsellForm"><div id="upsellFormError" class="sales-form-error" role="alert" tabindex="-1" hidden></div>
+      <div class="sales-form-grid">
+        <label class="sales-field sales-field-wide">Nome da oferta<input id="upsellName" name="name" required maxlength="80" autocomplete="off"></label>
+        <label class="sales-field sales-field-wide">Descrição<textarea id="upsellDescription" name="description" maxlength="500" rows="3"></textarea></label>
+        <label class="sales-field sales-field-wide">Preço (R$)<input id="upsellPrice" name="price" required inputmode="decimal" placeholder="Informe o valor da oferta" aria-describedby="upsellPriceHelp"><span id="upsellPriceHelp">De R$ 1,00 a R$ 1.000.000,00. Sem preço preenchido, a oferta não será criada.</span></label>
+      </div>
+      <fieldset class="upsell-fieldset"><legend>O que será adicionado ao evento</legend><div class="upsell-benefits-grid">
+        <label class="sales-field">Horas extras<input id="upsellHours" type="number" min="0" max="720" step="0.25" inputmode="decimal" required><span>Em intervalos de 15 minutos.</span></label>
+        <label class="sales-field">Participantes extras<input id="upsellParticipants" type="number" min="0" max="100000" step="1" inputmode="numeric" required></label>
+        <label class="sales-field">Idiomas extras<input id="upsellLanguages" type="number" min="0" max="11" step="1" inputmode="numeric" required></label>
+      </div><p class="upsell-help">Informe 0 nos limites que esta oferta não altera.</p></fieldset>
+      <fieldset class="upsell-fieldset"><legend>Quando apresentar a oferta</legend><div class="sales-form-grid upsell-trigger-grid">
+        <label class="sales-field">Limite acompanhado<select id="upsellMetric" required><option value="hours">Horas de transmissão</option><option value="participants">Participantes</option><option value="languages">Idiomas</option></select><span>A oferta precisa ampliar o limite acompanhado.</span></label>
+        <label class="sales-field">Percentual de uso para alertar<input id="upsellThreshold" type="number" min="1" max="100" step="1" required inputmode="numeric"><span>De 1% a 100% do limite utilizado.</span></label>
+        <label class="sales-field sales-field-wide" id="upsellLeadField">Ou quando restarem até (minutos)<input id="upsellLead" type="number" min="0" max="1440" step="1" required inputmode="numeric"><span>Para horas: a oferta aparece pelo percentual de uso ou pelo tempo restante. Informe 0 para que o critério de tempo só seja atingido no esgotamento.</span></label>
+      </div><p id="upsellTriggerSummary" class="upsell-trigger-summary" aria-live="polite"></p></fieldset>
+      <fieldset class="upsell-fieldset"><legend>Produtos elegíveis</legend><label class="upsell-check"><input id="upsellAllProducts" type="checkbox" checked> Todos os produtos</label><p class="upsell-help">Ou selecione os produtos que podem receber esta oferta.</p><div id="upsellProductChoices" class="upsell-product-choices"></div><p id="upsellProductsWarning" class="upsell-help" hidden></p></fieldset>
+      <label class="sales-field upsell-features">Vantagens exibidas ao cliente<textarea id="upsellFeatures" rows="4" maxlength="4019" placeholder="Uma vantagem por linha"></textarea><span>Até 20 vantagens, com no máximo 200 caracteres por linha.</span></label>
+      <div class="sales-product-options"><label><input id="upsellActive" type="checkbox"> Oferta ativa</label><p>Ofertas inativas deixam de ser apresentadas aos clientes. As compras já realizadas são preservadas.</p></div>
+      <div class="sales-dialog-footer"><button type="button" id="cancelUpsell" class="vmt-btn">Cancelar</button><button type="submit" id="saveUpsell" class="vmt-btn vmt-primary">Criar oferta</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Minha conta | Silent Translator</title>
+<link rel="stylesheet" href="/design-system.css"><link rel="stylesheet" href="/customer.css">
+<script src="/design-system.js" defer></script><script src="/customer.js" defer></script>
+</head>
+<body class="vmt-app customer-app">
+<header class="customer-header"><a class="vmt-brand" href="/landing.html"><span class="vmt-brand-mark" data-icon="audio-lines"></span><span>Videomappingtech<small>SILENT TRANSLATOR</small></span></a><div class="header-actions"><a href="/landing.html" class="customer-site-link">Conheça os planos</a><button class="vmt-theme-toggle" data-theme-toggle aria-label="Alternar tema"><span data-icon="sun-moon"></span></button><button id="logoutButton" class="vmt-btn" hidden>Sair</button></div></header>
+<main>
+<div id="pageStatus" class="page-status" role="status" aria-live="polite">Preparando sua área…</div>
+<section id="authSection" class="customer-auth" hidden>
+<div class="auth-story"><span class="vmt-eyebrow">SUA EXPERIÊNCIA COMEÇA AQUI</span><h1>Seu evento.<br>Sua identidade.<br>Sem fronteiras.</h1><p>Personalize sua sala, compartilhe o acesso e acompanhe seu plano em um só lugar.</p><div class="auth-orbit" aria-hidden="true"></div><div class="story-note"><span class="vmt-icon" data-icon="headphones"></span><span>Uma conexão mais próxima.<br><small>Em cada idioma, em cada momento.</small></span></div></div>
+<div class="auth-panel vmt-glass">
+<div id="authTabs" class="auth-tabs" role="group" aria-label="Acesso à conta"><button type="button" data-auth-mode="login" aria-pressed="true">Entrar</button><button type="button" data-auth-mode="register" aria-pressed="false">Criar conta</button></div>
+<span class="vmt-eyebrow">ÁREA DO CLIENTE</span><h2 id="authTitle">Que bom ter você aqui.</h2><p id="authDescription" class="vmt-muted">Entre para cuidar dos seus eventos.</p>
+<form id="authForm">
+<label id="nameField" hidden>Seu nome<input name="name" autocomplete="name" maxlength="120"></label>
+<label id="companyField" hidden>Empresa <span class="optional">opcional</span><input name="company" autocomplete="organization" maxlength="160"></label>
+<label id="phoneField" hidden>Telefone <span class="optional">opcional</span><input name="phone" type="tel" autocomplete="tel" maxlength="30"></label>
+<label id="emailField">E-mail<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
+<label id="passwordField">Senha<input name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="128"><small id="passwordHint" hidden>Use pelo menos 10 caracteres.</small></label>
+<p id="authFeedback" class="feedback" role="status" aria-live="polite" hidden></p>
+<button id="authSubmit" class="vmt-btn vmt-primary" type="submit">Entrar na minha conta</button>
+</form>
+<button id="forgotButton" class="text-button" type="button">Esqueci minha senha</button><button id="backLoginButton" class="text-button" type="button" hidden>Voltar para entrar</button>
+</div></section>
+<section id="dashboardSection" class="customer-dashboard" hidden>
+<div class="dashboard-intro"><div><span class="vmt-eyebrow">SEU WORKSPACE</span><h1>Seus eventos, do seu jeito.</h1><p id="customerGreeting" class="vmt-muted"></p></div><a class="vmt-btn vmt-primary" href="/landing.html#planos"><span data-icon="plus"></span>Contratar um plano</a></div>
+<nav class="dashboard-tabs" aria-label="Área do cliente"><button id="eventsTab" type="button" aria-controls="eventsSection" aria-pressed="true"><span data-icon="calendar-days"></span>Meus eventos</button><button id="ordersTab" type="button" aria-controls="ordersSection" aria-pressed="false"><span data-icon="inbox"></span>Meus pedidos</button><button id="refreshButton" type="button" class="refresh-button"><span data-icon="radio"></span>Atualizar</button></nav>
+<p id="dashboardFeedback" class="feedback" role="status" aria-live="polite" hidden></p>
+<section id="eventsSection" aria-labelledby="eventsHeading"><div class="section-heading"><div><h2 id="eventsHeading">Prontos para conectar.</h2><p class="vmt-muted">Personalize cada detalhe e compartilhe sua sala.</p></div><span id="eventCount" class="customer-badge"></span></div><div id="eventsList" class="customer-events"></div></section>
+<section id="ordersSection" aria-labelledby="ordersHeading" hidden><div class="section-heading"><div><h2 id="ordersHeading">Sua jornada, em dia.</h2><p class="vmt-muted">Acompanhe pagamentos e acesse seus eventos contratados.</p></div></div><div id="ordersList" class="customer-orders"></div></section>
+</section>
+</main>
+<footer class="customer-footer"><span>Videomappingtech · Silent Translator</span><span>Uma experiência que aproxima.</span></footer>
+<dialog id="eventDialog" class="customer-dialog" aria-labelledby="eventDialogTitle"><div class="dialog-heading"><div><span class="vmt-eyebrow">IDENTIDADE DO EVENTO</span><h2 id="eventDialogTitle">Deixe a sala com a sua marca.</h2></div><button id="closeEditor" type="button" class="vmt-btn" aria-label="Fechar personalização">×</button></div><form id="eventForm">
+<label class="full-field">Nome do evento<input name="name" required maxlength="160"></label>
+<div class="asset-grid"><label class="asset-field">Logo do evento<img id="logoPreview" alt="Prévia do logo" hidden><input id="logoUpload" type="file" accept="image/png,image/jpeg,image/webp"><small>PNG, JPG ou WebP · até 5 MB</small><button id="removeLogo" type="button" class="text-button">Remover logo</button></label><label class="asset-field">Banner do evento<img id="bannerPreview" alt="Prévia do banner" hidden><input id="bannerUpload" type="file" accept="image/png,image/jpeg,image/webp"><small>PNG, JPG ou WebP · até 5 MB</small><button id="removeBanner" type="button" class="text-button">Remover banner</button></label></div>
+<p class="editor-note">As imagens enviadas e as demais alterações serão aplicadas ao salvar.</p>
+<div class="color-grid"><label>Cor principal<input name="primaryColor" type="color" value="#b3a0ff"></label><label>Cor secundária<input name="secondaryColor" type="color" value="#83e5bd"></label><label>Cor de fundo<input name="bgColor" type="color" value="#10111c"></label></div>
+<div class="language-grid"><label>Idioma original<select name="sourceLanguage"><option value="pt-BR">Português (Brasil)</option><option value="en">Inglês</option><option value="es">Espanhol</option></select></label><label>Idiomas de tradução<input name="targetLanguages" placeholder="Ex.: en, es"><small id="languageLimit"></small></label></div>
+<p id="editorFeedback" class="feedback" role="status" aria-live="polite" hidden></p><div class="dialog-footer"><button id="cancelEditor" type="button" class="vmt-btn">Cancelar</button><button id="saveEvent" type="submit" class="vmt-btn vmt-primary">Salvar personalização</button></div>
+</form></dialog>
+<dialog id="qrDialog" class="customer-dialog qr-dialog" aria-labelledby="qrDialogTitle"><div class="dialog-heading"><h2 id="qrDialogTitle">Acesso dos participantes</h2><button id="closeQr" type="button" class="vmt-btn" aria-label="Fechar QR code">×</button></div><p id="qrEventName" class="vmt-muted"></p><img id="qrImage" alt="QR code para acessar o evento"><p id="qrFeedback" class="feedback" role="status" hidden></p><a id="qrDownload" class="vmt-btn" download="qr-participantes.svg">Baixar QR code</a></dialog>
+</body></html>

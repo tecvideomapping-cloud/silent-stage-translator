@@ -169,6 +169,11 @@
   </footer>
 
   <script>
+    function escapeMarkup(value) {
+      return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function inlineText(value) { return encodeURIComponent(String(value ?? '')).replace(/'/g, '%27'); }
+
     const urlParams = new URLSearchParams(window.location.search);
     // Explicit projection parameters preserve a clean OBS/output canvas.
     document.documentElement.dataset.screenView = (urlParams.has('theme') || urlParams.has('pos')) ? 'output' : 'studio';
@@ -299,7 +304,8 @@
         } catch (e) {}
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
+        if (event.code === 1008) { const message = document.createElement('p'); message.textContent = event.reason || 'Evento indisponível'; document.getElementById('subtitlesContainer').replaceChildren(message); return; }
         const dot = document.getElementById('liveDot'); if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-red-500';
         setTimeout(connectScreenWS, 2500);
       };
@@ -353,8 +359,8 @@
           const colorClass = item.isFinal ? 'text-white' : 'text-cyan-300';
           return `
             <div class="flex items-center justify-center gap-3 my-0.5">
-              <span class="text-xs sm:text-sm font-mono border px-2 py-0.5 rounded-md ${item.badge.color} uppercase shrink-0">${item.badge.label}</span>
-              <span class="subtitle-text font-bold ${colorClass}" style="font-size: ${Math.round(fontSize * 0.90)}px; -webkit-line-clamp: 1; line-clamp: 1; max-height: 1.32em;">${item.text}</span>
+              <span class="text-xs sm:text-sm font-mono border px-2 py-0.5 rounded-md ${item.badge.color} uppercase shrink-0">${escapeMarkup(item.badge.label)}</span>
+              <span class="subtitle-text font-bold ${colorClass}" style="font-size: ${Math.round(fontSize * 0.90)}px; -webkit-line-clamp: 1; line-clamp: 1; max-height: 1.32em;">${escapeMarkup(item.text)}</span>
             </div>
           `;
         }).join('');
@@ -363,7 +369,7 @@
         const colorClass = isFinal ? 'text-white' : 'text-cyan-300';
         box.innerHTML = `
           <div class="flex items-center justify-center gap-3">
-            <span class="subtitle-text font-bold ${colorClass}" style="font-size: ${fontSize}px;">${text}</span>
+            <span class="subtitle-text font-bold ${colorClass}" style="font-size: ${fontSize}px;">${escapeMarkup(text)}</span>
           </div>
         `;
       }

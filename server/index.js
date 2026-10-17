@@ -25,7 +25,8 @@ const {
   saveSavedGlossary,
   deleteSavedGlossary
 } = require('./db');
-const { verifyPassword, createSession, removeSession, requireAuth } = require('./auth');
+const { verifyPassword, createSession, removeSession, requireAuth, getSession } = require('./auth');
+const { Commerce } = require('./commerce');
 const { pubSub } = require('./redis');
 const { aiPipeline } = require('./ai-pipeline');
 const QRCode = require('qrcode');
@@ -33,17 +34,87 @@ const { MsEdgeTTS, OUTPUT_FORMAT } = require('msedge-tts');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, maxPayload: 2 * 1024 * 1024 });
 
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+app.get('/',(req,res,next)=>{
+  if(!req.query.room&&!req.query.roomId)return res.sendFile(path.join(__dirname,'../public/landing.html'));
+  next();
+});
 app.use(express.static(path.join(__dirname, '../public')));
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 0));
 
 // Inicializa Banco e Redis
-initDb();
+const databaseReady = initDb();
 pubSub.init();
+const commerce = new Commerce({ legacy: { invalidateRoom: require('./db').invalidateRoom, saveRoom } });
+const ledgerReady=commerce.ready;
+commerce.ready=Promise.all([ledgerReady,databaseReady]).then(([,database])=>{
+  if(process.env.DATABASE_URL&&!database)commerce.healthy=false;
+});
+commerce.startWorkers();
+const adminSession = req => getSession(req.headers.authorization?.startsWith('Bearer ')?req.headers.authorization.slice(7):new URL(req.url,'http://localhost').searchParams.get('token'));
+const isAdminRequest = req => ['admin','superadmin'].includes(adminSession(req)?.role);
+const requireAdmin = [requireAuth,(req,res,next)=>['admin','superadmin'].includes(req.user.role)?next():res.status(403).json({error:'Acesso administrativo obrigatório.'})];
+app.use('/api',commerce.router(requireAdmin));
+
+// Existing administrative endpoints must not become a route around customer ownership.
+app.use('/api',async(req,res,next)=>{
+  try {
+    const admin=isAdminRequest(req);
+    if(req.path.startsWith('/config/tts-keys')&&req.method!=='GET'||req.path.startsWith('/glossaries')){
+      if(!admin)return res.status(403).json({error:'Acesso administrativo obrigatório.'});
+    }
+    if(req.path==='/tts'||req.path==='/stt-chunk'){
+      if(!admin){
+        const roomId=String(req.query.room||'');const isTts=req.path==='/tts';
+        const access=await commerce.checkEventAccess(req,roomId,{operator:!isTts});
+        if(!access&&!isTts)return res.status(403).json({error:'Entre na área do responsável para operar o evento.'});
+        if(isTts&&!access?.owner){
+          if(!access&&!await getRoom(roomId))return res.status(403).json({error:'Evento não disponível.'});
+          const text=String(req.query.text||'').replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g,'').trim();
+          const recent=roomCatchupHistory.get(roomId)||[];
+          if(!recent.some(item=>item.text===text&&Date.now()-item.timestamp<=120000))return res.status(403).json({error:'Trecho de áudio não disponível neste evento.'});
+        }
+        if(req.path==='/stt-chunk'&&access){
+          const auth=await commerce.session(req);
+          if(req.get('X-CSRF-Token')!==auth?.session.csrfToken)return res.status(403).json({error:'Sessão desatualizada.'});
+          const host=Array.from(roomsClients.get(roomId)||[]).find(ws=>ws.role==='host'&&ws.commerce);
+          if(!host||!await commerce.consumeSocket(host.commerce))return res.status(403).json({error:'Inicie uma transmissão com horas disponíveis.'});
+        }
+      }
+    }
+    if(req.path==='/rooms'&&req.method==='POST'&&req.body?.id&&await commerce.managedEvent(req.body.id))return res.status(409).json({error:'Eventos contratados são configurados na área do cliente.'});
+    const eventPath=req.path.match(/^\/rooms\/([^/]+)(?:\/(glossary|transcripts|export))?$/);
+    if(eventPath){
+      const id=decodeURIComponent(eventPath[1]),action=eventPath[2];
+      const event=await commerce.managedEvent(id);
+      if(event){
+        const order=await commerce.store.get('order',event.orderId);const owner=admin||await commerce.isOwner(req,event);
+        if(action){if(!owner)return res.status(403).json({error:'Acesso reservado ao responsável pelo evento.'});}
+        else if(!owner&&(order?.status!=='paid'||!event.published||event.revoked))return res.status(403).json({error:'Este evento ainda não está disponível para os participantes.'});
+        if(req.method==='DELETE')return res.status(409).json({error:'Um evento contratado não pode ser excluído pelo cadastro de salas.'});
+      }
+      if(action==='glossary'){
+        const room=event?commerce.roomFromEvent(event):await getRoom(id);
+        const key=req.body?.hostKey;
+        if(!admin&&!(event&&await commerce.isOwner(req,event))&&(!room||!key||key==='admin'||key!==room.host_key))return res.status(403).json({error:'Acesso de operador obrigatório.'});
+        req.operatorAuthorized=true;
+        if(event){
+          if(!admin){const auth=await commerce.session(req);if(req.get('X-CSRF-Token')!==auth?.session.csrfToken)return res.status(403).json({error:'Sessão desatualizada.'});}
+          const glossary=req.body?.glossary;
+          if(!glossary||typeof glossary!=='object'||Array.isArray(glossary)||Object.keys(glossary).length>300)return res.status(400).json({error:'Glossário inválido.'});
+          await commerce.store.transaction(async tx=>{const current=await tx.get('event',id);current.glossary=glossary;await tx.put('event',id,current);await commerce.syncRoom(tx,current);});
+          require('./db').invalidateRoom(id);return res.json({success:true,glossary});
+        }
+      }
+    }
+    next();
+  }catch(e){res.status(e.status||503).json({error:e.status?e.message:'Serviço temporariamente indisponível.'});}
+});
 
 // Map de clientes conectados: roomId -> Set<ws>
 const roomsClients = new Map();
@@ -121,12 +192,13 @@ function broadcastRoomStats(roomId) {
 // ----------------------------------------------------
 
 // Login de Administrador
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', commerce.throttle('admin-login',15), async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
     }
+    if(process.env.NODE_ENV==='production'&&password==='Videomapping2026!')return res.status(403).json({error:'Configure uma senha administrativa própria para este ambiente.'});
 
     const user = await getUserByEmail(email);
     if (!user) {
@@ -348,7 +420,7 @@ app.put('/api/rooms/:id/glossary', async (req, res) => {
     const { hostKey, glossary } = req.body;
     const room = await getRoom(req.params.id);
     if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
-    if (room.host_key !== hostKey && hostKey !== 'admin') {
+    if (!req.operatorAuthorized && room.host_key !== hostKey) {
       return res.status(403).json({ error: 'Chave de host inválida' });
     }
 
@@ -952,7 +1024,7 @@ function buildDegradedAudioPacket(rawBuffer, targetTier) {
   }
 }
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', async (ws, req) => {
   // Parse à prova de falhas com URL padrão Node.js e normalização de slug
   const parsedUrl = new URL(req.url, 'http://localhost');
   const rawRoom = parsedUrl.searchParams.get('roomId') || parsedUrl.searchParams.get('room') || 'palco1';
@@ -960,6 +1032,22 @@ wss.on('connection', (ws, req) => {
   const role = parsedUrl.searchParams.get('role') || 'listener';
   let channel = parsedUrl.searchParams.get('channel') || 'original';
   const lastSeenSeq = parseInt(parsedUrl.searchParams.get('lastSeq') || '0', 10);
+  if(!['host','listener','screen'].includes(role)){ws.close(1008,'Tipo de conexão inválido');return;}
+  let managed=null;
+  try{
+    const admin=isAdminRequest(req);
+    managed=await commerce.acquireSocket(req,roomId,role,channel,admin);
+    if(!managed&&role==='host'){
+      const room=await getRoom(roomId),key=parsedUrl.searchParams.get('hostKey');
+      if(!admin&&(!room||!key||key!==room.host_key))throw Object.assign(new Error('Acesso de operador obrigatório.'),{status:403});
+    }
+    if(!managed&&role!=='host'&&!await getRoom(roomId))throw new Error('Evento não encontrado.');
+    if(ws.readyState!==WebSocket.OPEN){await commerce.releaseSocket(managed);return;}
+  }catch(e){ws.close(1008,String(e.message||'Acesso indisponível').slice(0,115));return;}
+  ws.commerce=managed;
+  const entitlementTimer=managed?setInterval(async()=>{
+    try{if(!await commerce.refreshSocket(managed))ws.close(1008,'O acesso a este evento não está ativo.');}catch{ws.close(1011,'Verificação de acesso indisponível.');}
+  },15000):null;
 
   const clientId = 'c_' + Math.random().toString(36).substring(2, 9);
   ws.clientId = clientId;
@@ -1020,6 +1108,8 @@ wss.on('connection', (ws, req) => {
   broadcastRoomStats(roomId);
 
   ws.on('message', async (data, isBinary) => {
+    try{if(managed&&role==='host'&&isBinary&&!await commerce.consumeSocket(managed)){ws.close(1008,'As horas de transmissão foram utilizadas.');return;}}
+    catch{ws.close(1011,'Verificação de horas indisponível.');return;}
     // 1. Mensagens Binárias: Chunks de Áudio
     if (isBinary) {
       if (ws.role !== 'host') return;
@@ -1097,7 +1187,7 @@ wss.on('connection', (ws, req) => {
           }
 
           if (sttEvent.isFinal) {
-            const translations = await aiPipeline.translateText(sttEvent.text, targetLangs, glossary);
+            const translations = await aiPipeline.translateText(sttEvent.text, targetLangs, glossary, null, roomId);
             await saveTranscript(roomId, sttEvent.text, translations);
 
             for (const [lang, translatedText] of Object.entries(translations)) {
@@ -1115,7 +1205,13 @@ wss.on('connection', (ws, req) => {
                 }
               }
 
-              aiPipeline.synthesizeSpeech(translatedText, lang).then(ttsAudioBuffer => {
+              const profile = roomSpeakerProfile.get(roomId);
+              const voice = profile?.voice || 'male_deep';
+              const speed = profile?.speed || 1.05;
+              const pitch = profile?.pitch || 0;
+
+              getOrGenerateTts(lang, translatedText, voice, speed, pitch).then(ttsRes => {
+                const ttsAudioBuffer = ttsRes?.buffer;
                 if (ttsAudioBuffer) {
                   for (const client of roomClients) {
                     if (client.readyState === WebSocket.OPEN && client.channel === lang) {
@@ -1123,7 +1219,7 @@ wss.on('connection', (ws, req) => {
                     }
                   }
                 }
-              });
+              }).catch(() => {});
             }
           }
         });
@@ -1135,6 +1231,14 @@ wss.on('connection', (ws, req) => {
     // 2. Mensagens JSON
     try {
       const msg = JSON.parse(data.toString());
+      const hostMessages=['audio_meta','speech_transcript','set_screen_lang','speaker_voice_profile'];
+      if(hostMessages.includes(msg.type)&&ws.role!=='host')return;
+      if(msg.type==='speech_transcript'&&(typeof msg.text!=='string'||msg.text.length>4000))return;
+      if(managed&&msg.type==='speech_transcript'&&!await commerce.consumeSocket(managed)){ws.close(1008,'As horas de transmissão foram utilizadas.');return;}
+      if(managed&&msg.type==='switch_channel'){
+        const event=await commerce.managedEvent(roomId);
+        if(!['original','text',...event.target_languages].includes(msg.channel))return;
+      }
       if (msg.type === 'switch_channel') {
         ws.channel = msg.channel;
         ws.send(JSON.stringify({ type: 'channel_switched', channel: ws.channel }));
@@ -1215,7 +1319,13 @@ wss.on('connection', (ws, req) => {
                 }
               }
 
-              aiPipeline.synthesizeSpeech(translatedText, lang).then(ttsAudioBuffer => {
+              const profile = roomSpeakerProfile.get(roomId);
+              const voice = profile?.voice || 'male_deep';
+              const speed = profile?.speed || 1.05;
+              const pitch = profile?.pitch || 0;
+
+              getOrGenerateTts(lang, translatedText, voice, speed, pitch).then(ttsRes => {
+                const ttsAudioBuffer = ttsRes?.buffer;
                 if (ttsAudioBuffer) {
                   for (const client of roomClients) {
                     if (client.readyState === WebSocket.OPEN && client.channel === lang) {
@@ -1226,7 +1336,7 @@ wss.on('connection', (ws, req) => {
               }).catch(() => {});
             };
 
-            const translations = await aiPipeline.translateText(text, targetLangs, glossary, onLangReady);
+            const translations = await aiPipeline.translateText(text, targetLangs, glossary, onLangReady, roomId);
 
             // Persistência assíncrona não-bloqueante no banco de dados (não atrasa transmissão ao vivo)
             saveTranscript(roomId, text, translations).catch(err => {
@@ -1373,6 +1483,8 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
+    clearInterval(entitlementTimer);
+    commerce.releaseSocket(managed).catch(()=>{});
     roomClients.delete(ws);
     broadcastRoomStats(roomId);
     if (roomClients.size === 0) {
@@ -1388,6 +1500,7 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-server.listen(PORT, () => {
+if(require.main===module)server.listen(PORT, () => {
   console.log(`🚀 Videomappingtech Silent Translator no ar na porta ${PORT}`);
 });
+module.exports={app,server,wss,commerce};

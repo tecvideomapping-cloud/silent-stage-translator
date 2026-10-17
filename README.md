@@ -1,5 +1,13 @@
 # Videomappingtech Silent Translator & AI Interpretation
 
+## Contratação self-service
+
+O projeto inclui catálogo editável pelo administrador, checkout, área do cliente,
+personalização por upload, confirmação de pagamento e envio de acesso pelo Resend.
+Consulte [SELF_SERVICE.md](SELF_SERVICE.md) para configurar o banco, o Mercado Pago,
+o Resend e o domínio antes de ativar vendas reais. O painel comercial fica em
+`/sales.html`, e a área do cliente em `/customer.html`.
+
 Plataforma de **Palestras Silenciosas (Silent Stage)** e **Tradução / Legendagem Simultânea com IA** em tempo real para eventos, auditórios e congressos.
 
 ---

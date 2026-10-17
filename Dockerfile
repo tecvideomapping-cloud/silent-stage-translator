@@ -1,6 +1,7 @@
 FROM node:20-alpine
 
 WORKDIR /app
+ENV NODE_ENV=production
 
 # Copia dependências primeiro para cache do Docker
 COPY package*.json ./

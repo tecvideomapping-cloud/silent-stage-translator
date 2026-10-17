@@ -8,7 +8,15 @@ async function runIntegrityTest() {
   console.log('🧪 Iniciando Teste de Integridade de Transcrição e Tradução...');
 
   const roomId = 'test_' + Math.random().toString(36).substring(2, 7);
-  const serverUrl = 'ws://localhost:3000';
+  const baseUrl=(process.env.TEST_BASE_URL||'http://localhost:3000').replace(/\/$/,'');
+  const serverUrl=baseUrl.replace(/^http/,'ws');
+  const password=process.env.TEST_ADMIN_PASSWORD||process.env.ADMIN_PASSWORD||(process.env.NODE_ENV==='production'?null:'Videomapping2026!');
+  if(!password)throw new Error('Configure TEST_ADMIN_PASSWORD para executar o teste de integridade.');
+  const login=await fetch(baseUrl+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:process.env.TEST_ADMIN_EMAIL||process.env.ADMIN_EMAIL||'admin@videomappingtech.com',password})});
+  if(!login.ok)throw new Error('Não foi possível autenticar o administrador de teste.');
+  const {token}=await login.json();const authorization={Authorization:'Bearer '+token};
+  const created=await fetch(baseUrl+'/api/rooms',{method:'POST',headers:{...authorization,'Content-Type':'application/json'},body:JSON.stringify({id:roomId,name:'Teste de integridade',targetLanguages:['en','es']})});
+  if(!created.ok)throw new Error('Não foi possível preparar a sala de teste.');
 
   const testPhrases = [
     {
@@ -34,7 +42,7 @@ async function runIntegrityTest() {
   ];
 
   // 1. Conecta o Host
-  const hostWs = new WebSocket(`${serverUrl}?roomId=${roomId}&role=host`);
+  const hostWs = new WebSocket(`${serverUrl}?roomId=${roomId}&role=host&token=${encodeURIComponent(token)}`);
   await new Promise((resolve, reject) => {
     hostWs.on('open', resolve);
     hostWs.on('error', reject);
@@ -137,6 +145,7 @@ async function runIntegrityTest() {
 
   hostWs.close();
   screenWs.close();
+  await fetch(baseUrl+'/api/rooms/'+encodeURIComponent(roomId),{method:'DELETE',headers:authorization});
 
   console.log('\n------------------------------------------------');
   if (allPassed) {

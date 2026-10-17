@@ -14,6 +14,8 @@ class AIPipeline {
     this.sttSockets = new Map();
     // Cache LRU em memória para traduções instantâneas (evita chamadas repetidas e rate-limit)
     this.translationCache = new Map();
+    // Memória contextual de sentenças anteriores por sala (mantém coerência gramatical e pronominal)
+    this.roomContextMemory = new Map();
   }
 
   setApiKeys({ openaiKey, groqKey } = {}) {
@@ -106,7 +108,7 @@ class AIPipeline {
    * Traduz o texto para os idiomas alvo respeitando o glossário cadastrado com altíssima velocidade (<150ms).
    * Executa em paralelo (Promise.all) e dispara o callback onLanguageTranslated assim que cada idioma conclui.
    */
-  async translateText(text, targetLangs, glossary = {}, onLanguageTranslated = null) {
+  async translateText(text, targetLangs, glossary = {}, onLanguageTranslated = null, roomId = null) {
     const translations = {};
     const cleanInput = this.stripLanguagePrefixTag(text);
     if (!cleanInput) return translations;
@@ -136,6 +138,15 @@ class AIPipeline {
     let glossaryInstructions = '';
     if (glossary && Object.keys(glossary).length > 0) {
       glossaryInstructions = `Glossário obrigatório: ${JSON.stringify(glossary)}. Mantenha esses termos exatamente como definidos.`;
+    }
+
+    // Contexto de sentenças anteriores para coerência sintática
+    let contextPrompt = '';
+    if (roomId && this.roomContextMemory && this.roomContextMemory.has(roomId)) {
+      const prev = this.roomContextMemory.get(roomId);
+      if (prev && prev.lastSourceText) {
+        contextPrompt = `Contexto imediato anterior da fala: "${prev.lastSourceText}". Mantenha coerência de termos, pronomes e tempos verbais com este contexto.`;
+      }
     }
 
     const mockTranslationDict = {
@@ -197,7 +208,7 @@ class AIPipeline {
               messages: [
                 {
                   role: 'system',
-                  content: `Você é um intérprete de tradução simultânea. Traduza o texto para o idioma '${normalizedLang}'. Retorne SOMENTE a frase traduzida pura, NUNCA inclua prefixos como [EN], [ES] ou explicações. ${glossaryInstructions}`
+                  content: `Você é um intérprete de tradução simultânea profissional. Traduza o texto para o idioma '${normalizedLang}'. Retorne SOMENTE a frase traduzida pura, NUNCA inclua prefixos como [EN], [ES], aspas ou notas explicativas. ${contextPrompt} ${glossaryInstructions}`
                 },
                 {
                   role: 'user',
@@ -320,6 +331,12 @@ class AIPipeline {
 
     // Executa TODOS os idiomas alvo em paralelo instantâneo (Promise.all)
     await Promise.all(targetLangs.map(lang => translateSingleLanguage(lang)));
+
+    if (roomId && cleanInput) {
+      if (!this.roomContextMemory) this.roomContextMemory = new Map();
+      this.roomContextMemory.set(roomId, { lastSourceText: cleanInput, lastTranslations: translations });
+    }
+
     return translations;
   }
 
