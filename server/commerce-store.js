@@ -13,20 +13,44 @@ class CommerceStore {
   }
   async init() {
     if (!this.pool && process.env.DATABASE_URL) {
-      const isSsl = !process.env.DATABASE_URL.includes('localhost') && !process.env.DATABASE_URL.includes('127.0.0.1') && (
+      const connectionString = process.env.DATABASE_URL;
+      const explicitlyDisabled = connectionString.includes('sslmode=disable');
+      const isInternalHost = connectionString.includes('.railway.internal') || connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+      const shouldTrySsl = !explicitlyDisabled && !isInternalHost && (
         process.env.NODE_ENV === 'production' ||
-        process.env.DATABASE_URL.includes('sslmode=') ||
-        process.env.DATABASE_URL.includes('.supabase.') ||
-        process.env.DATABASE_URL.includes('.neon.') ||
-        process.env.DATABASE_URL.includes('.railway.') ||
-        process.env.DATABASE_URL.includes('pooler.') ||
-        process.env.DATABASE_URL.includes('render.com')
+        connectionString.includes('sslmode=') ||
+        connectionString.includes('.supabase.') ||
+        connectionString.includes('.neon.') ||
+        connectionString.includes('.pooler.')
       );
-      this.pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: isSsl ? { rejectUnauthorized: false } : false
-      });
-      this.persistent = true;
+
+      async function createPool(useSsl) {
+        const p = new Pool({
+          connectionString,
+          ssl: useSsl ? { rejectUnauthorized: false } : false,
+          connectionTimeoutMillis: 5000
+        });
+        await p.query('SELECT 1');
+        return p;
+      }
+
+      try {
+        this.pool = await createPool(shouldTrySsl);
+        this.persistent = true;
+      } catch (sslErr) {
+        if (shouldTrySsl && (sslErr.message.includes('does not support SSL') || sslErr.message.includes('SSL'))) {
+          try {
+            this.pool = await createPool(false);
+            this.persistent = true;
+          } catch (e) {
+            this.pool = null;
+            this.persistent = false;
+          }
+        } else {
+          this.pool = null;
+          this.persistent = false;
+        }
+      }
     }
     if (!this.pool) return;
     try {

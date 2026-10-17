@@ -1094,18 +1094,32 @@
         total_hours: parseInt(document.getElementById('clientHours').value) || 10
       };
 
+      const btn = e.target.querySelector('button[type="submit"]');
+      const origText = btn ? btn.innerText : 'Cadastrar Cliente';
+      if (btn) { btn.disabled = true; btn.innerText = 'Salvando Cliente...'; }
+
       try {
         const res = await fetch('/api/clients', {
           method: 'POST',
           headers: getAuthHeaders(),
           body: JSON.stringify(payload)
         });
+        const data = await res.json().catch(() => ({}));
         if (res.ok) {
           closeModal('clientModal');
-          loadClients();
+          document.getElementById('clientCompany').value = '';
+          document.getElementById('clientName').value = '';
+          document.getElementById('clientCnpj').value = '';
+          document.getElementById('clientEmail').value = '';
+          document.getElementById('clientPhone').value = '';
+          await loadClients();
+        } else {
+          alert('Erro ao salvar cliente: ' + (data.error || ('Código HTTP ' + res.status)));
         }
       } catch (err) {
-        alert('Erro ao salvar cliente: ' + err.message);
+        alert('Falha na conexão com o servidor: ' + err.message);
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerText = origText; }
       }
     }
 

@@ -102,19 +102,37 @@ async function initDb() {
   }
 
   try {
-    const isSsl = !process.env.DATABASE_URL.includes('localhost') && !process.env.DATABASE_URL.includes('127.0.0.1') && (
+    const connectionString = process.env.DATABASE_URL;
+    const explicitlyDisabled = connectionString.includes('sslmode=disable');
+    const isInternalHost = connectionString.includes('.railway.internal') || connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+    const shouldTrySsl = !explicitlyDisabled && !isInternalHost && (
       process.env.NODE_ENV === 'production' ||
-      process.env.DATABASE_URL.includes('sslmode=') ||
-      process.env.DATABASE_URL.includes('.supabase.') ||
-      process.env.DATABASE_URL.includes('.neon.') ||
-      process.env.DATABASE_URL.includes('.railway.') ||
-      process.env.DATABASE_URL.includes('pooler.') ||
-      process.env.DATABASE_URL.includes('render.com')
+      connectionString.includes('sslmode=') ||
+      connectionString.includes('.supabase.') ||
+      connectionString.includes('.neon.') ||
+      connectionString.includes('.pooler.')
     );
-    pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: isSsl ? { rejectUnauthorized: false } : false
-    });
+
+    async function connectPool(useSsl) {
+      const p = new Pool({
+        connectionString,
+        ssl: useSsl ? { rejectUnauthorized: false } : false,
+        connectionTimeoutMillis: 5000
+      });
+      await p.query('SELECT 1');
+      return p;
+    }
+
+    try {
+      pool = await connectPool(shouldTrySsl);
+    } catch (sslErr) {
+      if (shouldTrySsl && (sslErr.message.includes('does not support SSL') || sslErr.message.includes('SSL'))) {
+        console.warn('[DB] Servidor PostgreSQL não suporta SSL. Conectando sem SSL...');
+        pool = await connectPool(false);
+      } else {
+        throw sslErr;
+      }
+    }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -340,7 +358,11 @@ async function saveClient(client) {
             client.total_hours || 10, client.used_hours || 0, client.status || 'active', client.notes, client.id
           ]
         );
-        return res.rows[0];
+        const saved = res.rows[0];
+        if (saved) {
+          memoryStore.clients.set(saved.id, saved);
+          return saved;
+        }
       } else {
         const res = await pool.query(
           `INSERT INTO clients (name, company, email, phone, cnpj_cpf, total_hours, used_hours, status, notes)
@@ -350,11 +372,14 @@ async function saveClient(client) {
             client.total_hours || 10, client.used_hours || 0, client.status || 'active', client.notes
           ]
         );
-        return res.rows[0];
+        const saved = res.rows[0];
+        if (saved) {
+          memoryStore.clients.set(saved.id, saved);
+          return saved;
+        }
       }
     } catch (e) {
-      console.error('[DB] Erro ao salvar cliente:', e.message);
-      throw e;
+      console.error('[DB] Erro ao salvar cliente no Postgres:', e.message);
     }
   }
 
@@ -368,9 +393,10 @@ async function listClients() {
   if (pool) {
     try {
       const res = await pool.query('SELECT * FROM clients ORDER BY created_at DESC');
+      res.rows.forEach(c => memoryStore.clients.set(c.id, c));
       return res.rows;
     } catch (e) {
-      console.error('[DB] Erro ao listar clientes:', e.message);
+      console.error('[DB] Erro ao listar clientes no Postgres:', e.message);
     }
   }
   return Array.from(memoryStore.clients.values());
@@ -478,9 +504,10 @@ async function listRooms() {
         LEFT JOIN clients c ON r.client_id = c.id
         ORDER BY r.created_at DESC LIMIT 100
       `);
+      res.rows.forEach(r => memoryStore.rooms.set(r.id, r));
       return res.rows;
     } catch (e) {
-      console.error('[DB] Erro ao listar salas:', e.message);
+      console.error('[DB] Erro ao listar salas no Postgres:', e.message);
     }
   }
   return Array.from(memoryStore.rooms.values());
