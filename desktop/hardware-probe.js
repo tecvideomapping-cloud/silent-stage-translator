@@ -35,6 +35,11 @@ class HardwareProbe {
 
       const cpuOut = this._execSafe('powershell -NoProfile -Command "(Get-CimInstance Win32_Processor).ProcessorId"');
       if (cpuOut) cpuId = cpuOut;
+    } else if (process.platform === 'darwin') {
+      const uuidOut = this._execSafe("ioreg -rd1 -c IOPlatformExpertDevice | awk -F'\"' '/IOPlatformUUID/{print $4}'");
+      if (uuidOut) systemUuid = uuidOut;
+      const cpuOut = this._execSafe('sysctl -n machdep.cpu.brand_string');
+      if (cpuOut) cpuId = cpuOut;
     }
 
     if (!systemUuid) {
@@ -105,6 +110,20 @@ class HardwareProbe {
           });
         } catch {}
       }
+    } else if (process.platform === 'darwin') {
+      const isAppleSilicon = os.cpus().some(c => /Apple/i.test(c.model));
+      const modelName = isAppleSilicon ? (os.cpus()[0]?.model || 'Apple Silicon M-Series') : 'Apple Metal GPU';
+      gpus.push({
+        id: 0,
+        vendor: 'Apple',
+        name: modelName,
+        vramTotalMb: Math.round(os.totalmem() / (1024 * 1024)), // Memória Unificada
+        vramFreeMb: Math.round(os.freemem() / (1024 * 1024)),
+        temperatureC: null,
+        utilizationPercent: null,
+        hasTensorCores: true, // Apple Neural Engine
+        backend: 'Apple Metal / MPS / CoreML'
+      });
     }
 
     if (gpus.length === 0) {
@@ -131,7 +150,21 @@ class HardwareProbe {
     const soundDevices = [];
     const asioDrivers = [];
 
-    if (process.platform === 'win32') {
+    if (process.platform === 'darwin') {
+      asioDrivers.push({
+        name: 'macOS CoreAudio Pro (HAL Nativo de Baixa Latência)',
+        type: 'CoreAudio Ultra Low-Latency',
+        latencyMsEstimated: 1.5,
+        recommendedForStage: true
+      });
+      soundDevices.push({
+        name: 'Dispositivo Agregado / Microfone CoreAudio',
+        manufacturer: 'Apple CoreAudio',
+        status: 'OK',
+        isUsb: false,
+        recommendedForStage: true
+      });
+    } else if (process.platform === 'win32') {
       // Drivers ASIO registrados no registro do Windows (Behringer, Yamaha, Dante, etc.)
       const asioCmd = `powershell -NoProfile -Command "
         $paths = @('HKLM:\\SOFTWARE\\ASIO', 'HKLM:\\SOFTWARE\\WOW6432Node\\ASIO');
