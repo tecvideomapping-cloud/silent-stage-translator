@@ -53,6 +53,11 @@ class StageAudioDSP {
     this.rumbleFilter.connect(this.noiseGateGainNode);
     this.noiseGateGainNode.connect(this.compressor);
 
+    // Pre-gate sidechain runs on the audio clock, independently of the visual meter.
+    this.detector=this.ctx.createScriptProcessor(512,1,1);
+    this.detectorMute=this.ctx.createGain();this.detectorMute.gain.value=0;
+    sourceNode.connect(this.detector);this.detector.connect(this.detectorMute);this.detectorMute.connect(this.ctx.destination);
+    this.detector.onaudioprocess=event=>{const input=event.inputBuffer.getChannelData(0);let sum=0;for(const sample of input)sum+=sample*sample;this.processRms(Math.sqrt(sum/input.length));};
     this.outputNode = this.compressor;
     this.isInitialized = true;
     this.applyMode(this.mode);

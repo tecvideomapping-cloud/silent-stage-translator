@@ -3,6 +3,7 @@
  * Videomappingtech Workstation Edition
  */
 const path = require('path');
+process.env.VMT_DESKTOP_MODE='1';
 const { exec } = require('child_process');
 
 let isElectron = false;
@@ -15,6 +16,9 @@ try {
 if (isElectron) {
   const { app, BrowserWindow, Menu, screen, ipcMain } = require('electron');
 
+  const cloudBase=process.env.APP_BASE_URL||'https://silent-stage-translator-production.up.railway.app';
+  ipcMain.handle('vmt:hardware',async event=>{if(new URL(event.senderFrame.url).origin!==new URL(cloudBase).origin&&new URL(event.senderFrame.url).hostname!=='localhost')throw Error('Origem não autorizada.');return require('./desktop-api').probe('static')});
+  if(process.env.VMT_SMOKE_TEST==='1'&&process.env.VMT_TEST_PROFILE)app.setPath('userData',process.env.VMT_TEST_PROFILE);
   let mainWindow = null;
   let screenWindow = null;
 
@@ -27,7 +31,7 @@ if (isElectron) {
       title: 'Silent Stage AI - Workstation Pro',
       icon: path.join(__dirname, '../public/favicon.ico'),
       backgroundColor: '#10111c',
-      show: true,
+      show:process.env.VMT_SMOKE_TEST!=='1',
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -73,9 +77,10 @@ if (isElectron) {
 
     try {
       // Inicia o servidor local interno e obtém a porta ativa
+      process.env.VMT_LICENSE_PATH=path.join(app.getPath('userData'),'license.json');
       const { startServer } = require('../server/index');
       const port = await startServer(process.env.PORT || 3000);
-      const appUrl = `http://localhost:${port}/desktop.html`;
+      const appUrl=process.env.VMT_LOCAL_ONLY==='1'?`http://localhost:${port}/desktop.html`:cloudBase+'/customer.html';
 
       // Carrega a interface da Workstation Pro
       await mainWindow.loadURL(appUrl);
@@ -90,7 +95,7 @@ if (isElectron) {
             <div style="font-size:36px;margin-bottom:12px;">⚠️</div>
             <h2 style="margin:0 0 10px;font-size:18px;">Falha ao iniciar o motor local</h2>
             <p style="color:#94a3b8;font-size:13px;margin:0 0 18px;">Não foi possível inicializar o servidor interno do Silent Stage AI:</p>
-            <pre style="background:#0b0c14;color:#f87171;padding:12px;border-radius:6px;font-size:12px;text-align:left;overflow:auto;margin:0 0 20px;">${err.message || String(err)}</pre>
+            <pre style="background:#0b0c14;color:#f87171;padding:12px;border-radius:6px;font-size:12px;text-align:left;overflow:auto;margin:0 0 20px;">${String(err.message||err).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}</pre>
             <button onclick="location.reload()" style="background:#38bdf8;color:#0f172a;border:none;padding:10px 24px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;">Tentar Novamente</button>
           </div>
         </body>
@@ -101,13 +106,9 @@ if (isElectron) {
 
     // Gerencia novas janelas (ex: telão de projeção, visualização de participantes)
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          backgroundColor: '#000000',
-          autoHideMenuBar: true
-        }
-      };
+      try{const target=new URL(url),current=new URL(mainWindow.webContents.getURL());if(target.origin!==current.origin){if(target.protocol==='https:')require('electron').shell.openExternal(url);return {action:'deny'};}}catch{return {action:'deny'};}
+      mainWindow.loadURL(url);return {action:'deny'};
+
     });
 
     mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
@@ -146,7 +147,7 @@ if (isElectron) {
       }
     });
 
-    const port = process.env.PORT || 3000;
+    const port = mainWindow&&new URL(mainWindow.webContents.getURL()).port||process.env.PORT||3000;
     screenWindow.loadURL(`http://localhost:${port}/screen.html?room=palco1`);
   }
 

@@ -1,3 +1,4 @@
+const escapeStageText=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /**
  * Silent Stage AI - Workspaces & Studios Manager
  * Videomappingtech (C) 2026
@@ -81,7 +82,7 @@
           player.classList.remove('hidden');
         }
         if (statusText) {
-          statusText.innerHTML = '✅ Amostra gravada com sucesso! Timbre pronto para clonagem.';
+          statusText.innerHTML = '✅ Amostra gravada com sucesso! Timbre pronto para calibração.';
           statusText.className = 'text-xs text-emerald-400 font-semibold';
         }
 
@@ -225,12 +226,12 @@
       card.className = 'flex items-center justify-between p-2.5 bg-slate-900 border border-slate-800 rounded-lg text-xs';
       card.innerHTML = `
         <div>
-          <strong class="text-slate-200">${p.name}</strong>
+          <strong class="text-slate-200">${escapeStageText(p.name)}</strong>
           <span class="text-[10px] text-purple-300 block font-mono">Tom: ${p.pitch > 0 ? '+' : ''}${p.pitch}st · Vel: ${p.speed}x</span>
         </div>
         <div class="flex items-center gap-1.5">
-          <button type="button" onclick="window.applySavedProfile('${p.id}')" class="bg-purple-600/40 hover:bg-purple-600 text-purple-200 px-2 py-1 rounded text-[11px] font-semibold transition">Carregar</button>
-          <button type="button" onclick="window.deleteSavedProfile('${p.id}')" class="text-slate-500 hover:text-rose-400 p-1 text-[11px] transition">✕</button>
+          <button type="button" onclick="window.applySavedProfile('${escapeStageText(p.id)}')" class="bg-purple-600/40 hover:bg-purple-600 text-purple-200 px-2 py-1 rounded text-[11px] font-semibold transition">Carregar</button>
+          <button type="button" onclick="window.deleteSavedProfile('${escapeStageText(p.id)}')" class="text-slate-500 hover:text-rose-400 p-1 text-[11px] transition">✕</button>
         </div>
       `;
       container.appendChild(card);
@@ -268,14 +269,14 @@
 
         tr.innerHTML = `
           <td class="p-2.5 font-mono text-slate-400 shrink-0">${timeStr}</td>
-          <td class="p-2.5 text-slate-100 font-medium">${sourceText}</td>
-          <td class="p-2.5 text-emerald-300 font-normal">${enText}</td>
-          <td class="p-2.5 text-amber-300 font-normal">${esText}</td>
+          <td class="p-2.5 text-slate-100 font-medium">${escapeStageText(sourceText)}</td>
+          <td class="p-2.5 text-emerald-300 font-normal">${escapeStageText(enText)}</td>
+          <td class="p-2.5 text-amber-300 font-normal">${escapeStageText(esText)}</td>
         `;
         tbody.appendChild(tr);
       });
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-rose-400">Erro: ${err.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-rose-400">Erro: ${escapeStageText(err.message)}</td></tr>`;
     }
   }
 

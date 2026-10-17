@@ -25,9 +25,9 @@ const {
   saveSavedGlossary,
   deleteSavedGlossary
 } = require('./db');
-const { verifyPassword, createSession, removeSession, requireAuth, getSession } = require('./auth');
+const { verifyPassword, createSession, removeSession, requireAuth, getSession, setSessionStore, tokenFrom: adminTokenFrom, revokeUserSessions } = require('./auth');
 const { Commerce } = require('./commerce');
-const { pubSub } = require('./redis');
+
 const { aiPipeline } = require('./ai-pipeline');
 const QRCode = require('qrcode');
 const { MsEdgeTTS, OUTPUT_FORMAT } = require('msedge-tts');
@@ -38,7 +38,8 @@ const wss = new WebSocketServer({ server, maxPayload: 2 * 1024 * 1024 });
 
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(require('./security').headers);
+app.use(cors({origin:require('./security').corsOrigin,credentials:true}));
 app.use(express.json());
 app.get('/',(req,res,next)=>{
   if(!req.query.room&&!req.query.roomId)return res.sendFile(path.join(__dirname,'../public/landing.html'));
@@ -48,45 +49,47 @@ app.use(express.static(path.join(__dirname, '../public')));
 app.set('trust proxy', process.env.TRUST_PROXY_HOPS !== undefined ? (isNaN(Number(process.env.TRUST_PROXY_HOPS)) ? process.env.TRUST_PROXY_HOPS : Number(process.env.TRUST_PROXY_HOPS)) : (process.env.NODE_ENV === 'production' ? 1 : true));
 
 // Inicializa Banco e Redis
-const databaseReady = initDb();
-pubSub.init();
+const databaseReady = initDb().catch(e=>{console.error('[DB] Inicialização indisponível:',e.message);return null;});
+
 const commerce = new Commerce({ legacy: { invalidateRoom: require('./db').invalidateRoom, saveRoom } });
 const ledgerReady=commerce.ready;
 commerce.ready=Promise.all([ledgerReady,databaseReady]).then(([,database])=>{
-  if(process.env.DATABASE_URL&&!database)console.warn('[DB] PostgreSQL não respondeu na inicialização. Operando com resiliência em memória.');
+  if(process.env.NODE_ENV==='production'&&!database)commerce.healthy=false;
 });
 commerce.startWorkers();
-const adminSession = req => getSession(req.headers.authorization?.startsWith('Bearer ')?req.headers.authorization.slice(7):new URL(req.url,'http://localhost').searchParams.get('token'));
-const isAdminRequest = req => ['admin','superadmin'].includes(adminSession(req)?.role);
+setSessionStore(commerce.store,()=>commerce.ready);
+const adminSession=req=>getSession(adminTokenFrom(req));
+const isAdminRequest=async req=>['admin','superadmin'].includes((await adminSession(req))?.role);
 const requireAdmin = [requireAuth,(req,res,next)=>['admin','superadmin'].includes(req.user.role)?next():res.status(403).json({error:'Acesso administrativo obrigatório.'})];
-app.use('/api/desktop', require('../desktop/desktop-api'));
+app.use('/api/desktop',(req,res,next)=>{if(process.env.VMT_DESKTOP_MODE!=='1'||!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress))return res.status(404).json({error:'Recurso disponível apenas no aplicativo local.'});next();},require('../desktop/desktop-api'));
+app.get('/api/health',(req,res)=>res.json({status:'alive'}));
+app.get('/api/ready',async(req,res)=>{await commerce.ready;const ok=commerce.healthy&&await commerce.store.health()&&roomBus.healthy;res.status(ok?200:503).json({status:ok?'ready':'unavailable'});});
+app.use('/api',async(req,res,next)=>{try{await commerce.readyOrFail();next()}catch{res.status(503).json({error:'Serviço temporariamente indisponível.'})}});
 app.use('/api',commerce.router(requireAdmin));
 
 // Existing administrative endpoints must not become a route around customer ownership.
 app.use('/api',async(req,res,next)=>{
   try {
-    const admin=isAdminRequest(req);
+    const admin=await isAdminRequest(req);
     if(req.path.startsWith('/config/tts-keys')&&req.method!=='GET'||req.path.startsWith('/glossaries')){
       if(!admin)return res.status(403).json({error:'Acesso administrativo obrigatório.'});
     }
     if(req.path==='/tts'||req.path==='/stt-chunk'){
-      const isLocal = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip) || req.hostname === 'localhost';
-      const isTest = req.query.test === '1' || req.query.test === 'true';
-      if(!admin && !isLocal && !isTest){
+      if(!admin){
         const roomId=String(req.query.room||'');const isTts=req.path==='/tts';
         const access=await commerce.checkEventAccess(req,roomId,{operator:!isTts});
         if(!access&&!isTts)return res.status(403).json({error:'Entre na área do responsável para operar o evento.'});
         if(isTts&&!access?.owner){
           if(!access&&!await getRoom(roomId))return res.status(403).json({error:'Evento não disponível.'});
           const text=String(req.query.text||'').replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g,'').trim();
-          const recent=roomCatchupHistory.get(roomId)||[];
+          const recent=await roomBus.getRoomState(roomId,'history')||roomCatchupHistory.get(roomId)||[];
           if(!recent.some(item=>item.text===text&&Date.now()-item.timestamp<=120000))return res.status(403).json({error:'Trecho de áudio não disponível neste evento.'});
         }
         if(req.path==='/stt-chunk'&&access){
           const auth=await commerce.session(req);
           if(req.get('X-CSRF-Token')!==auth?.session.csrfToken)return res.status(403).json({error:'Sessão desatualizada.'});
-          const host=Array.from(roomsClients.get(roomId)||[]).find(ws=>ws.role==='host'&&ws.commerce);
-          if(!host||!await commerce.consumeSocket(host.commerce))return res.status(403).json({error:'Inicie uma transmissão com horas disponíveis.'});
+          const lease=(await commerce.store.list('connection',{eventId:roomId})).find(c=>c.role==='host'&&c.expiresAt>Date.now());
+          if(!lease||!await commerce.consumeSocket({eventId:roomId,leaseId:lease.id,role:'host'}))return res.status(403).json({error:'Inicie uma transmissão com horas disponíveis.'});
         }
       }
     }
@@ -101,6 +104,7 @@ app.use('/api',async(req,res,next)=>{
         else if(!owner&&(order?.status!=='paid'||!event.published||event.revoked))return res.status(403).json({error:'Este evento ainda não está disponível para os participantes.'});
         if(req.method==='DELETE')return res.status(409).json({error:'Um evento contratado não pode ser excluído pelo cadastro de salas.'});
       }
+      if(action&&action!=='glossary'&&!event&&!admin)return res.status(403).json({error:'Acesso administrativo obrigatório.'});
       if(action==='glossary'){
         const room=event?commerce.roomFromEvent(event):await getRoom(id);
         const key=req.body?.hostKey;
@@ -120,7 +124,12 @@ app.use('/api',async(req,res,next)=>{
 });
 
 // Map de clientes conectados: roomId -> Set<ws>
-const roomsClients = new Map();
+const roomsClients=new Map();
+const roomBus=new (require('./room-bus').RoomBus)({rooms:roomsClients,sync:client=>{
+ if(typeof roomAudioMeta!=='undefined'&&roomAudioMeta.has(client.roomId))client.send(JSON.stringify(roomAudioMeta.get(client.roomId)));
+ if(typeof roomSpeakerProfile!=='undefined'&&roomSpeakerProfile.has(client.roomId))client.send(JSON.stringify({type:'speaker_voice_profile',...roomSpeakerProfile.get(client.roomId)}));
+}});
+
 
 function getRoomClients(roomId) {
   if (!roomsClients.has(roomId)) {
@@ -199,7 +208,7 @@ app.post('/api/auth/login', commerce.throttle('admin-login', 60), async (req, re
   try {
     const rawEmail = req.body?.email || req.body?.username;
     const password = req.body?.password;
-    if (!rawEmail || !password) {
+    if (typeof rawEmail!=='string'||typeof password!=='string'||rawEmail.length>254||password.length>128||!rawEmail||!password) {
       return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
     }
 
@@ -209,28 +218,13 @@ app.post('/api/auth/login', commerce.throttle('admin-login', 60), async (req, re
     }
 
     let isValid = verifyPassword(password, user.password_hash, user.password_salt);
-    // Tolerância com senhas padrão administrativas para evitar bloqueio acidental do proprietário
-    if (!isValid && (user.role === 'superadmin' || user.role === 'admin')) {
-      const bootstrapPass = process.env.ADMIN_PASSWORD || 'Videomapping2026!';
-      const allowedPasswords = [
-        bootstrapPass,
-        'Videomapping2026!',
-        'videomapping2026!',
-        'Videomapping2026',
-        'videomapping2026',
-        'admin',
-        'admin123'
-      ];
-      if (allowedPasswords.includes(password)) {
-        isValid = true;
-      }
-    }
-
     if (!isValid) {
       return res.status(401).json({ error: 'Credenciais inválidas.' });
     }
 
-    const { token, expiresAt } = createSession(user);
+    if(!user.password_hash.startsWith('scrypt:'))await updateUserPassword(user.email,password);
+    const { token, expiresAt } = await createSession(user);
+    res.cookie('vmt_admin_session',token,{httpOnly:true,sameSite:'lax',secure:req.secure,maxAge:7*86400000,path:'/'});
     res.json({
       success: true,
       token,
@@ -238,7 +232,7 @@ app.post('/api/auth/login', commerce.throttle('admin-login', 60), async (req, re
       user: { id: user.id, name: user.name, email: user.email, role: user.role }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
@@ -248,24 +242,26 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 });
 
 // Alterar senha
-app.put('/api/auth/password', requireAuth, async (req, res) => {
+app.put('/api/auth/password', ...requireAdmin, async (req, res) => {
   try {
     const { newPassword } = req.body;
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres.' });
+    if (typeof newPassword!=='string' || newPassword.length < 12 || newPassword.length>128) {
+      return res.status(400).json({ error: 'A nova senha deve ter no mínimo 12 e no máximo 128 caracteres.' });
     }
 
-    await updateUserPassword(req.user.email, newPassword);
+    if(!await updateUserPassword(req.user.email,newPassword))throw new Error('Não foi possível atualizar a senha.');
+    await revokeUserSessions(req.user.email);
+    res.clearCookie('vmt_admin_session',{path:'/'});
     res.json({ success: true, message: 'Senha atualizada com sucesso.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
 // Logout
-app.post('/api/auth/logout', (req, res) => {
-  const token = req.headers.authorization?.substring(7);
-  removeSession(token);
+app.post('/api/auth/logout', async (req, res) => {
+  try{await removeSession(adminTokenFrom(req))}catch{return res.status(503).json({error:'Não foi possível encerrar a sessão. Tente novamente.'})}
+  res.clearCookie('vmt_admin_session',{path:'/'});
   res.json({ success: true });
 });
 
@@ -273,30 +269,30 @@ app.post('/api/auth/logout', (req, res) => {
 // GESTÃO DE CLIENTES / EMPRESAS (PROTEGIDO)
 // ----------------------------------------------------
 
-app.get('/api/clients', requireAuth, async (req, res) => {
+app.get('/api/clients', ...requireAdmin, async (req, res) => {
   try {
     const clients = await listClients();
     res.json({ clients });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
-app.post('/api/clients', requireAuth, async (req, res) => {
+app.post('/api/clients', ...requireAdmin, async (req, res) => {
   try {
     const client = await saveClient(req.body);
     res.json({ success: true, client });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
-app.delete('/api/clients/:id', requireAuth, async (req, res) => {
+app.delete('/api/clients/:id', ...requireAdmin, async (req, res) => {
   try {
     await deleteClient(req.params.id);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
@@ -305,7 +301,7 @@ app.delete('/api/clients/:id', requireAuth, async (req, res) => {
 // ----------------------------------------------------
 
 // Listar todas as salas (Apenas Admin autenticado, inclui métricas online em tempo real)
-app.get('/api/rooms', requireAuth, async (req, res) => {
+app.get('/api/rooms', ...requireAdmin, async (req, res) => {
   try {
     const rooms = await listRooms();
     const roomsWithStats = rooms.map(r => ({
@@ -314,7 +310,7 @@ app.get('/api/rooms', requireAuth, async (req, res) => {
     }));
     res.json({ rooms: roomsWithStats });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
@@ -324,12 +320,12 @@ app.get('/api/rooms/:id/stats', async (req, res) => {
     const stats = getRoomOnlineStats(req.params.id);
     res.json({ roomId: req.params.id, ...stats });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
 // Criar ou Atualizar Sala/Evento (Apenas Admin autenticado)
-app.post('/api/rooms', requireAuth, async (req, res) => {
+app.post('/api/rooms', ...requireAdmin, async (req, res) => {
   try {
     const {
       id,
@@ -355,6 +351,8 @@ app.post('/api/rooms', requireAuth, async (req, res) => {
     } = req.body;
 
     const roomId = (id || `evento-${Date.now().toString(36)}`).trim().toLowerCase();
+    if(!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(roomId))return res.status(400).json({error:'Identificador de sala inválido.'});
+    if(targetLanguages!==undefined&&(!Array.isArray(targetLanguages)||targetLanguages.length>11||targetLanguages.some(x=>typeof x!=='string'||!['en','es','fr','de','it','ja','ko','zh','pt','ar','hi'].includes(x))))return res.status(400).json({error:'Idiomas inválidos.'});
     const existing = await getRoom(roomId);
     const hostKey = existing?.host_key || `host-${Math.random().toString(36).substring(2, 10)}`;
 
@@ -387,27 +385,27 @@ app.post('/api/rooms', requireAuth, async (req, res) => {
     await saveRoom(room);
     res.json({ success: true, room });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
 // Excluir sala (Apenas Admin autenticado)
-app.delete('/api/rooms/:id', requireAuth, async (req, res) => {
+app.delete('/api/rooms/:id', ...requireAdmin, async (req, res) => {
   try {
     await deleteRoom(req.params.id);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
 // Ver leads recebidos (Apenas Admin autenticado)
-app.get('/api/leads', requireAuth, async (req, res) => {
+app.get('/api/leads', ...requireAdmin, async (req, res) => {
   try {
     const leads = await listLeads();
     res.json({ leads });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
@@ -436,7 +434,7 @@ app.get('/api/rooms/:id', async (req, res) => {
     const { host_key, ...publicData } = room;
     res.json(publicData);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
@@ -454,7 +452,7 @@ app.put('/api/rooms/:id/glossary', async (req, res) => {
     await saveRoom(room);
     res.json({ success: true, glossary: room.glossary });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
@@ -467,7 +465,7 @@ app.get('/api/glossaries', async (req, res) => {
     const glossaries = await listSavedGlossaries();
     res.json({ glossaries });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
@@ -478,7 +476,7 @@ app.get('/api/glossaries/:id', async (req, res) => {
     if (!glossary) return res.status(404).json({ error: 'Glossário não encontrado' });
     res.json(glossary);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
@@ -497,7 +495,7 @@ app.post('/api/glossaries', async (req, res) => {
     });
     res.status(201).json(created);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
@@ -517,7 +515,7 @@ app.put('/api/glossaries/:id', async (req, res) => {
     });
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
@@ -527,17 +525,19 @@ app.delete('/api/glossaries/:id', async (req, res) => {
     const success = await deleteSavedGlossary(req.params.id);
     res.json({ success });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
 // Transcrições da sala
 app.get('/api/rooms/:id/transcripts', async (req, res) => {
   try {
-    const transcripts = await getTranscripts(req.params.id);
+    const limit=Math.min(1000,Math.max(1,Number(req.query.limit)||500));const offset=Math.max(0,Number(req.query.offset)||0);
+    if(!Number.isInteger(limit)||!Number.isInteger(offset))return res.status(400).json({error:'Paginação inválida.'});
+    const transcripts=await getTranscripts(req.params.id,limit,offset);
     res.json({ transcripts });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
@@ -545,19 +545,20 @@ app.get('/api/rooms/:id/transcripts', async (req, res) => {
 app.get('/api/rooms/:id/export', async (req, res) => {
   try {
     const { format = 'txt', lang } = req.query;
-    const transcripts = await getTranscripts(req.params.id);
+    const transcripts = await getTranscripts(req.params.id,null);
     
     if (format === 'srt') {
       let srtContent = '';
       transcripts.forEach((t, i) => {
         const text = (lang && t.translations?.[lang]) ? t.translations[lang] : t.source_text;
-        const startSec = i * 4;
-        const endSec = startSec + 3;
+        const origin=Date.parse(transcripts[0]?.created_at)||0;
+        const startSec=Math.max(0,((Date.parse(t.created_at)||origin)-origin)/1000);
+        const next=transcripts[i+1];const endSec=next?Math.max(startSec+0.5,((Date.parse(next.created_at)||origin)-origin)/1000):startSec+3;
         const formatTime = (s) => {
           const hrs = String(Math.floor(s / 3600)).padStart(2, '0');
           const mins = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-          const secs = String(s % 60).padStart(2, '0');
-          return `${hrs}:${mins}:${secs},000`;
+          const secs=String(Math.floor(s%60)).padStart(2,'0');const ms=String(Math.floor((s%1)*1000)).padStart(3,'0');
+          return `${hrs}:${mins}:${secs},${ms}`;
         };
         srtContent += `${i + 1}\n${formatTime(startSec)} --> ${formatTime(endSec)}\n${text}\n\n`;
       });
@@ -575,17 +576,17 @@ app.get('/api/rooms/:id/export', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${req.params.id}-transcricao.txt"`);
     res.send(txtContent);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
 // Cadastro de Leads / Orçamentos pelo Site Institucional (Público)
-app.post('/api/leads', async (req, res) => {
+app.post('/api/leads',commerce.throttle('leads',12), async (req, res) => {
   try {
     const lead = await saveLead(req.body);
     res.json({ success: true, lead });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }
 });
 
@@ -767,7 +768,7 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
     const activeElevenLabsKey = customElevenLabsKey || process.env.ELEVENLABS_API_KEY;
 
     // 1. OpenAI Neural TTS (Se chave configurada E pitch == 0; caso haja ajuste de Pitch fino em semitons, Edge Neural aplica SSML nativo sem distorcer velocidade)
-    if (activeOpenAiKey) {
+    if (activeOpenAiKey&&Math.abs(Number(pitch)||0)<0.01) {
       try {
         let openAiVoice = 'alloy';
         const v = normVoice;
@@ -810,7 +811,7 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
     }
 
     // 2. ElevenLabs Multilingual (Se configurado via painel ou .env)
-    if (activeElevenLabsKey) {
+    if (activeElevenLabsKey&&Math.abs(Number(pitch)||0)<0.01&&Math.abs((Number(speed)||1)-1)<0.01) {
       try {
         const v = normVoice;
         const voiceId = (v.includes('female') || v === 'nova' || v === 'shimmer')
@@ -879,6 +880,7 @@ app.get('/api/tts', async (req, res) => {
   try {
     const { lang, text, voice, speed, pitch } = req.query;
     if (!text) return res.status(400).send('Text required');
+    if(typeof text!=='string'||text.length>4000)return res.status(400).json({error:'Trecho de áudio inválido.'});
     const targetLang = (lang || 'en').split('-')[0].toLowerCase();
     const cleanText = String(text).replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
     if (!cleanText) return res.status(400).send('Empty text');
@@ -967,7 +969,8 @@ const roomSpeakerProfile = new Map(); // roomId -> { voice, pitch, speed }
 const roomLastFinalTranscript = new Map(); // roomId -> { text, time }
 const roomLastInterimTranslate = new Map(); // roomId -> { text, time, seq }
 const roomCatchupHistory = new Map(); // roomId -> Array<{ seqId, type, lang, text, timestamp }>
-let globalCatchupSeqId = 1;
+let globalCatchupSeqId=Date.now()*1000;
+aiPipeline.onTranslationFailure=(roomId,lang)=>{for(const c of roomsClients.get(roomId)||[])if(c.readyState===WebSocket.OPEN)c.send(JSON.stringify({type:'service_warning',message:'Tradução temporariamente indisponível para '+lang+'.'}));};
 
 function appendToCatchupHistory(roomId, entry) {
   if (!roomCatchupHistory.has(roomId)) {
@@ -984,6 +987,7 @@ function appendToCatchupHistory(roomId, entry) {
   while (list.length > 25 || (list.length > 0 && (now - list[0].timestamp) > 40000)) {
     list.shift();
   }
+  roomBus.setRoomState(roomId,'history',list);
 }
 
 // Codificador G.711 μ-law stateless para Degrade Quality individual por ouvinte no servidor
@@ -1052,43 +1056,52 @@ function buildDegradedAudioPacket(rawBuffer, targetTier) {
   return rawBuffer;
 }
 
-wss.on('connection', async (ws, req) => {
+wss.on('connection',(ws,req)=>{handleConnection(ws,req).catch(()=>{ws.close(1011,'Conexão indisponível.');});});
+async function handleConnection(ws,req){
   // Parse à prova de falhas com URL padrão Node.js e normalização de slug
+  if(!require('./security').isAllowed(req.headers.origin)){ws.close(1008,'Origem não autorizada.');return;}
   const parsedUrl = new URL(req.url, 'http://localhost');
   const rawRoom = parsedUrl.searchParams.get('roomId') || parsedUrl.searchParams.get('room') || 'palco1';
-  const roomId = decodeURIComponent(rawRoom).trim().toLowerCase();
+  const roomId=rawRoom.trim().toLowerCase();
+  if(!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(roomId)){ws.close(1008,'Identificador de sala inválido.');return;}
   const role = parsedUrl.searchParams.get('role') || 'listener';
   let channel = parsedUrl.searchParams.get('channel') || 'original';
   const lastSeenSeq = parseInt(parsedUrl.searchParams.get('lastSeq') || '0', 10);
   if(!['host','listener','screen'].includes(role)){ws.close(1008,'Tipo de conexão inválido');return;}
   let managed=null;
   try{
-    const admin=isAdminRequest(req);
+    const admin=await isAdminRequest(req);
     managed=await commerce.acquireSocket(req,roomId,role,channel,admin);
     if(!managed&&role==='host'){
       const room=await getRoom(roomId),key=parsedUrl.searchParams.get('hostKey');
       if(!admin&&(!room||!key||key!==room.host_key))throw Object.assign(new Error('Acesso de operador obrigatório.'),{status:403});
     }
-    if(!managed&&role!=='host'&&!await getRoom(roomId))throw new Error('Evento não encontrado.');
+    if(!managed){const room=await getRoom(roomId);if(!room)throw new Error('Evento não encontrado.');if(role!=='host'&&room.status!=='active')throw new Error('Evento indisponível.');if(role!=='host'&&!channelAllowed(room,channel))throw new Error('Canal indisponível.');if(role==='host'&&Array.from(roomsClients.get(roomId)||[]).some(c=>c.role==='host'&&c.readyState===WebSocket.OPEN))throw new Error('Já existe um transmissor conectado.');}
     if(ws.readyState!==WebSocket.OPEN){await commerce.releaseSocket(managed);return;}
   }catch(e){ws.close(1008,String(e.message||'Acesso indisponível').slice(0,115));return;}
   ws.commerce=managed;
-  const entitlementTimer=managed?setInterval(async()=>{
-    try{if(!await commerce.refreshSocket(managed))ws.close(1008,'O acesso a este evento não está ativo.');}catch{ws.close(1011,'Verificação de acesso indisponível.');}
-  },15000):null;
+  const operatorToken=role==='host'?adminTokenFrom(req):'';
+  const entitlementTimer=setInterval(async()=>{
+    try{
+    if(operatorToken&&!await getSession(operatorToken)){ws.close(1008,'Sessão encerrada. Entre novamente.');return;}
+    if(!managed&&!await getRoom(roomId)){ws.close(1008,'Evento indisponível.');return;}
+    if(!await commerce.refreshSocket(managed))ws.close(1008,'O acesso a este evento não está ativo.');}catch{ws.close(1011,'Verificação de acesso indisponível.');}
+  },15000);
 
-  const clientId = 'c_' + Math.random().toString(36).substring(2, 9);
+  const clientId='c_'+require('crypto').randomUUID();
   ws.clientId = clientId;
   ws.roomId = roomId;
   ws.role = role;
   ws.channel = channel;
-  ws.isAlive = true;
+  ws.isAlive=true;ws.on('pong',()=>{ws.isAlive=true});
+  ws.on('error',()=>{});
   ws.abrMode = 'auto'; // 'auto' | 'high' | 'saver'
   ws.abrTier = 0;      // 0 = Original PCM 256k, 1 = Degrade -50% (128k), 2 = Degrade -75% (64k)
   ws.lastAbrChangeTime = Date.now();
 
   const roomClients = getRoomClients(roomId);
   roomClients.add(ws);
+  roomBus.attach(ws);
 
   ws.send(JSON.stringify({
     type: 'connected',
@@ -1099,6 +1112,10 @@ wss.on('connection', async (ws, req) => {
     timestamp: Date.now()
   }));
 
+  const sharedMeta=await roomBus.getRoomState(roomId,'audio_meta');
+  if(sharedMeta)roomAudioMeta.set(roomId,sharedMeta);
+  const sharedHistory=await roomBus.getRoomState(roomId,'history');
+  if(Array.isArray(sharedHistory))roomCatchupHistory.set(roomId,sharedHistory);
   // Envia perfil de compressão e taxa de bits atual da sala para novos ouvintes
   if (roomAudioMeta.has(roomId)) {
     try {
@@ -1133,25 +1150,17 @@ wss.on('connection', async (ws, req) => {
   }
 
   // Notifica imediatamente anfitrião e telões sobre métricas de ouvintes online
-  let lastConsumeCheckTime = 0;
   ws.on('message', async (data, isBinary) => {
-    if (managed && role === 'host') {
-      const now = Date.now();
-      if (now - lastConsumeCheckTime > 5000) {
-        lastConsumeCheckTime = now;
-        commerce.consumeSocket(managed).then(ok => {
-          if (!ok) ws.close(1008, 'As horas de transmissão foram utilizadas.');
-        }).catch(() => {});
-      }
-    }
+    try{if(managed&&role==='host'&&isBinary&&!await commerce.consumeSocket(managed)){ws.close(1008,'As horas de transmissão foram utilizadas.');return;}}catch{ws.close(1011,'Verificação de saldo indisponível.');return;}
     // 1. Mensagens Binárias: Chunks de Áudio
     if (isBinary) {
-      if (ws.role !== 'host') return;
+      if (ws.role !== 'host'||data.length>65536) return;
 
       // Broadcast direto do Áudio Original limpo em alta fidelidade (100% puro, sem degradação ou decimação com ruído)
       for (const client of roomClients) {
         if (client !== ws && client.readyState === WebSocket.OPEN && client.channel === 'original') {
           try {
+            if(client.bufferedAmount>192*1024){client.close(1013,'Conexão lenta. Reconecte para continuar.');continue;}
             client.send(data, { binary: true });
           } catch {}
         }
@@ -1168,7 +1177,8 @@ wss.on('connection', async (ws, req) => {
         const targetLangs = room?.target_languages || ['en', 'es'];
         const glossary = room?.glossary || {};
 
-        aiPipeline.feedAudio(roomId, data, sourceLang, async (sttEvent) => {
+        let pcm;try{ws.sttDecoder??={};pcm=require('./audio-codec').decodeForStt(data,ws.sttDecoder)}catch{return;}
+        aiPipeline.feedAudio(roomId, pcm, sourceLang, async (sttEvent) => {
           const subtitlePayload = {
             type: 'subtitle',
             text: sttEvent.text,
@@ -1220,7 +1230,7 @@ wss.on('connection', async (ws, req) => {
             }
           }
         });
-      });
+      }).catch(()=>{});
 
       return;
     }
@@ -1237,11 +1247,14 @@ wss.on('connection', async (ws, req) => {
         if(!['original','text',...event.target_languages].includes(msg.channel))return;
       }
       if (msg.type === 'switch_channel') {
-        ws.channel = msg.channel;
+        const currentRoom=await getRoom(roomId);if(!currentRoom||!channelAllowed(currentRoom,msg.channel))return;
+        ws.channel=msg.channel;
+        roomBus.changed();
         ws.send(JSON.stringify({ type: 'channel_switched', channel: ws.channel }));
         broadcastRoomStats(roomId);
       } else if (msg.type === 'audio_meta') {
         roomAudioMeta.set(roomId, msg);
+        roomBus.setRoomState(roomId,'audio_meta',msg);
         for (const client of roomClients) {
           if (client !== ws && client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify(msg));
@@ -1261,7 +1274,7 @@ wss.on('connection', async (ws, req) => {
         });
 
         for (const client of roomClients) {
-          if (client !== ws && client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener' || client.channel === 'original' || client.channel === 'text')) {
+          if (client !== ws && client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener' || client.role === 'host' || client.channel === 'original' || client.channel === 'text')) {
             client.send(subPayload);
           }
         }
@@ -1311,7 +1324,7 @@ wss.on('connection', async (ws, req) => {
               });
 
               for (const client of roomClients) {
-                if (client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener')) {
+                if (client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener' || client.role === 'host')) {
                   client.send(transPayload);
                 }
               }
@@ -1339,7 +1352,7 @@ wss.on('connection', async (ws, req) => {
             saveTranscript(roomId, text, translations).catch(err => {
               console.error('[DB] Erro não-bloqueante ao salvar transcrição:', err.message);
             });
-          });
+          }).catch(()=>{});
         } else {
           // Tradução simultânea em tempo real da fala em andamento (isFinal: false) para exibição imediata nas legendas
           const cleanInterim = (text || '').trim();
@@ -1369,7 +1382,7 @@ wss.on('connection', async (ws, req) => {
                   });
 
                   for (const client of roomClients) {
-                    if (client !== ws && client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener')) {
+                    if (client !== ws && client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener' || client.role === 'host')) {
                       client.send(interimPayload);
                     }
                   }
@@ -1483,6 +1496,7 @@ wss.on('connection', async (ws, req) => {
     clearInterval(entitlementTimer);
     commerce.releaseSocket(managed).catch(()=>{});
     roomClients.delete(ws);
+    roomBus.detach(ws);
     broadcastRoomStats(roomId);
     if (roomClients.size === 0) {
       roomsClients.delete(roomId);
@@ -1495,7 +1509,11 @@ wss.on('connection', async (ws, req) => {
       aiPipeline.closeSession(roomId);
     }
   });
-});
+}
+
+function channelAllowed(room,channel){return channel==='original'?room.allow_original_audio!==false:channel==='text'?room.allow_subtitles!==false:room.allow_translation!==false&&Array.isArray(room.target_languages)&&room.target_languages.includes(channel)}
+const heartbeat=setInterval(()=>{for(const ws of wss.clients){if(!ws.isAlive){ws.terminate();continue;}ws.isAlive=false;ws.ping();}},30000);heartbeat.unref();
+wss.on('close',()=>{clearInterval(heartbeat);roomBus.close().catch(()=>{})});
 
 function startServer(port = PORT) {
   return new Promise((resolve, reject) => {
@@ -1506,7 +1524,7 @@ function startServer(port = PORT) {
     }
     const tryPort = (targetPort) => {
       const onError = (err) => {
-        if (err.code === 'EADDRINUSE' && targetPort < Number(port) + 20) {
+        if (process.env.NODE_ENV!=='production' && err.code === 'EADDRINUSE' && targetPort < Number(port) + 20) {
           console.warn(`[Server] Porta ${targetPort} ocupada, tentando ${targetPort + 1}...`);
           server.removeListener('error', onError);
           tryPort(targetPort + 1);
@@ -1516,7 +1534,7 @@ function startServer(port = PORT) {
         }
       };
       server.once('error', onError);
-      server.listen(targetPort, () => {
+      server.listen(targetPort,process.env.VMT_DESKTOP_MODE==='1'?'127.0.0.1':'0.0.0.0', () => {
         server.removeListener('error', onError);
         const actualPort = server.address().port;
         console.log(`🚀 Videomappingtech Silent Translator no ar na porta ${actualPort}`);
@@ -1534,5 +1552,5 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, server, wss, commerce, startServer };
+module.exports={app,server,wss,commerce,startServer,roomBus};
 

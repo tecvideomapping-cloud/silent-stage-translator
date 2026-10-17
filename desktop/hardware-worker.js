@@ -1,0 +1,1 @@
+const {parentPort,workerData}=require('worker_threads');const probe=require('./hardware-probe');try{parentPort.postMessage({value:workerData==='metrics'?probe.getRealtimeMetrics():probe.getCompleteHardwareReport()})}catch{parentPort.postMessage({error:true})}

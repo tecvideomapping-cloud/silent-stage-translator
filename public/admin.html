@@ -621,7 +621,7 @@
 
         return `
           <div class="admin-event vmt-glass flex flex-col">
-            <div class="admin-event-art ${room.banner_url ? 'has-banner' : ''}" ${room.banner_url ? `style="background-image: linear-gradient(0deg,rgba(15,12,30,.75),rgba(15,12,30,.08)),url('${room.banner_url}');"` : ''}><span class="admin-event-art-label">SILENT TRANSLATOR</span><strong>${escapeMarkup(room.name)}</strong></div>
+            <div class="admin-event-art ${room.banner_url ? 'has-banner' : ''}" ${room.banner_url ? `style="background-image: linear-gradient(0deg,rgba(15,12,30,.75),rgba(15,12,30,.08)),url('${escapeMarkup(String(room.banner_url).replace(/[\"'<>()[\]]/g,encodeURIComponent))}');"` : ''}><span class="admin-event-art-label">SILENT TRANSLATOR</span><strong>${escapeMarkup(room.name)}</strong></div>
             <div>
               <div class="flex items-center justify-between mb-2">
                 <span class="text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded-full">
@@ -705,14 +705,14 @@
         const balance = (c.total_hours || 0) - (c.used_hours || 0);
         return `
           <tr class="hover:bg-slate-850">
-            <td class="p-3.5 font-bold text-white">${c.company}<br><span class="font-normal text-slate-400">${c.name}</span></td>
-            <td class="p-3.5">${c.email || '-'}<br><span class="text-slate-400">${c.phone || ''}</span></td>
-            <td class="p-3.5 font-mono">${c.cnpj_cpf || '-'}</td>
-            <td class="p-3.5 font-semibold text-slate-200">${c.total_hours}h</td>
-            <td class="p-3.5 text-slate-400">${c.used_hours}h</td>
+            <td class="p-3.5 font-bold text-white">${escapeMarkup(c.company)}<br><span class="font-normal text-slate-400">${escapeMarkup(c.name)}</span></td>
+            <td class="p-3.5">${escapeMarkup(c.email || '-')}<br><span class="text-slate-400">${escapeMarkup(c.phone || '')}</span></td>
+            <td class="p-3.5 font-mono">${escapeMarkup(c.cnpj_cpf || '-')}</td>
+            <td class="p-3.5 font-semibold text-slate-200">${escapeMarkup(c.total_hours)}h</td>
+            <td class="p-3.5 text-slate-400">${escapeMarkup(c.used_hours)}h</td>
             <td class="p-3.5 font-bold ${balance > 0 ? 'text-emerald-400' : 'text-rose-400'}">${balance.toFixed(1)}h</td>
             <td class="p-3.5 text-right">
-              <button onclick="deleteClient(${c.id})" class="text-rose-400 hover:text-rose-300">Excluir</button>
+              <button onclick="deleteClient(${escapeMarkup(c.id)})" class="text-rose-400 hover:text-rose-300">Excluir</button>
             </td>
           </tr>
         `;
@@ -725,7 +725,7 @@
       clientsList.forEach(c => {
         const opt = document.createElement('option');
         opt.value = c.id;
-        opt.innerText = `${c.company} (${c.name})`;
+        opt.innerText = `${escapeMarkup(c.company)} (${escapeMarkup(c.name)})`;
         select.appendChild(opt);
       });
     }
@@ -739,11 +739,11 @@
       tbody.innerHTML = leads.map(l => `
         <tr class="hover:bg-slate-850">
           <td class="p-3.5 text-slate-400">${new Date(l.created_at).toLocaleDateString()}</td>
-          <td class="p-3.5 font-bold text-white">${l.name}<br><span class="font-normal text-slate-400">${l.email} • ${l.phone || ''}</span></td>
-          <td class="p-3.5">${l.company || '-'}</td>
-          <td class="p-3.5"><span class="bg-slate-800 px-2 py-0.5 rounded">${l.event_type || 'Geral'}</span></td>
-          <td class="p-3.5">${l.estimated_hours || 4} horas</td>
-          <td class="p-3.5 text-slate-400 max-w-xs truncate">${l.message || '-'}</td>
+          <td class="p-3.5 font-bold text-white">${escapeMarkup(l.name)}<br><span class="font-normal text-slate-400">${escapeMarkup(l.email)} • ${escapeMarkup(l.phone || '')}</span></td>
+          <td class="p-3.5">${escapeMarkup(l.company || '-')}</td>
+          <td class="p-3.5"><span class="bg-slate-800 px-2 py-0.5 rounded">${escapeMarkup(l.event_type || 'Geral')}</span></td>
+          <td class="p-3.5">${escapeMarkup(l.estimated_hours || 4)} horas</td>
+          <td class="p-3.5 text-slate-400 max-w-xs truncate">${escapeMarkup(l.message || '-')}</td>
         </tr>
       `).join('');
     }

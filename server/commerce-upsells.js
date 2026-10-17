@@ -30,7 +30,7 @@ async function usageView(event,tx=this.store) {
   const m=usage[o.triggerMetric];return m.limit!==null&&(m.percent>=o.thresholdPercent||o.triggerMetric==='hours'&&m.remaining*60<=o.leadMinutes);
  }).map(o=>({...o,reason:o.triggerMetric==='hours'?'Seu tempo de transmissão está próximo do limite.':o.triggerMetric==='participants'?'O público está se aproximando da capacidade contratada.':'Você está próximo do limite de idiomas.'})):[];
  const orders=(await tx.list('order',{eventId:event.id})).filter(o=>o.kind==='upsell'&&o.customerId===event.customerId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
- return {usage,offers,pendingOrders:orders.filter(o=>o.status==='pending'&&Date.parse(o.createdAt)>Date.now()-86400000).map(o=>this.orderView(o)),recentOrders:orders.slice(0,10).map(o=>this.orderView(o)),checkoutAvailable:active&&this.checkoutAvailable()};
+ return {usage,offers,pendingOrders:orders.filter(o=>o.status==='pending').map(o=>this.orderView(o)),recentOrders:orders.slice(0,10).map(o=>this.orderView(o)),checkoutAvailable:active&&this.checkoutAvailable()};
 }
 function upsellEmail(order,customer,event,baseUrl) {
  const grants=order.grants,lines=[grants.hours?`+${grants.hours} horas de transmissão`:null,grants.participants?`+${grants.participants} participantes simultâneos`:null,grants.languages?`+${grants.languages} idiomas`:null].filter(Boolean).join(' · ');
@@ -53,7 +53,7 @@ function routes(router,{wrap,auth,csrf,requireAdmin}) {
    if(!offer||!offer.active||offer.eligibleProductIds.length&&!offer.eligibleProductIds.includes(base.plan.id))throw fail(409,'Esta oferta não está disponível para este evento.');
    if(req.body.offerVersion!==offer.revision)throw fail(409,'Esta oferta foi atualizada. Confira as condições novamente.');
    const orders=await tx.list('order',{customerId:req.customer.id});
-   const existing=orders.find(o=>key&&o.requestKey===key)||orders.find(o=>o.kind==='upsell'&&o.eventId===event.id&&o.plan.id===offer.id&&o.status==='pending'&&Date.parse(o.createdAt)>Date.now()-86400000);
+   const existing=orders.find(o=>key&&o.requestKey===key)||orders.find(o=>o.kind==='upsell'&&o.eventId===event.id&&o.plan.id===offer.id&&o.status==='pending');
    if(existing){
     if(existing.kind!=='upsell'||existing.eventId!==event.id||existing.plan.id!==offer.id)throw fail(409,'Esta tentativa pertence a outro pedido.');
     if(existing.status!=='pending')throw fail(409,'Este pedido já foi processado. Consulte seu saldo.');
@@ -63,7 +63,7 @@ function routes(router,{wrap,auth,csrf,requireAdmin}) {
     existing.checkoutLease=Date.now()+30000;await tx.put('order',existing.id,existing);return existing;
    }
    const reserved=await this.entitlement(event,tx);
-   for(const pending of orders)if(pending.kind==='upsell'&&pending.eventId===event.id&&pending.status==='pending'&&Date.parse(pending.createdAt)>Date.now()-86400000)reserved.maxLanguages+=pending.grants.languages;
+   for(const pending of orders)if(pending.kind==='upsell'&&pending.eventId===event.id&&['pending','expired'].includes(pending.status))reserved.maxLanguages+=pending.grants.languages;
    if(!useful(offer,reserved))throw fail(409,'Os adicionais desta oferta não se aplicam aos limites atuais do evento.');
    const order={id:id(),kind:'upsell',customerId:req.customer.id,eventId:event.id,baseOrderId:base.id,eventName:event.name,plan:structuredClone(offer),grants:{hours:offer.addHours,participants:offer.addParticipants,languages:offer.addLanguages},amountCents:offer.priceCents,currency:'BRL',status:'pending',createdAt:stamp(),termsAcceptedAt:stamp(),requestKey:key||id(),checkoutLease:Date.now()+30000};
    await tx.put('order',order.id,order);return order;

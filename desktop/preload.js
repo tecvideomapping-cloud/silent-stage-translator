@@ -6,5 +6,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('desktopHost', {
   platform: process.platform,
   isElectron: true,
-  ping: () => 'pong'
+  ping: () => 'pong',
+  getHardware:()=>ipcRenderer.invoke('vmt:hardware')
 });

@@ -26,50 +26,10 @@ test('hardware probe: fingerprinting, GPU detection and audio devices', () => {
   assert.ok(audio.asioDrivers.length >= 1, 'Pelo menos um driver de palco (ASIO/WASAPI) deve estar disponível');
 });
 
-test('license manager: issue, signature validation, lease and hours quota', () => {
-  const tempLeasePath = path.join(__dirname, '.test-license-lease.json');
-  try { if (fs.existsSync(tempLeasePath)) fs.unlinkSync(tempLeasePath); } catch {}
-
-  const lm = new (licenseManager.constructor)(tempLeasePath);
-
-  // Status inicial sem licença
-  const initial = lm.getStatus();
-  assert.equal(initial.isActive, false);
-  assert.equal(initial.mode, 'unlicensed');
-
-  // Emissão de licença com assinatura criptográfica
-  const issued = lm.issueLicense({
-    hoursTotal: 6,
-    company: 'Congresso Médico Internacional',
-    validHours: 48
-  });
-  assert.ok(issued.signature, 'Licença deve conter assinatura');
-  assert.equal(issued.hoursTotal, 6);
-
-  // Ativação da licença
-  const activation = lm.activateLicense(issued);
-  assert.equal(activation.success, true);
-  assert.equal(activation.lease.isActive, true);
-  assert.equal(activation.lease.hoursRemaining, 6);
-
-  // Consumo de 3600 segundos (1 hora)
-  const consumed = lm.consumeTransmissionSeconds(3600);
-  assert.equal(consumed.allowed, true);
-  assert.equal(consumed.hoursRemaining, 5);
-
-  // Adição de crédito via upsell
-  const credited = lm.addHoursCredit(2);
-  assert.equal(credited.hoursRemaining, 7);
-  assert.equal(credited.hoursTotal, 8);
-
-  // Rejeição de licença adulterada (tampering)
-  const tampered = { ...issued, hoursTotal: 999 };
-  const tamperedRes = lm.activateLicense(tampered);
-  assert.equal(tamperedRes.success, false);
-  assert.match(tamperedRes.error, /Assinatura criptográfica/);
-
-  // Limpeza
-  try { if (fs.existsSync(tempLeasePath)) fs.unlinkSync(tempLeasePath); } catch {}
+test('license manager: only signed grants; no arbitrary activation or local credit',()=>{
+ const crypto=require('crypto');const pair=crypto.generateKeyPairSync('ed25519');const old=process.env.VMT_LICENSE_PUBLIC_KEY;process.env.VMT_LICENSE_PUBLIC_KEY=pair.publicKey.export({type:'spki',format:'pem'});
+ const file=path.join(__dirname,'.test-license-lease.json');const lm=new licenseManager.constructor(file);
+ try{assert.equal(lm.activateLicense('ANY-KEY').success,false);const grant={eventId:'evt-test',key:'issued',customerId:'test',company:'Test',fingerprint:hardwareProbe.getHardwareFingerprint(),hoursTotal:6,maxListeners:50,languages:['en'],expiresAt:new Date(Date.now()+3600000).toISOString()};grant.signature=crypto.sign(null,Buffer.from(JSON.stringify(grant)),pair.privateKey).toString('base64');assert.equal(lm.activateLicense(grant).success,true);assert.equal(lm.getStatus().hoursRemaining,6);assert.equal(lm.activateLicense({...grant,hoursTotal:999}).success,false);assert.equal(lm.activateLicense({...grant,secondsConsumed:-999}).success,false);assert.equal(lm.verifySignature({...grant,signature:'ab'}),false);assert.equal(lm.consumeTransmissionSeconds(-3600).allowed,false);assert.throws(()=>lm.addHoursCredit(999));const reload=new licenseManager.constructor(file);assert.equal(reload.getStatus().hoursRemaining,6)}finally{if(old===undefined)delete process.env.VMT_LICENSE_PUBLIC_KEY;else process.env.VMT_LICENSE_PUBLIC_KEY=old;fs.rmSync(file,{force:true})}
 });
 
 test('desktop API router: endpoints respond correctly', async () => {
@@ -111,12 +71,9 @@ test('desktop API router: endpoints respond correctly', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hours: 4 })
     });
-    assert.equal(upsellRes.status, 200);
-    const upsellData = await upsellRes.json();
-    assert.equal(upsellData.success, true);
-    assert.equal(upsellData.order.hours, 4);
-    assert.ok(upsellData.order.pixPayload);
-    assert.ok(upsellData.order.qrDataUrl.startsWith('data:image/png;base64,'));
+    assert.equal(upsellRes.status,409);
+    const simulated=await fetch(`${baseUrl}/license/confirm-mock-pix`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hours:999})});
+    assert.equal(simulated.status,404);
   } finally {
     await new Promise(resolve => server.close(resolve));
   }

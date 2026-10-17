@@ -105,7 +105,7 @@ test('falha no Resend permanece na fila e pode ser retomada',async()=>{
  await store.transaction(async tx=>{const item=await tx.get('outbox','test-email');item.dueAt=0;await tx.put('outbox',item.id,item);});mailer.send=async()=>({id:'resent-test'});await commerce.drainOutbox();assert.equal((await store.get('outbox','test-email')).status,'sent');assert.equal((await store.get('order','email-order')).emailStatus,'sent');
 });
 
-test('resiliência de cadastro: funciona sem banco e com pool com falha',async()=>{
+test('cadastro falha de forma segura quando o banco configurado não responde',async()=>{
  const failingPool={
   query:async()=>{throw new Error('Connection refused');},
   connect:async()=>{throw new Error('Connection refused');}
@@ -123,10 +123,11 @@ test('resiliência de cadastro: funciona sem banco e com pool com falha',async()
    headers:{'Content-Type':'application/json'},
    body:JSON.stringify({email:'fallback@example.test',password:'Senha-Forte-2026'})
   });
-  assert.equal(res.status,201);
+  assert.equal(res.status,503);
   const data=await res.json();
-  assert.equal(data.customer.email,'fallback@example.test');
-  assert.equal(data.customer.name,'fallback');
+  assert.ok(data.error);
+  assert.equal(store.memory.size,0);
+  assert.equal(commerce.healthy,false);
  }finally{
   commerce.stopWorkers();
   await new Promise(r=>server.close(r));

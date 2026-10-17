@@ -1,62 +1,7 @@
-/**
- * Script utilitário para verificar ou redefinir as credenciais do Administrador
- * Uso:
- *   node scripts/reset-admin.js
- *   node scripts/reset-admin.js novo_email@videomappingtech.com NovaSenha123!
- */
 require('dotenv').config();
-const { Pool } = require('pg');
-const { hashPassword } = require('../server/auth');
-
-async function main() {
-  const targetEmail = (process.argv[2] || process.env.ADMIN_EMAIL || 'admin@videomappingtech.com').toLowerCase().trim();
-  const targetPass = process.argv[3] || process.env.ADMIN_PASSWORD || 'Videomapping2026!';
-
-  console.log('---------------------------------------------------------');
-  console.log('🔑 SILENT STAGE AI - GERENCIADOR DE ACESSO ADMINISTRATIVO');
-  console.log('---------------------------------------------------------');
-
-  if (process.env.DATABASE_URL) {
-    console.log('[PostgreSQL] Conectando ao banco de dados...');
-    const pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-    });
-
-    try {
-      const hashed = hashPassword(targetPass);
-      const res = await pool.query(
-        `INSERT INTO users (email, password_hash, password_salt, name, role)
-         VALUES ($1, $2, $3, 'Administrador Videomappingtech', 'superadmin')
-         ON CONFLICT (email) 
-         DO UPDATE SET password_hash = $2, password_salt = $3, role = 'superadmin'
-         RETURNING id, email, role`,
-        [targetEmail, hashed.hash, hashed.salt]
-      );
-
-      console.log('✓ Senha atualizada no banco de dados com sucesso!');
-      console.log(`  E-mail: ${res.rows[0].email}`);
-      console.log(`  Senha:  ${targetPass}`);
-      console.log(`  Perfil: ${res.rows[0].role}`);
-      await pool.end();
-    } catch (err) {
-      console.error('Erro ao acessar PostgreSQL:', err.message);
-    }
-  } else {
-    console.log('[Modo In-Memory / Local]');
-    console.log('O servidor está operando com armazenamento local (sem DATABASE_URL).');
-    console.log('As credenciais padrão ativas são:');
-    console.log(`  E-mail: ${targetEmail}`);
-    console.log(`  Senha:  ${targetPass}`);
-    console.log('');
-    console.log('Para definir uma senha personalizada de forma permanente, crie um arquivo .env contendo:');
-    console.log(`  ADMIN_EMAIL=${targetEmail}`);
-    console.log(`  ADMIN_PASSWORD=${targetPass}`);
-  }
-
-  console.log('---------------------------------------------------------');
-  console.log('Página de Login: http://localhost:3000/login.html');
-  console.log('---------------------------------------------------------');
-}
-
-main().catch(console.error);
+const {Pool}=require('pg');const {hashPassword}=require('../server/auth');
+(async()=>{const email=(process.env.ADMIN_EMAIL||'admin@videomappingtech.com').toLowerCase().trim(),password=process.env.ADMIN_PASSWORD;
+if(!password||password.length<12||['Videomapping2026!','admin123'].includes(password))throw Error('Defina ADMIN_PASSWORD com uma senha própria de pelo menos 12 caracteres.');
+if(!process.env.DATABASE_URL)throw Error('DATABASE_URL é obrigatória.');const u=new URL(process.env.DATABASE_URL);const pool=new Pool({connectionString:u.href,ssl:/\.railway\.internal$/.test(u.hostname)?false:{rejectUnauthorized:true},connectionTimeoutMillis:5000});
+const client=await pool.connect();try{const hash=hashPassword(password);await client.query('BEGIN');await client.query("INSERT INTO users(email,password_hash,password_salt,name,role) VALUES($1,$2,$3,'Administrador Videomappingtech','superadmin') ON CONFLICT(email) DO UPDATE SET password_hash=$2,password_salt=$3",[email,hash.hash,hash.salt]);await client.query("DELETE FROM self_service_records WHERE kind='adminsession' AND data->>'email'=$1",[email]);const seeded=(await client.query("SELECT data FROM self_service_records WHERE kind='customer' AND id='cust-admin'")).rows[0]?.data;if(seeded&&seeded.email===email){seeded.passwordHash=await require('../server/commerce').passwordHash(password);seeded.passwordVersion=(seeded.passwordVersion||1)+1;await client.query("UPDATE self_service_records SET data=$1::jsonb WHERE kind='customer' AND id='cust-admin'",[JSON.stringify(seeded)]);await client.query("DELETE FROM self_service_records WHERE kind='session' AND data->>'customerId'='cust-admin'");}await client.query('COMMIT');console.log('Acesso administrativo atualizado e sessões anteriores revogadas. A senha não é exibida em logs.')}catch(e){await client.query('ROLLBACK');throw e}finally{client.release();await pool.end()}
+})().catch(()=>{console.error('Falha ao atualizar o acesso. Confira as variáveis administrativas e a conexão.');process.exitCode=1});

@@ -1,7 +1,7 @@
 {
   "name": "videomappingtech-silent-translator",
   "version": "1.0.0",
-  "description": "Plataforma de Palestras Silenciosas e Tradução Simultânea com IA em Tempo Real",
+  "description": "Plataforma de Palestras Silenciosas e TraduÃƒÂ§ÃƒÂ£o SimultÃƒÂ¢nea com IA em Tempo Real",
   "main": "desktop/main.js",
   "scripts": {
     "start": "node server/index.js",
@@ -32,14 +32,23 @@
       "target": [
         "dmg"
       ],
-      "identity": null,
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "desktop/entitlements.mac.plist",
+      "entitlementsInherit": "desktop/entitlements.mac.plist"
     },
     "dmg": {
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "nsis": {
@@ -53,7 +62,10 @@
       "desktop/**/*",
       "public/**/*",
       "server/**/*",
-      "package.json"
+      "package.json",
+      "!desktop/.vmt-*",
+      "!**/.env",
+      "!**/*.dpapi"
     ]
   },
   "keywords": [

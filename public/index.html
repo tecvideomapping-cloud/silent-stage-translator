@@ -544,6 +544,7 @@
 
         try {
           const data = JSON.parse(event.data);
+          if(data.type==='service_warning'){ console.warn(String(data.message||'Tradução indisponível')); return; }
           if (data.type === 'connected') {
             myClientId = data.clientId;
           } else if (data.type === 'speaker_voice_profile') {

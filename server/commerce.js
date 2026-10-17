@@ -24,8 +24,8 @@ const cookieName='vmt_customer_session';
 function tokenFrom(req){
  if(!req||!req.headers)return '';
  const h=req.headers['x-session-token']||(typeof req.headers.authorization==='string'&&req.headers.authorization.startsWith('Bearer ')?req.headers.authorization.slice(7):'');
- if(h)return String(h).trim();
- return String(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith(cookieName+'='))?.slice(cookieName.length+1)||'';
+  const cookie=String(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith(cookieName+'='))?.slice(cookieName.length+1);
+ return cookie||String(h||'').trim();
 }
 function publicCustomer(c){return {id:c.id,name:c.name,email:c.email,company:c.company,phone:c.phone};}
 async function passwordHash(password){const salt=crypto.randomBytes(16).toString('hex');const hash=await scrypt(password,salt,64);return `scrypt:${salt}:${hash.toString('hex')}`;}
@@ -34,62 +34,26 @@ async function passwordMatches(password,stored){const [,salt,hash]=String(stored
 class Commerce {
  constructor({store=new CommerceStore(),provider=new MercadoPagoProvider(),mailer=new ResendMailer(),env=process.env,legacy={}}={}) {
   this.store=store;this.provider=provider;this.mailer=mailer;this.env=env;this.legacy=legacy;this.limits=new Map();
-  this.ready=this.store.init().catch(e=>{
-   console.warn('[Self-service] Banco indisponível, operando em memória:',e.message);
-  }).then(async()=>{
-   try{
-    await this.store.transaction(async tx=>{
-     for(const [index,plan] of plans.entries())if(!await tx.get('product',plan.id))await tx.put('product',plan.id,{...plan,active:true,selfService:true,sortOrder:index,revision:uuid(),createdAt:now()});
-     if(!await tx.get('product','enterprise'))await tx.put('product','enterprise',{id:'enterprise',name:'Enterprise Multipalcos',description:'Projetos para feiras, festivais e múltiplos palcos.',priceCents:0,currency:'BRL',hours:8,maxParticipants:null,maxLanguages:6,features:['Múltiplos palcos','Projeto personalizado','Equipe técnica dedicada'],active:true,selfService:false,sortOrder:2,createdAt:now()});
-     const adminEmail=(this.env.ADMIN_EMAIL||'admin@videomappingtech.com').toLowerCase().trim();
-     const adminPass=this.env.ADMIN_PASSWORD||'Videomapping2026!';
-     if(!await tx.get('email',adminEmail)){
-       const hash=await passwordHash(adminPass);
-       const adminCust={id:'cust-admin',name:'Administrador Videomappingtech',email:adminEmail,company:'Videomappingtech',phone:'',passwordHash:hash,passwordVersion:1,createdAt:now()};
-       await tx.put('customer',adminCust.id,adminCust);
-       await tx.put('email',adminEmail,{customerId:adminCust.id});
-     }
-    });
-   }catch(e){console.warn('[Self-service] Falha ao sincronizar planos no banco, mantendo em memória:',e.message);}
-   this.healthy=true;
-  });
+  this.ready=this.store.init().then(async()=>{
+   await this.store.transaction(async tx=>{
+    for(const [index,plan] of plans.entries())if(!await tx.get('product',plan.id))await tx.put('product',plan.id,{...plan,active:true,selfService:true,sortOrder:index,revision:uuid(),createdAt:now()});
+    if(!await tx.get('product','enterprise'))await tx.put('product','enterprise',{id:'enterprise',name:'Enterprise Multipalcos',description:'Projetos para feiras, festivais e múltiplos palcos.',priceCents:0,currency:'BRL',hours:8,maxParticipants:null,maxLanguages:6,features:['Múltiplos palcos','Projeto personalizado','Equipe técnica dedicada'],active:true,selfService:false,sortOrder:2,revision:uuid(),createdAt:now()});
+   });this.healthy=true;
+  }).catch(e=>{this.healthy=false;console.error('[Self-service] Inicialização indisponível:',e.message);});
   this.activeLeases=new Map();
  }
  baseUrl(){try{const u=new URL(this.env.APP_BASE_URL);return u.protocol==='https:'&&u.pathname==='/'&&!u.username&&!u.password?u.origin:null;}catch{return null;}}
  readiness(){return {paymentConfigured:this.provider.configured,emailConfigured:this.mailer.configured,databaseConfigured:this.store.persistent&&!!this.healthy,publicUrlConfigured:!!this.baseUrl()};}
  checkoutAvailable(){return Object.values(this.readiness()).every(Boolean);}
-  async readyOrFail(){await this.ready;if(this.healthy===false)this.healthy=true;}
+  async readyOrFail(){await this.ready;if(!this.healthy)throw fail(503,'Serviço temporariamente indisponível. Nenhuma alteração foi confirmada.');}
  async session(req){const token=tokenFrom(req);if(!/^[a-f0-9]{64}$/.test(token))return null;const session=await this.store.get('session',sha(token));if(!session||session.expiresAt<Date.now())return null;const customer=await this.store.get('customer',session.customerId);if(!customer||customer.passwordVersion!==session.passwordVersion)return null;return {session,customer};}
  async requireSession(req,res,next){try{await this.readyOrFail();const auth=await this.session(req);if(!auth)throw fail(401,'Entre na sua área para continuar.');req.customer=auth.customer;req.customerSession=auth.session;next();}catch(e){next(e);}}
  async issueSession(tx,customer){const token=crypto.randomBytes(32).toString('hex');const session={id:sha(token),customerId:customer.id,csrfToken:crypto.randomBytes(24).toString('hex'),passwordVersion:customer.passwordVersion,expiresAt:Date.now()+7*86400000};await tx.put('session',session.id,session);return {token,session};}
- setCookie(res,token,req){const isHttps=Boolean((req&&(req.secure||(req.get?req.get('x-forwarded-proto'):req.headers?.['x-forwarded-proto'])==='https'))||(this.baseUrl()&&this.baseUrl().startsWith('https://')));res.cookie(cookieName,token,{httpOnly:true,secure:isHttps,sameSite:'lax',maxAge:7*86400000,path:'/'});res.setHeader('Cache-Control','no-store');}
+ setCookie(res,token,req){const isHttps=Boolean(req?.secure||this.baseUrl());res.cookie(cookieName,token,{httpOnly:true,secure:isHttps,sameSite:'lax',maxAge:7*86400000,path:'/'});res.setHeader('Cache-Control','no-store');}
  csrf(req,res,next){if(!safeEqual(req.get('x-csrf-token'),req.customerSession.csrfToken))return next(fail(403,'Sessão desatualizada. Atualize a página e tente novamente.'));next();}
  throttle(scope,max=12,windowMs=900000){return(req,res,next)=>{const ip=req.ip||req.socket.remoteAddress||'';if(['127.0.0.1','::1','::ffff:127.0.0.1'].includes(ip)||!this.env.NODE_ENV||this.env.NODE_ENV!=='production')return next();const key=scope+':'+ip;const time=Date.now();if(this.limits.size>10000)for(const [k,v] of this.limits)if(v.until<time)this.limits.delete(k);const entry=this.limits.get(key)||{count:0,until:time+windowMs};if(entry.until<time){entry.count=0;entry.until=time+windowMs;}entry.count++;this.limits.set(key,entry);if(entry.count>max){res.setHeader('Retry-After',Math.ceil((entry.until-time)/1000));return next(fail(429,'Muitas tentativas. Aguarde alguns minutos.'));}next();};}
-  origin(req,res,next){
-    const origin=req.get('origin');
-    if(!origin)return next();
-    try{
-      const originUrl=new URL(origin);
-      const hostHeader=(req.get('x-forwarded-host')||req.get('host')||'').split(',')[0].trim();
-      const hostName=hostHeader.split(':')[0].toLowerCase();
-      if(hostName&&originUrl.hostname.toLowerCase()===hostName)return next();
-      const allowed=this.baseUrl();
-      if(allowed){
-        const allowedUrl=new URL(allowed);
-        const allowedHost=allowedUrl.hostname.toLowerCase();
-        const originHost=originUrl.hostname.toLowerCase();
-        if(originHost===allowedHost||originHost===`www.${allowedHost}`||allowedHost===`www.${originHost}`)return next();
-      }
-      if(this.env.ALLOWED_ORIGINS){
-        const list=this.env.ALLOWED_ORIGINS.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
-        if(list.includes(origin.toLowerCase())||list.includes(originUrl.origin.toLowerCase()))return next();
-      }
-      if(this.env.NODE_ENV!=='production'||['localhost','127.0.0.1'].includes(originUrl.hostname)){
-        if(['localhost','127.0.0.1'].includes(originUrl.hostname))return next();
-      }
-    }catch(e){return next(fail(403,'Origem não autorizada.'));}
-    return next(fail(403,'Origem não autorizada.'));
-  }
+  origin(req,res,next){if(!require('./security').isAllowed(req.get('origin')))return next(fail(403,'Origem não autorizada.'));next();}
+
  async eventFor(customerId,id,tx=this.store){const event=await tx.get('event',id);if(!event||event.customerId!==customerId)throw fail(404,'Evento não encontrado.');return event;}
  async eventView(event){const stored=await this.store.get('order',event.orderId);const order={...stored,plan:await this.entitlement(event)};const remaining=Math.max(0,order.plan.hours*3600-event.usedSeconds);return {...event,hostKey:undefined,customerId:undefined,plan:order.plan,status:order.status!=='paid'?order.status:remaining<=0?'expired':event.published?'active':'draft',remainingSeconds:remaining,participantUrl:(this.baseUrl()||'')+'/?room='+event.id,hostUrl:'/host.html?room='+event.id,screenUrl:'/screen.html?room='+event.id,published:event.published&&order.status==='paid'&&remaining>0};}
  orderView(order){return {id:order.id,kind:order.kind||'base',grants:order.grants||null,offerId:order.kind==='upsell'?order.plan.id:null,offerVersion:order.kind==='upsell'?order.plan.revision:null,planName:order.plan.name,status:order.status,amountCents:order.amountCents,priceCents:order.amountCents,currency:order.currency,eventName:order.eventName,createdAt:order.createdAt,checkoutUrl:order.status==='pending'?order.checkoutUrl:null,eventId:order.eventId||null,emailStatus:order.emailStatus||(order.status==='paid'?'pending':'not_sent'),duplicatePayment:!!order.duplicatePayment};}
@@ -141,8 +105,9 @@ class Commerce {
   if(context.charging)return context.charging;
   context.charging=this.store.transaction(async tx=>{const event=await tx.get('event',context.eventId);const order=event&&await tx.get('order',event.orderId);const lease=await tx.get('connection',context.leaseId);
    if(!event||!lease||lease.expiresAt<Date.now()||order?.status!=='paid'||event.revoked)return false;
+   if(lease.budgetUntil>Date.now()){context.budgetUntil=lease.budgetUntil;return true;}
    const seconds=Math.min(5,(await this.entitlement(event,tx)).hours*3600-event.usedSeconds);if(seconds<=0)return false;
-   event.usedSeconds+=seconds;await tx.put('event',event.id,event);context.budgetUntil=Date.now()+seconds*1000;return true;
+   event.usedSeconds+=seconds;await tx.put('event',event.id,event);context.budgetUntil=Date.now()+seconds*1000;lease.budgetUntil=context.budgetUntil;await tx.put('connection',lease.id,lease);return true;
   }).finally(()=>{context.charging=null;});return context.charging;
  }
  async processPayment(payment){
@@ -213,8 +178,8 @@ class Commerce {
  async maintenance(){
   await this.readyOrFail();
   await this.store.transaction(async tx=>{
-   for(const order of await tx.list('order'))if(order.status==='pending'&&Date.parse(order.createdAt)<Date.now()-86400000){order.status='expired';await tx.put('order',order.id,order);}
-   for(const kind of ['session','reset','connection'])for(const record of await tx.list(kind))if(record.expiresAt<Date.now())await tx.remove(kind,record.id);
+   for(const order of await tx.list('order'))if(order.status==='pending'&&Date.parse(order.createdAt)<Date.now()-86400000){order.checkoutExpired=true;await tx.put('order',order.id,order);}
+   for(const kind of ['session','adminsession','reset','connection'])for(const record of await tx.list(kind))if(record.expiresAt<Date.now())await tx.remove(kind,record.id);
   });await this.drainOutbox();
  }
  startWorkers(){this.worker=setInterval(()=>this.maintenance().catch(()=>console.error('[Self-service] Manutenção pendente.')),60000);this.worker.unref();}
@@ -242,18 +207,7 @@ class Commerce {
    const mapping = await this.store.get('email', rawAddress);
    let customer = mapping ? await this.store.get('customer', mapping.customerId) : null;
    const password = req.body?.password;
-   let valid = customer && typeof password === 'string' && await passwordMatches(password, customer.passwordHash);
-   if (!valid && rawAddress === (this.env.ADMIN_EMAIL || 'admin@videomappingtech.com').toLowerCase().trim()) {
-     const allowed = [this.env.ADMIN_PASSWORD, 'Videomapping2026!', 'videomapping2026!', 'Videomapping2026', 'admin', 'admin123'].filter(Boolean);
-     if (allowed.includes(password)) {
-       valid = true;
-       if (!customer) {
-         customer = { id: 'cust-admin', name: 'Administrador Videomappingtech', email: rawAddress, company: 'Videomappingtech', phone: '', passwordHash: await passwordHash('Videomapping2026!'), passwordVersion: 1, createdAt: now() };
-         await this.store.put('customer', customer.id, customer);
-         await this.store.put('email', rawAddress, { customerId: customer.id });
-       }
-     }
-   }
+   let valid = customer && typeof password === 'string' && password.length<=128 && await passwordMatches(password, customer.passwordHash);
    if (!valid) throw fail(401, 'E-mail ou senha inválidos.');
    const result = await this.store.transaction(tx => this.issueSession(tx, customer));
    this.setCookie(res, result.token, req);

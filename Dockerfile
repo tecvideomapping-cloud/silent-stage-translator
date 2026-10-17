@@ -5,7 +5,7 @@ ENV NODE_ENV=production
 
 # Copia dependências primeiro para cache do Docker
 COPY package*.json ./
-RUN npm install --production
+RUN npm ci --omit=dev
 
 # Copia código fonte
 COPY . .

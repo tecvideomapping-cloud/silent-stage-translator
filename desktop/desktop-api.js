@@ -3,15 +3,19 @@ const QRCode = require('qrcode');
 const hardwareProbe = require('./hardware-probe');
 const licenseManager = require('./license-manager');
 
-const router = express.Router();
+const router=express.Router();
+const {Worker}=require('worker_threads');
+const path=require('path');
+const cache=new Map();let activeProbe=null;
+async function probe(type){const hit=cache.get(type);if(hit&&hit.until>Date.now())return hit.value;if(activeProbe)return activeProbe.then(()=>probe(type));activeProbe=new Promise((resolve,reject)=>{const worker=new Worker(path.join(__dirname,'hardware-worker.js'),{workerData:type});const timeout=setTimeout(()=>{worker.terminate();reject(new Error('Tempo de coleta excedido.'))},12000);worker.once('message',result=>{clearTimeout(timeout);worker.terminate();if(result.error)return reject(new Error('Coleta indisponível.'));cache.set(type,{value:result.value,until:Date.now()+(type==='metrics'?8000:600000)});resolve(result.value)});worker.once('error',e=>{clearTimeout(timeout);reject(e)})}).finally(()=>{activeProbe=null});return activeProbe;}
 
 /**
  * GET /api/desktop/hardware
  * Retorna o relatório completo de hardware da máquina (GPUs, ASIO, CPU, RAM e Fingerprint)
  */
-router.get('/hardware', (req, res) => {
+router.get('/hardware', async (req, res) => {
   try {
-    const report = hardwareProbe.getCompleteHardwareReport();
+    const report=await probe('static');
     res.json({ success: true, report });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -22,9 +26,9 @@ router.get('/hardware', (req, res) => {
  * GET /api/desktop/hardware/metrics
  * Telemetria em tempo real (GPU VRAM, Temp, CPU e RAM)
  */
-router.get('/hardware/metrics', (req, res) => {
+router.get('/hardware/metrics', async (req, res) => {
   try {
-    const metrics = hardwareProbe.getRealtimeMetrics();
+    const metrics=await probe('metrics');
     res.json({ success: true, metrics });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -69,59 +73,8 @@ router.post('/license/activate', express.json(), (req, res) => {
  * POST /api/desktop/license/consume
  * Registra segundos de áudio ativos transmitidos no palco
  */
-router.post('/license/consume', express.json(), (req, res) => {
-  try {
-    const { seconds = 1 } = req.body || {};
-    const result = licenseManager.consumeTransmissionSeconds(Number(seconds) || 1);
-    res.json({ success: true, ...result });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-/**
- * POST /api/desktop/license/upsell
- * Gera pedido de recarga rápida de horas via PIX dinâmico
- */
-router.post('/license/upsell', express.json(), async (req, res) => {
-  try {
-    const { hours = 2 } = req.body || {};
-    const priceMap = { 2: 180, 4: 320, 8: 550 };
-    const price = priceMap[hours] || hours * 90;
-    const txId = `PIX-UPGRADE-${Date.now()}`;
-    const pixPayload = `00020126580014br.gov.bcb.pix0136pix@videomappingtech.com520400005303986540${price}.005802BR5920Videomappingtech6009Sao Paulo62240520${txId}6304`;
-
-    const qrDataUrl = await QRCode.toDataURL(pixPayload, { margin: 1, scale: 6 });
-
-    res.json({
-      success: true,
-      order: {
-        txId,
-        hours,
-        price,
-        pixPayload,
-        qrDataUrl,
-        expiresInSeconds: 900
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-/**
- * POST /api/desktop/license/confirm-mock-pix
- * Confirmação simulada/webhook de pagamento PIX no palco
- */
-router.post('/license/confirm-mock-pix', express.json(), (req, res) => {
-  try {
-    const { hours = 2 } = req.body || {};
-    const updated = licenseManager.addHoursCredit(Number(hours) || 2);
-    res.json({ success: true, message: `Crédito de +${hours}h adicionado com sucesso!`, license: updated });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+router.post('/license/consume',(req,res)=>res.status(409).json({error:'O consumo é controlado pelo evento contratado.'}));
+router.post('/license/upsell',(req,res)=>res.status(409).json({error:'Contrate adicionais na mesa de operações do evento.',url:(process.env.APP_BASE_URL||'')+'/customer.html'}));
 
 /**
  * GET /api/desktop/stage-kit
@@ -152,4 +105,5 @@ router.get('/stage-kit', async (req, res) => {
   }
 });
 
-module.exports = router;
+router.probe=probe;
+module.exports=router;

@@ -94,6 +94,7 @@
       if(participantUrl){const box=el('div','participant-box');const label=el('label','','Link dos participantes');const input=el('input');input.value=participantUrl;input.readOnly=true;input.setAttribute('aria-label','Link dos participantes de '+event.name);input.addEventListener('focus',()=>input.select());label.append(input);box.append(label);const controls=el('div','participant-controls');append(controls,action('Copiar link',()=>copy(participantUrl)),action('QR code',()=>openQr(event)),link('Abrir sala',participantUrl));box.append(controls);content.append(box);}
       const footer=el('div','event-footer'),tools=el('div','event-actions');append(tools,
         link('Painel do transmissor',event.hostUrl),
+        link('Estação desktop',event.hostUrl.replace('/host.html','/desktop.html')),
         link('Abrir projeção',event.screenUrl),
         link('📄 Ata (.TXT)', `/api/rooms/${encodeURIComponent(event.id)}/export?format=txt`),
         link('🎬 Legendas (.SRT)', `/api/rooms/${encodeURIComponent(event.id)}/export?format=srt`)

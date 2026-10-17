@@ -83,8 +83,8 @@ defaultGlossaryPresets.forEach(g => memoryStore.savedGlossaries.set(g.id, g));
 
 async function initDb() {
   // Inicializa usuário admin em memória
-  const bootstrapPassword = process.env.ADMIN_PASSWORD || 'Videomapping2026!';
-  const defaultAdminPass = hashPassword(bootstrapPassword);
+  const bootstrapPassword = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV==='production'?null:'Videomapping2026!');
+  const defaultAdminPass = bootstrapPassword?hashPassword(bootstrapPassword):{hash:null,salt:null};
   const defaultAdmin = {
     id: 1,
     email: (process.env.ADMIN_EMAIL || 'admin@videomappingtech.com').toLowerCase().trim(),
@@ -94,9 +94,10 @@ async function initDb() {
     role: 'superadmin',
     created_at: new Date()
   };
-  memoryStore.users.set(defaultAdmin.email, defaultAdmin);
+  if(process.env.NODE_ENV!=='production')memoryStore.users.set(defaultAdmin.email, defaultAdmin);
 
   if (!process.env.DATABASE_URL) {
+    if(process.env.NODE_ENV==='production')throw new Error('DATABASE_URL é obrigatória em produção.');
     console.log('[DB] DATABASE_URL não configurada. Operando em modo In-Memory.');
     return null;
   }
@@ -116,7 +117,7 @@ async function initDb() {
     async function connectPool(useSsl) {
       const p = new Pool({
         connectionString,
-        ssl: useSsl ? { rejectUnauthorized: false } : false,
+        ssl: useSsl ? { rejectUnauthorized: process.env.PG_SSL_INSECURE!=='true' } : false,
         connectionTimeoutMillis: 5000
       });
       await p.query('SELECT 1');
@@ -195,6 +196,9 @@ async function initDb() {
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS allow_translation BOOLEAN DEFAULT true;
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS allow_subtitles BOOLEAN DEFAULT true;
 
+      ALTER TABLE rooms ADD COLUMN IF NOT EXISTS audio_quality TEXT DEFAULT 'pcm256';
+      ALTER TABLE rooms ADD COLUMN IF NOT EXISTS screen_logo TEXT DEFAULT 'vmp';
+      ALTER TABLE rooms ADD COLUMN IF NOT EXISTS p2p_enabled BOOLEAN DEFAULT false;
       CREATE TABLE IF NOT EXISTS transcripts (
         id SERIAL PRIMARY KEY,
         room_id VARCHAR(64) REFERENCES rooms(id) ON DELETE CASCADE,
@@ -229,14 +233,13 @@ async function initDb() {
     // Cria ou atualiza o administrador padrão no Postgres
     const seeded = await pool.query('SELECT id, password_hash, password_salt FROM users WHERE email=$1', [defaultAdmin.email]);
     if (seeded.rows.length === 0) {
+      if(!bootstrapPassword||bootstrapPassword.length<12)throw new Error('Defina ADMIN_PASSWORD com pelo menos 12 caracteres para criar o administrador.');
       await pool.query(
         `INSERT INTO users (email, password_hash, password_salt, name, role)
          VALUES ($1, $2, $3, $4, $5)`,
         [defaultAdmin.email, defaultAdmin.password_hash, defaultAdmin.password_salt, defaultAdmin.name, defaultAdmin.role]
       );
       console.log('[DB] Usuário administrador padrão criado com sucesso: ' + defaultAdmin.email);
-    } else {
-      await pool.query('UPDATE users SET password_hash=$1, password_salt=$2 WHERE email=$3', [defaultAdmin.password_hash, defaultAdmin.password_salt, defaultAdmin.email]);
     }
 
     // Inicializa glossários padrão no Postgres se a tabela estiver vazia
@@ -258,6 +261,7 @@ async function initDb() {
     console.log('[DB] Tabelas PostgreSQL inicializadas.');
     return pool;
   } catch (err) {
+    if(process.env.NODE_ENV==='production'){err.status=503;throw err;}
     console.error('[DB] Erro ao inicializar tabelas PostgreSQL:', err.message);
     return null;
   }
@@ -266,26 +270,11 @@ async function initDb() {
 // ----------------------------------------------------
 // USUÁRIOS & AUTENTICAÇÃO
 // ----------------------------------------------------
-async function getUserByEmail(rawEmail) {
-  let normalized = (rawEmail || '').toLowerCase().trim();
-  const defaultEmail = (process.env.ADMIN_EMAIL || 'admin@videomappingtech.com').toLowerCase().trim();
-  if (normalized === 'admin' || normalized === 'admin@videomapping.com' || normalized === 'admin@videomappingtech.com') {
-    normalized = defaultEmail;
-  }
-
-  if (pool) {
-    try {
-      const res = await pool.query('SELECT * FROM users WHERE email = $1', [normalized]);
-      if (res.rows.length > 0) return res.rows[0];
-      if (normalized === defaultEmail) {
-        const superAdminRes = await pool.query("SELECT * FROM users WHERE role = 'superadmin' LIMIT 1");
-        if (superAdminRes.rows.length > 0) return superAdminRes.rows[0];
-      }
-    } catch (e) {
-      console.error('[DB] Erro ao buscar usuário por email:', e.message);
-    }
-  }
-  return memoryStore.users.get(normalized) || memoryStore.users.get(defaultEmail) || null;
+async function getUserByEmail(value){
+ if(typeof value!=='string')return null;let email=value.trim().toLowerCase();if(email==='admin')email=(process.env.ADMIN_EMAIL||'admin@videomappingtech.com').toLowerCase();
+ if(pool)return(await pool.query('SELECT * FROM users WHERE email=$1',[email])).rows[0]||null;
+ if(process.env.NODE_ENV==='production')throw Object.assign(new Error('Banco indisponível.'),{status:503});
+ return memoryStore.users.get(email)||null;
 }
 
 async function createUser({ email, password, name, role = 'admin' }) {
@@ -308,6 +297,7 @@ async function createUser({ email, password, name, role = 'admin' }) {
       );
       return res.rows[0];
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao criar usuário:', e.message);
       throw e;
     }
@@ -328,6 +318,7 @@ async function updateUserPassword(email, newPassword) {
       );
       return true;
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao atualizar senha:', e.message);
       return false;
     }
@@ -379,6 +370,7 @@ async function saveClient(client) {
         }
       }
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao salvar cliente no Postgres:', e.message);
     }
   }
@@ -396,6 +388,7 @@ async function listClients() {
       res.rows.forEach(c => memoryStore.clients.set(c.id, c));
       return res.rows;
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao listar clientes no Postgres:', e.message);
     }
   }
@@ -408,6 +401,7 @@ async function deleteClient(id) {
       await pool.query('DELETE FROM clients WHERE id = $1', [id]);
       return true;
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao excluir cliente:', e.message);
     }
   }
@@ -419,65 +413,17 @@ async function deleteClient(id) {
 // SALAS & EVENTOS
 // ----------------------------------------------------
 async function saveRoom(room) {
-  memoryStore.rooms.set(room.id, room);
-  if (pool) {
-    try {
-      await pool.query(
-        `INSERT INTO rooms (
-          id, name, host_key, client_id, source_language, target_languages, glossary,
-          banner_url, logo_url, primary_color, secondary_color, bg_color, font_family, custom_css, sponsors,
-          allow_original_audio, allow_translation, allow_subtitles, status
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-        ON CONFLICT (id) DO UPDATE SET
-          name = EXCLUDED.name,
-          client_id = EXCLUDED.client_id,
-          source_language = EXCLUDED.source_language,
-          target_languages = EXCLUDED.target_languages,
-          glossary = EXCLUDED.glossary,
-          banner_url = EXCLUDED.banner_url,
-          logo_url = EXCLUDED.logo_url,
-          primary_color = EXCLUDED.primary_color,
-          secondary_color = EXCLUDED.secondary_color,
-          bg_color = EXCLUDED.bg_color,
-          font_family = EXCLUDED.font_family,
-          custom_css = EXCLUDED.custom_css,
-          sponsors = EXCLUDED.sponsors,
-          allow_original_audio = EXCLUDED.allow_original_audio,
-          allow_translation = EXCLUDED.allow_translation,
-          allow_subtitles = EXCLUDED.allow_subtitles,
-          status = EXCLUDED.status`,
-        [
-          room.id,
-          room.name,
-          room.host_key,
-          room.client_id || null,
-          room.source_language || 'pt-BR',
-          room.target_languages || ['en', 'es'],
-          JSON.stringify(room.glossary || {}),
-          room.banner_url || '',
-          room.logo_url || '',
-          room.primary_color || '#06b6d4',
-          room.secondary_color || '#3b82f6',
-          room.bg_color || '#020617',
-          room.font_family || 'Inter',
-          room.custom_css || '',
-          JSON.stringify(room.sponsors || []),
-          room.allow_original_audio !== false,
-          room.allow_translation !== false,
-          room.allow_subtitles !== false,
-          room.status || 'active'
-        ]
-      );
-    } catch (e) {
-      console.error('[DB] Erro ao salvar sala no Postgres:', e.message);
-    }
-  }
-  return room;
+ if(pool){
+  const fields=['id','name','host_key','client_id','source_language','target_languages','glossary','banner_url','logo_url','primary_color','secondary_color','bg_color','font_family','custom_css','sponsors','allow_original_audio','allow_translation','allow_subtitles','status','audio_quality','screen_logo','p2p_enabled'];
+  const defaults={client_id:null,glossary:{},sponsors:[],status:'active',audio_quality:'pcm256',screen_logo:'vmp',p2p_enabled:false};
+  const values=fields.map(k=>['glossary','sponsors'].includes(k)?JSON.stringify(room[k]??defaults[k]):room[k]??defaults[k]??null);
+  await pool.query(`INSERT INTO rooms(${fields.join(',')}) VALUES(${fields.map((_,i)=>'$'+(i+1)).join(',')}) ON CONFLICT(id) DO UPDATE SET ${fields.filter(k=>k!=='id').map(k=>k+'=EXCLUDED.'+k).join(',')}`,values);
+ }
+ memoryStore.rooms.set(room.id,room);return room;
 }
 
 async function getRoom(roomId) {
-  if (memoryStore.rooms.has(roomId)) {
+  if (!pool && memoryStore.rooms.has(roomId)) {
     return memoryStore.rooms.get(roomId);
   }
   if (pool) {
@@ -489,6 +435,7 @@ async function getRoom(roomId) {
         return row;
       }
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao consultar sala:', e.message);
     }
   }
@@ -507,6 +454,7 @@ async function listRooms() {
       res.rows.forEach(r => memoryStore.rooms.set(r.id, r));
       return res.rows;
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao listar salas no Postgres:', e.message);
     }
   }
@@ -520,6 +468,7 @@ async function deleteRoom(roomId) {
       await pool.query('DELETE FROM rooms WHERE id = $1', [roomId]);
       return true;
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao deletar sala:', e.message);
     }
   }
@@ -528,7 +477,7 @@ async function deleteRoom(roomId) {
 
 async function saveTranscript(roomId, sourceText, translations = {}) {
   const item = { roomId, sourceText, translations, createdAt: new Date() };
-  memoryStore.transcripts.push(item);
+  if(!pool){memoryStore.transcripts.push(item);if(memoryStore.transcripts.length>10000)memoryStore.transcripts.splice(0,memoryStore.transcripts.length-10000);}
   if (pool) {
     try {
       await pool.query(
@@ -536,29 +485,20 @@ async function saveTranscript(roomId, sourceText, translations = {}) {
         [roomId, sourceText, JSON.stringify(translations)]
       );
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao salvar transcrição:', e.message);
     }
   }
   return item;
 }
 
-async function getTranscripts(roomId, limit = 500) {
-  if (pool) {
-    try {
-      const res = await pool.query(
-        'SELECT * FROM transcripts WHERE room_id = $1 ORDER BY created_at ASC LIMIT $2',
-        [roomId, limit]
-      );
-      return res.rows;
-    } catch (e) {
-      console.error('[DB] Erro ao buscar transcrições:', e.message);
-    }
-  }
-  return memoryStore.transcripts.filter(t => t.roomId === roomId).slice(-limit);
+async function getTranscripts(roomId,limit=500,offset=0){
+ if(pool){const values=limit===null?[roomId]:[roomId,limit,offset];return(await pool.query('SELECT * FROM transcripts WHERE room_id=$1 ORDER BY created_at ASC'+(limit===null?'':' LIMIT $2 OFFSET $3'),values)).rows}
+ const records=memoryStore.transcripts.filter(t=>t.roomId===roomId);return records.slice(offset,limit===null?undefined:offset+limit).map(t=>({...t,room_id:t.roomId,source_text:t.sourceText,created_at:t.createdAt}));
 }
 
 async function saveLead(lead) {
-  memoryStore.leads.push(lead);
+  if(!pool){memoryStore.leads.push(lead);if(memoryStore.leads.length>1000)memoryStore.leads.shift();}
   if (pool) {
     try {
       const res = await pool.query(
@@ -568,6 +508,7 @@ async function saveLead(lead) {
       );
       return res.rows[0];
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao salvar lead:', e.message);
     }
   }
@@ -580,6 +521,7 @@ async function listLeads() {
       const res = await pool.query('SELECT * FROM leads ORDER BY created_at DESC LIMIT 100');
       return res.rows;
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao listar leads:', e.message);
     }
   }
@@ -595,6 +537,7 @@ async function listSavedGlossaries() {
       const res = await pool.query('SELECT * FROM saved_glossaries ORDER BY id ASC');
       return res.rows;
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao listar glossários salvos:', e.message);
     }
   }
@@ -608,6 +551,7 @@ async function getSavedGlossary(id) {
       const res = await pool.query('SELECT * FROM saved_glossaries WHERE id = $1', [numericId]);
       if (res.rows.length > 0) return res.rows[0];
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao buscar glossário salvo:', e.message);
     }
   }
@@ -642,6 +586,7 @@ async function saveSavedGlossary(glossary) {
         }
       }
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao salvar modelo de glossário no Postgres:', e.message);
       throw e;
     }
@@ -668,6 +613,7 @@ async function deleteSavedGlossary(id) {
     try {
       await pool.query('DELETE FROM saved_glossaries WHERE id = $1', [numericId]);
     } catch (e) {
+    if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao deletar glossário salvo:', e.message);
     }
   }

@@ -1,3 +1,4 @@
+const escapeStageText=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /**
  * Silent Stage AI - Workstation Pro Desktop Controller
  * Videomappingtech (C) 2026
@@ -16,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================
   // 1. ESTADO GLOBAL DA WORKSTATION
   // ==========================================
+  const selectedRoom=new URLSearchParams(location.search).get('room');if(selectedRoom){for(const id of ['inputRoomId','roomIdInput','roomId','stageRoomId']){const field=document.getElementById(id);if(field)field.value=selectedRoom;}}
   let isBroadcasting = false;
   let currentSourceMode = 'mic'; // 'mic' | 'system' | 'file' | 'sim'
   let audioContext = null;
@@ -70,11 +72,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================
   // 3. HARDWARE & TELEMETRIA EM TEMPO REAL
   // ==========================================
+  let hardwareLocal=true;
   async function loadHardwareReport() {
     try {
-      const res = await fetch('/api/desktop/hardware');
-      const data = await res.json();
-      if (!data.success || !data.report) return;
+      const report=await window.desktopHost?.getHardware?.();
+      const res=report?{status:200}:await fetch('/api/desktop/hardware');
+      const data=report?{success:true,report}:await res.json();
+      if(res.status===404){hardwareLocal=false;document.getElementById('gpuNameText').textContent='Aplicativo local';document.getElementById('gpuMetricText').textContent='Telemetria disponível na instalação desktop';return;}
+      if(!data.success||!data.report)return;
 
       const { gpus, primaryGpu, system, audio } = data.report;
       if (primaryGpu) {
@@ -134,6 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function pollRealtimeMetrics() {
+    if(!hardwareLocal)return;
     try {
       const res = await fetch('/api/desktop/hardware/metrics');
       const data = await res.json();
@@ -156,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const res = await fetch('/api/desktop/license');
       const data = await res.json();
-      if (!data.success || !data.license) return;
+      if(!data.success||!data.license){const label=document.getElementById('licenseStatusText');if(label)label.textContent='Plano na área do cliente';return;}
 
       const lic = data.license;
       const statusText = document.getElementById('licenseStatusText');
@@ -212,58 +218,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  let currentUpsellHours = 2;
-  document.querySelectorAll('.upsell-options button').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      document.querySelectorAll('.upsell-options button').forEach(b => b.classList.remove('vmt-primary'));
-      btn.classList.add('vmt-primary');
-      currentUpsellHours = parseInt(btn.dataset.hours, 10) || 2;
-
-      try {
-        const res = await fetch('/api/desktop/license/upsell', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ hours: currentUpsellHours })
-        });
-        const data = await res.json();
-        if (data.success && data.order) {
-          const box = document.getElementById('pixCheckoutBox');
-          document.getElementById('pixQrImg').src = data.order.qrDataUrl;
-          document.getElementById('pixPayloadInput').value = data.order.pixPayload;
-          box.classList.remove('hidden');
-        }
-      } catch (e) {
-        alert('Falha ao gerar QR Code PIX: ' + e.message);
-      }
-    });
-  });
-
-  document.getElementById('btnCopyPix')?.addEventListener('click', () => {
-    const input = document.getElementById('pixPayloadInput');
-    if (input) {
-      input.select();
-      navigator.clipboard?.writeText(input.value);
-      alert('Código PIX copiado!');
-    }
-  });
-
-  document.getElementById('btnSimulatePixPayment')?.addEventListener('click', async () => {
-    try {
-      const res = await fetch('/api/desktop/license/confirm-mock-pix', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hours: currentUpsellHours })
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        document.getElementById('pixCheckoutBox').classList.add('hidden');
-        loadLicenseStatus();
-      }
-    } catch (e) {
-      alert('Erro ao confirmar: ' + e.message);
-    }
-  });
+  document.querySelectorAll('.upsell-options button').forEach(btn=>btn.addEventListener('click',()=>{window.open('/customer.html','_blank','noopener')}));
+  document.getElementById('btnSimulatePixPayment')?.remove();
+  document.getElementById('pixCheckoutBox')?.remove();
 
   // ==========================================
   // 5. ENUMERAÇÃO DE INTERFACES E DISPOSITIVOS DE ÁUDIO
@@ -362,7 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Notifica o processador DSP para dinâmicas do Noise Gate
       if (stageDsp) {
-        stageDsp.processRms(rms);
+        // Gate detector is driven by its pre-gate audio sidechain.
       }
 
       // Se for silêncio absoluto ou ruído de piso abaixo de -60dB, decai suavemente até zero
@@ -576,14 +533,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const roomId = getActiveRoomId();
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProto}//${location.host}/api/rooms/${encodeURIComponent(roomId)}`;
+    const wsUrl=`${wsProto}//${location.host}/?room=${encodeURIComponent(roomId)}&role=host`;
 
     try {
       socket = new WebSocket(wsUrl);
       socket.binaryType = 'arraybuffer';
 
       socket.onopen = () => {
-        socket.send(JSON.stringify({ type: 'join', role: 'host', roomId }));
+        // Server authorizes the host during the handshake using its session cookie.
         broadcastAudioMeta();
         broadcastScreenConfig();
       };
@@ -597,7 +554,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       };
 
-      socket.onclose = () => {
+      socket.onclose = event => {
+        stopBroadcastCleanly();
+        const status=document.getElementById('liveStatusBadge');if(status)status.textContent=event.reason||'Conexão encerrada. Entre na sua conta e abra um evento autorizado.';
         socket = null;
       };
     } catch (e) {
@@ -606,9 +565,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function handleServerWsMessage(msg) {
-    if (msg.type === 'stats') {
+    if(msg.type==='connected'){if(socket)socket.__authorized=msg.role==='host';
+    } else if (msg.type === 'room_online_stats') {
       const elListeners = document.getElementById('metricListeners');
-      if (elListeners) elListeners.innerText = msg.totalListeners || msg.onlineCount || 0;
+      if (elListeners) elListeners.innerText = msg.stats?.listeners || 0;
+    } else if(msg.type==='subtitle_translated'){const secondary=document.getElementById('subSecondaryText');if(secondary)secondary.textContent=msg.text||'';addTranscriptTableRow(msg.sourceText||'',msg.text||'');
+    } else if(msg.type==='service_warning'){const status=document.getElementById('liveStatusBadge');if(status)status.textContent=msg.message;
     } else if (msg.type === 'subtitle' || msg.type === 'transcript') {
       const primaryText = msg.text || msg.sourceText || '';
       const subPrim = document.getElementById('subPrimaryText');
@@ -634,7 +596,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const timeStr = new Date().toLocaleTimeString('pt-BR');
     tr.innerHTML = `
       <td>${timeStr}</td>
-      <td>${original}</td>
+      <td>${escapeStageText(original)}</td>
       <td>${translation || '—'}</td>
     `;
     tbody.insertBefore(tr, tbody.firstChild);
@@ -656,7 +618,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const original = item.source_text || item.text || '';
           const trans = item.translations?.en || item.translations?.es || '—';
           const tr = document.createElement('tr');
-          tr.innerHTML = `<td>${timeStr}</td><td>${original}</td><td>${trans}</td>`;
+          tr.innerHTML = `<td>${timeStr}</td><td>${escapeStageText(original)}</td><td>${escapeStageText(trans)}</td>`;
           tbody.appendChild(tr);
         });
       }
@@ -670,10 +632,12 @@ document.addEventListener('DOMContentLoaded', () => {
     stopBroadcastCleanly();
 
     currentSourceMode = mode;
-    const roomId = getActiveRoomId();
+    const roomId=getActiveRoomId();
     connectStageWebSocket();
 
+
     try {
+    await new Promise((resolve,reject)=>{const started=Date.now();const timer=setInterval(()=>{if(socket?.readyState===WebSocket.OPEN&&socket.__authorized){clearInterval(timer);resolve()}else if(!socket||socket.readyState===WebSocket.CLOSED||Date.now()-started>7000){clearInterval(timer);reject(new Error('Entre na sua conta e abra um evento autorizado antes de transmitir.'))}},50)});
       if (customStream) {
         audioStream = customStream;
       } else {
@@ -700,7 +664,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      audioContext = new AudioCtx({ latencyHint: 'interactive' });
+      audioContext = new AudioCtx({latencyHint:'interactive',sampleRate:currentAudioProfile.sampleRate});
       if (audioContext.state === 'suspended') {
         await audioContext.resume();
       }
@@ -731,8 +695,8 @@ document.addEventListener('DOMContentLoaded', () => {
       analyserNode.fftSize = 2048;
       analyserNode.smoothingTimeConstant = 0.25;
 
-      const dspSource = stageDsp ? stageDsp.outputNode : audioSourceNode;
-      dspSource.connect(analyserNode);
+      const dspSource=stageDsp?stageDsp.outputNode:audioSourceNode;
+      audioSourceNode.connect(analyserNode);
 
       // ScriptProcessorNode para empacotamento e streaming PCM 16-bit
       scriptProcessor = audioContext.createScriptProcessor(2048, 2, 1);
@@ -945,7 +909,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!file) return;
 
     if (localMediaBox) localMediaBox.classList.remove('hidden');
-    if (localMediaTitle) localMediaTitle.innerText = `🎵 ${file.name}`;
+    if (localMediaTitle) localMediaTitle.innerText = `🎵 ${escapeStageText(file.name)}`;
 
     const fileUrl = URL.createObjectURL(file);
     if (localMediaAudio) {
@@ -955,7 +919,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     clearActiveSourceButtons();
     btnSrcFile?.classList.add('active');
-    updateActiveSourceBadge(`Arquivo Local (${file.name})`, 'folder-open');
+    updateActiveSourceBadge(`Arquivo Local (${escapeStageText(file.name)})`, 'folder-open');
 
     // Conecta o player ao broadcast
     if (localMediaAudio) {
@@ -978,7 +942,7 @@ document.addEventListener('DOMContentLoaded', () => {
     "Hoje exploramos como a inteligência artificial em tempo real transforma a experiência de tradução sem cabines físicas.",
     "O sinal capturado da mesa de som é analisado instantaneamente pelo motor de inferência neural local.",
     "Cada ouvinte recebe o áudio com fidelidade cristalina e latência inferior a trinta milissegundos no seu próprio smartphone.",
-    "Com o estúdio de clonagem de voz, a tradução sintetizada preserva o timbre, o tom e a velocidade naturais do orador.",
+    "Com o estúdio de calibração de voz, a tradução sintetizada preserva o timbre, o tom e a velocidade naturais do orador.",
     "Agradecemos a presença de todos nesta demonstração da workstation Silent Stage AI Pro."
   ];
 
@@ -1029,7 +993,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const voice = document.getElementById('selTimbre')?.value || 'male_deep';
       const speed = document.getElementById('rangeSpeed')?.value || '1.05';
       const pitch = document.getElementById('rangePitch')?.value || '0';
-      const url = `/api/tts?lang=pt&text=${encodeURIComponent(paragraph)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}&t=${Date.now()}`;
+      const url = `/api/tts?lang=pt&text=${encodeURIComponent(paragraph)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}&room=${encodeURIComponent(getActiveRoomId())}&t=${Date.now()}`;
 
       simLectureAudioEl = new Audio(url);
       let done = false;
@@ -1201,7 +1165,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnPlay) btnPlay.disabled = false;
 
     if (recordStatus) {
-      recordStatus.innerHTML = `✅ Amostra carregada de arquivo: <strong>${file.name}</strong> (${Math.round(file.size / 1024)} KB)`;
+      recordStatus.innerHTML = `✅ Amostra carregada de arquivo: <strong>${escapeStageText(file.name)}</strong> (${Math.round(file.size / 1024)} KB)`;
       recordStatus.className = 'sample-status-text success';
     }
 
@@ -1243,7 +1207,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (btnPlay) btnPlay.disabled = false;
 
       if (recordStatus) {
-        recordStatus.innerHTML = `✅ Amostra de 5s capturada com sucesso de [${sourceName}]! Perfil pronto para síntese.`;
+        recordStatus.innerHTML = `✅ Amostra de 5s capturada com sucesso de [${escapeStageText(sourceName)}]! Perfil pronto para síntese.`;
         recordStatus.className = 'sample-status-text success';
       }
 
@@ -1258,7 +1222,7 @@ document.addEventListener('DOMContentLoaded', () => {
       triggerBtn.classList.add('vmt-danger');
     }
     if (recordStatus) {
-      recordStatus.innerHTML = `🎙️ Gravando amostra de ${sourceName}...`;
+      recordStatus.innerHTML = `🎙️ Gravando amostra de ${escapeStageText(sourceName)}...`;
       recordStatus.className = 'sample-status-text recording';
     }
 
@@ -1360,12 +1324,12 @@ document.addEventListener('DOMContentLoaded', () => {
       card.className = 'saved-profile-card';
       card.innerHTML = `
         <div class="profile-info">
-          <strong>${p.name}</strong>
+          <strong>${escapeStageText(p.name)}</strong>
           <small>Timbre: ${p.timbre} • Tom: ${p.pitch > 0 ? '+' : ''}${p.pitch}st • Vel: ${p.speed}x</small>
         </div>
         <div class="profile-actions">
-          <button type="button" class="vmt-btn btn-xs" data-load-id="${p.id}">Carregar</button>
-          <button type="button" class="vmt-btn vmt-danger btn-xs" data-del-id="${p.id}">✕</button>
+          <button type="button" class="vmt-btn btn-xs" data-load-id="${escapeStageText(p.id)}">Carregar</button>
+          <button type="button" class="vmt-btn vmt-danger btn-xs" data-del-id="${escapeStageText(p.id)}">✕</button>
         </div>
       `;
       container.appendChild(card);
@@ -1459,7 +1423,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btn) btn.innerHTML = '<span data-icon="sparkles"></span> Sintetizando Voz com IA...';
 
     try {
-      const url = `/api/tts?lang=en&text=${encodeURIComponent(phrase)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}&test=1&room=palco1&t=${Date.now()}`;
+      const url = `/api/tts?lang=en&text=${encodeURIComponent(phrase)}&voice=${encodeURIComponent(voice)}&speed=${speed}&pitch=${pitch}&room=${encodeURIComponent(getActiveRoomId())}&t=${Date.now()}`;
       const token = localStorage.getItem('vmt_admin_token');
       const res = await fetch(url, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
@@ -1527,16 +1491,7 @@ document.addEventListener('DOMContentLoaded', () => {
     downloadFile(text, 'transcricao-palco-silent-stage.txt', 'text/plain');
   });
 
-  document.getElementById('btnExportSrt')?.addEventListener('click', () => {
-    const rows = Array.from(document.querySelectorAll('#transcriptBody tr'));
-    let srt = '';
-    rows.forEach((r, idx) => {
-      const cells = r.querySelectorAll('td');
-      const time = cells[0]?.innerText || '00:00:00';
-      srt += `${idx + 1}\n${time},000 --> ${time},005\n${cells[2]?.innerText || cells[1]?.innerText || ''}\n\n`;
-    });
-    downloadFile(srt, 'legendas-palco-silent-stage.srt', 'text/plain');
-  });
+  document.getElementById('btnExportSrt')?.addEventListener('click',()=>{window.open('/api/rooms/'+encodeURIComponent(getActiveRoomId())+'/export?format=srt','_blank','noopener')});
 
   function downloadFile(content, fileName, mimeType) {
     const blob = new Blob([content], { type: mimeType });

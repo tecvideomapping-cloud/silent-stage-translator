@@ -1672,7 +1672,7 @@
       const url = new URL(input, location.origin);
       url.searchParams.set('room', roomId);
       const token = localStorage.getItem('vmt_admin_token');
-      if (token) url.searchParams.set('token', token);
+      // Browser requests use the HttpOnly administrative session cookie.
       return url.pathname + url.search;
     }
     async function operatorFetch(input, options = {}) {
@@ -1696,7 +1696,7 @@
 
     function connectHostWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=host&token=${encodeURIComponent(localStorage.getItem('vmt_admin_token') || '')}`;
+      const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=host`;
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
@@ -1710,6 +1710,7 @@
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          if(data.type==='service_warning'){const status=document.getElementById('connStatus');if(status)status.textContent=data.message;return;}
           if (data.type === 'connected') { broadcastAudioMeta(); broadcastSpeakerVoiceProfile(); fetchRoomStats(); }
           else if (data.type === 'room_online_stats' && data.stats) {
             updateHostOnlineStats(data.stats);

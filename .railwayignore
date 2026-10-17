@@ -1,0 +1,9 @@
+node_modules/
+.git/
+dist/
+.env
+.env.*
+**/.vmt-*
+**/*.dpapi
+work/
+outputs/

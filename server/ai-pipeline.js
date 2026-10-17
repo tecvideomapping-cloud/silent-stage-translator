@@ -1,3 +1,4 @@
+const crypto=require('crypto');
 const { WebSocket } = require('ws');
 
 class AIPipeline {
@@ -8,7 +9,7 @@ class AIPipeline {
     this.deeplKey = process.env.DEEPL_API_KEY;
     this.cartesiaKey = process.env.CARTESIA_API_KEY;
     this.elevenlabsKey = process.env.ELEVENLABS_API_KEY;
-    this.mockMode = process.env.MOCK_AI === 'true' || (!this.deepgramKey && !this.openaiKey && !this.groqKey && !this.cartesiaKey && !this.elevenlabsKey);
+    this.mockMode=process.env.MOCK_AI==='true';
     
     // Conexões ativas do Deepgram por sala
     this.sttSockets = new Map();
@@ -36,7 +37,7 @@ class AIPipeline {
    * Inicializa ou obtém conexão Deepgram para a sala
    */
   getOrCreateDeepgramSession(roomId, sourceLang, onTranscript) {
-    if (this.mockMode) return null;
+    if (this.mockMode||!this.deepgramKey) return null;
     if (this.sttSockets.has(roomId)) return this.sttSockets.get(roomId);
 
     const langCode = sourceLang || 'pt-BR';
@@ -60,11 +61,11 @@ class AIPipeline {
           const isFinal = response?.is_final || response?.speech_final;
 
           if (transcript && transcript.trim().length > 0) {
-            onTranscript({
+            Promise.resolve(onTranscript({
               text: transcript,
               isFinal: !!isFinal,
               timestamp: Date.now()
-            });
+            })).catch(()=>{});
           }
         } catch (err) {
           console.error('[AI-STT] Erro ao parsear resposta Deepgram:', err.message);
@@ -92,7 +93,7 @@ class AIPipeline {
    * Envia chunks de áudio PCM para o STT
    */
   feedAudio(roomId, audioBuffer, sourceLang, onTranscript) {
-    if (this.mockMode) {
+    if (this.mockMode||!this.deepgramKey) {
       // No modo sem chave externa de API STT, o áudio original é transmitido diretamente
       // e o reconhecimento real de voz é feito com precisão pelo navegador do host via SpeechRecognition.
       return;
@@ -168,7 +169,8 @@ class AIPipeline {
 
     const translateSingleLanguage = async (targetLang) => {
       const normalizedLang = (targetLang || 'en').split('-')[0].toLowerCase();
-      const cacheKey = `${normalizedLang}:${cleanInput.toLowerCase()}`;
+      const cacheKey=crypto.createHash('sha256').update(JSON.stringify({roomId,normalizedLang,text:cleanInput,glossary,context:contextPrompt,model:this.groqKey?'groq':this.openaiKey?'openai':'fallback'})).digest('hex');
+      if(this.mockMode){const mock=mockTranslationDict[normalizedLang]?.[cleanInput]||`[DEMONSTRAÇÃO ${normalizedLang}] ${cleanInput}`;translations[targetLang]=mock;if(onLanguageTranslated)onLanguageTranslated(targetLang,mock);return mock;}
 
       // 0. Cache em memória instantâneo (0ms)
       if (this.translationCache.has(cacheKey)) {
@@ -322,11 +324,8 @@ class AIPipeline {
         }
       } catch (freeErr) {}
 
-      // 6. Último recurso se todos os motores estiverem sem internet: retorna o texto limpo SEM prefixos [EN]/[ES]
-      const fallback = finalizeOutput(cleanInput);
-      translations[targetLang] = fallback;
-      if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, fallback);
-      return fallback;
+      this.onTranslationFailure?.(roomId,targetLang);
+      return null;
     };
 
     // Executa TODOS os idiomas alvo em paralelo instantâneo (Promise.all)
@@ -334,6 +333,7 @@ class AIPipeline {
 
     if (roomId && cleanInput) {
       if (!this.roomContextMemory) this.roomContextMemory = new Map();
+      if(this.roomContextMemory.size>1000)this.roomContextMemory.delete(this.roomContextMemory.keys().next().value);
       this.roomContextMemory.set(roomId, { lastSourceText: cleanInput, lastTranslations: translations });
     }
 
@@ -384,6 +384,7 @@ class AIPipeline {
 
   closeSession(roomId) {
     const dg = this.sttSockets.get(roomId);
+    this.roomContextMemory.delete(roomId);
     if (dg) {
       try { dg.close(); } catch (e) {}
       this.sttSockets.delete(roomId);

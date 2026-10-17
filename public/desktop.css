@@ -773,3 +773,7 @@ body.desktop-app {
   display: none !important;
 }
 
+
+@media(max-width:700px){.desktop-sidebar{position:relative!important;width:100%!important}.desktop-main{margin-left:0!important;min-width:0!important;padding:14px!important}.workstation-layout{display:block!important}.vmt-desktop main{min-width:0!important} .vmt-desktop .live-grid,.vmt-desktop .studio-grid{grid-template-columns:minmax(0,1fr)!important} .vmt-desktop input,.vmt-desktop select{max-width:100%}}
+
+@media(max-width:700px){body.desktop-app{height:auto;overflow:auto}.desktop-header{flex-wrap:wrap;padding:12px;gap:10px}.header-left,.telemetry-chips{flex-wrap:wrap;gap:8px}.desktop-shell{flex-direction:column;overflow:visible}.desktop-nav{width:auto;flex-direction:row;overflow-x:auto;padding:8px}.nav-tab{flex-shrink:0}.desktop-content{padding:12px;min-width:0;overflow:visible}.desktop-app [class*=grid]{grid-template-columns:minmax(0,1fr)!important}.desktop-app .panel{min-width:0;padding:14px}.desktop-app input,.desktop-app select,.desktop-app video{max-width:100%;min-width:0}}
