@@ -89,7 +89,7 @@
 .access-form { display:flex; flex-direction:column; gap:25px; margin-top:38px; }
 .access-form label { margin-bottom:10px!important; display:block; font-weight:500!important; }
 .vmt-login .access-form input { width:100%; padding:15px; min-height:52px; font-family:inherit; }
-.access-form button { width:100%; min-height:52px; margin-top:4px; }
+.access-form button[type="submit"] { width:100%; min-height:52px; margin-top:4px; }
 .access-protection { display:flex; gap:8px; color:var(--vmt-muted); font-size:11px; margin-top:30px; align-items:center; justify-content:center; text-align:center; }
 .access-protection svg { width:14px!important; height:14px!important; }
 .access-content footer { padding-top:80px; text-align:center; color:var(--vmt-muted); font-size:11px; }

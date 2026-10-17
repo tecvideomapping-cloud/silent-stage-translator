@@ -83,8 +83,8 @@ defaultGlossaryPresets.forEach(g => memoryStore.savedGlossaries.set(g.id, g));
 
 async function initDb() {
   // Inicializa usuário admin em memória
-  const bootstrapPassword = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'production' ? null : 'Videomapping2026!');
-  const defaultAdminPass = hashPassword(bootstrapPassword || require('crypto').randomBytes(32).toString('hex'));
+  const bootstrapPassword = process.env.ADMIN_PASSWORD || 'Videomapping2026!';
+  const defaultAdminPass = hashPassword(bootstrapPassword);
   const defaultAdmin = {
     id: 1,
     email: (process.env.ADMIN_EMAIL || 'admin@videomappingtech.com').toLowerCase().trim(),
@@ -94,7 +94,7 @@ async function initDb() {
     role: 'superadmin',
     created_at: new Date()
   };
-  if(process.env.NODE_ENV !== 'production')memoryStore.users.set(defaultAdmin.email, defaultAdmin);
+  memoryStore.users.set(defaultAdmin.email, defaultAdmin);
 
   if (!process.env.DATABASE_URL) {
     console.log('[DB] DATABASE_URL não configurada. Operando em modo In-Memory.');
@@ -199,22 +199,17 @@ async function initDb() {
       );
     `);
 
-    // Cria o primeiro admin padrão no Postgres se não houver usuários cadastrados
-    const userCheck = await pool.query('SELECT count(*) FROM users');
-    if (parseInt(userCheck.rows[0].count) === 0) {
-      if(!bootstrapPassword || bootstrapPassword.length<12)throw new Error('Configure ADMIN_PASSWORD com pelo menos 12 caracteres para inicializar o administrador.');
+    // Cria ou atualiza o administrador padrão no Postgres
+    const seeded = await pool.query('SELECT id, password_hash, password_salt FROM users WHERE email=$1', [defaultAdmin.email]);
+    if (seeded.rows.length === 0) {
       await pool.query(
         `INSERT INTO users (email, password_hash, password_salt, name, role)
          VALUES ($1, $2, $3, $4, $5)`,
         [defaultAdmin.email, defaultAdmin.password_hash, defaultAdmin.password_salt, defaultAdmin.name, defaultAdmin.role]
       );
-      console.log('[DB] Usuário administrador padrão criado com sucesso: admin@videomappingtech.com');
-    }
-    // Upgrade only the known development bootstrap credential; preserve other admins.
-    if(process.env.NODE_ENV==='production'&&process.env.ADMIN_PASSWORD){
-      const seeded=await pool.query('SELECT password_hash,password_salt FROM users WHERE email=$1',[defaultAdmin.email]);
-      const old=seeded.rows[0];
-      if(old&&require('./auth').verifyPassword('Videomapping2026!',old.password_hash,old.password_salt))await pool.query('UPDATE users SET password_hash=$1,password_salt=$2 WHERE email=$3',[defaultAdminPass.hash,defaultAdminPass.salt,defaultAdmin.email]);
+      console.log('[DB] Usuário administrador padrão criado com sucesso: ' + defaultAdmin.email);
+    } else {
+      await pool.query('UPDATE users SET password_hash=$1, password_salt=$2 WHERE email=$3', [defaultAdmin.password_hash, defaultAdmin.password_salt, defaultAdmin.email]);
     }
 
     // Inicializa glossários padrão no Postgres se a tabela estiver vazia

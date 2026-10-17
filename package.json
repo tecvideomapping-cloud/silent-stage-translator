@@ -2,12 +2,40 @@
   "name": "videomappingtech-silent-translator",
   "version": "1.0.0",
   "description": "Plataforma de Palestras Silenciosas e Tradução Simultânea com IA em Tempo Real",
-  "main": "server/index.js",
+  "main": "desktop/main.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "desktop": "node desktop/main.js",
+    "desktop": "electron desktop/main.js",
+    "desktop:web": "node desktop/main.js",
+    "pack:win": "electron-builder --win nsis",
+    "dist:win": "electron-builder --win",
     "test": "node --test scripts/*.test.js"
+  },
+  "build": {
+    "appId": "com.videomappingtech.silentstage",
+    "productName": "Silent Stage AI",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Silent Stage AI"
+    },
+    "files": [
+      "desktop/**/*",
+      "public/**/*",
+      "server/**/*",
+      "package.json"
+    ]
   },
   "keywords": [
     "silent-theater",
@@ -27,5 +55,9 @@
     "pg": "^8.13.0",
     "qrcode": "^1.5.4",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3"
   }
 }

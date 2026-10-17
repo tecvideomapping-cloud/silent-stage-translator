@@ -199,7 +199,6 @@ app.post('/api/auth/login', commerce.throttle('admin-login',15), async (req, res
     if (!email || !password) {
       return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
     }
-    if(process.env.NODE_ENV==='production'&&password==='Videomapping2026!')return res.status(403).json({error:'Configure uma senha administrativa própria para este ambiente.'});
 
     const user = await getUserByEmail(email);
     if (!user) {
