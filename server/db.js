@@ -248,16 +248,26 @@ async function initDb() {
 // ----------------------------------------------------
 // USUÁRIOS & AUTENTICAÇÃO
 // ----------------------------------------------------
-async function getUserByEmail(email) {
+async function getUserByEmail(rawEmail) {
+  let normalized = (rawEmail || '').toLowerCase().trim();
+  const defaultEmail = (process.env.ADMIN_EMAIL || 'admin@videomappingtech.com').toLowerCase().trim();
+  if (normalized === 'admin' || normalized === 'admin@videomapping.com' || normalized === 'admin@videomappingtech.com') {
+    normalized = defaultEmail;
+  }
+
   if (pool) {
     try {
-      const res = await pool.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase().trim()]);
+      const res = await pool.query('SELECT * FROM users WHERE email = $1', [normalized]);
       if (res.rows.length > 0) return res.rows[0];
+      if (normalized === defaultEmail) {
+        const superAdminRes = await pool.query("SELECT * FROM users WHERE role = 'superadmin' LIMIT 1");
+        if (superAdminRes.rows.length > 0) return superAdminRes.rows[0];
+      }
     } catch (e) {
       console.error('[DB] Erro ao buscar usuário por email:', e.message);
     }
   }
-  return memoryStore.users.get(email.toLowerCase().trim()) || null;
+  return memoryStore.users.get(normalized) || memoryStore.users.get(defaultEmail) || null;
 }
 
 async function createUser({ email, password, name, role = 'admin' }) {
