@@ -1004,6 +1004,9 @@
     let currentTtsObjectUrl = null;
 
     function clearTtsAudioQueue() {
+      // Pausing switches back to reading: retain text that was waiting for voice.
+      if(activeTtsItem)renderSubtitle(activeTtsItem.text,true,activeTtsItem.lang,activeTtsItem.metadata);
+      for(const item of ttsAudioQueue)renderSubtitle(item.text,true,item.lang,item.metadata);
       ttsPlaybackGeneration++;
       for(const item of ttsAudioQueue)item.controller?.abort();
       activeTtsItem?.controller?.abort();
