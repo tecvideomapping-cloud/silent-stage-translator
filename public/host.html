@@ -1703,14 +1703,15 @@
     function applyRecognitionStatus(status){
       const previous=window.serverSpeechRecognition;window.serverSpeechRecognition=status?.provider==='deepgram';
       if(window.serverSpeechRecognition){if(window.speechEngine?.isActive)window.speechEngine.stop();const badge=document.getElementById('transcriptionIntegrityBadge');if(badge)badge.textContent='Reconhecimento com locutores ativo';}
-      else if(previous&&isBroadcasting&&!window.localSpeech?.selected)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
+      else if(previous&&isBroadcasting&&!window.localSpeech)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
     }
     window.addEventListener('vmt-local-speech-state',event=>{
       const warning=document.getElementById('hostRecognitionStatus');warning.hidden=!!event.detail.active||!event.detail.loading&&!isBroadcasting||!!window.serverSpeechRecognition;warning.textContent=event.detail.loading?'Carregando o motor local. As legendas começam quando ele estiver pronto.':event.detail.active?'':'O motor local está parado. Ative-o para reconhecer o áudio neste computador.';
       const badge=document.getElementById('transcriptionIntegrityBadge');if(badge&&(event.detail.active||event.detail.loading))badge.textContent=event.detail.active?'Reconhecimento local ativo':'Carregando reconhecimento local';
       if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'recognition_mode',mode:event.detail.active||event.detail.loading?'desktop-local':'current'}));
       if(event.detail.active||event.detail.loading)window.speechEngine?.stop();
-      else if(isBroadcasting&&!window.serverSpeechRecognition)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
+      else if(isBroadcasting&&!window.serverSpeechRecognition&&!window.localSpeech)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
+      else if(badge&&!event.detail.active&&!event.detail.loading&&!window.serverSpeechRecognition)window.speechEngine?.updateBadge('inactive');
     });
     function connectHostWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -2095,8 +2096,8 @@
 
         // Passa a trilha de áudio capturada para o reconhecedor (suporte nativo MediaStreamTrack no Chrome + microfone)
         const trackForStt = (sourceMode === 'system' || sourceMode === 'file') ? audioTracks[0] : null;
-        await window.localSpeech?.begin(event=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'speech_transcript',...event}));},document.getElementById('sourceLang')?.value||'pt-BR');
-        if(!window.localSpeech?.selected&&!window.serverSpeechRecognition)window.speechEngine.start(trackForStt);
+        if(!window.serverSpeechRecognition)await window.localSpeech?.begin(event=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'speech_transcript',...event}));},document.getElementById('sourceLang')?.value||'pt-BR');
+        if(!window.localSpeech&&!window.serverSpeechRecognition)window.speechEngine.start(trackForStt);
       } catch (err) {
         alert('Erro ao capturar o dispositivo de áudio: ' + err.message);
       }
@@ -2505,6 +2506,7 @@
       },
 
       async start(customAudioTrack = null) {
+        if(window.desktopHost?.speech){this.updateBadge('inactive');return;}
         this.isActive = true;
         this.customAudioTrack = customAudioTrack || null;
         this.lastNativeResultTime = Date.now();

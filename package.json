@@ -1,6 +1,6 @@
 {
   "name": "videomappingtech-silent-translator",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Silent Stage — Áudio ao vivo e tradução simultânea",
   "main": "desktop/main.js",
   "scripts": {
