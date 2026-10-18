@@ -1033,13 +1033,17 @@
       return String(str || '').replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
     }
 
+    const spokenSegments=new Set();
     function playTranslatedAudio(text, lang,metadata={}) {
       if (!text) return;
       const clean = stripLangPrefix(text);
       if (!clean) return;
+      if(!isPlaying)return;
+      const segmentKey=metadata.segmentId?lang+':'+metadata.segmentId:null;
+      if(segmentKey){if(spokenSegments.has(segmentKey))return;spokenSegments.add(segmentKey);if(spokenSegments.size>512)spokenSegments.delete(spokenSegments.values().next().value);}
       
       // Guarda contra duplicação de frases idênticas em curto intervalo
-      if (clean.toLowerCase() === lastSpokenText.toLowerCase() && (Date.now() - lastSpokenTime) < 2500) {
+      if (!segmentKey&&clean.toLowerCase() === lastSpokenText.toLowerCase() && (Date.now() - lastSpokenTime) < 2500) {
         return;
       }
       lastSpokenText = clean;
