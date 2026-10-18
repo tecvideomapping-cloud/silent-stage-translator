@@ -631,7 +631,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 8. CONTROLE DE BROADCAST & PROCESSAMENTO DE STREAM
   // ==========================================
   async function startBroadcastWithStream(customStream = null, mode = 'mic') {
-    stopBroadcastCleanly();
+    if(isBroadcasting||audioContext)stopBroadcastCleanly();
 
     currentSourceMode = mode;
     const roomId=getActiveRoomId();
@@ -909,7 +909,7 @@ document.addEventListener('DOMContentLoaded', () => {
     localFileInput?.click();
   });
 
-  localFileInput?.addEventListener('change', (e) => {
+  localFileInput?.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -918,8 +918,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const fileUrl = URL.createObjectURL(file);
     if (localMediaAudio) {
+      const previous=localMediaAudio.src;
       localMediaAudio.src = fileUrl;
-      localMediaAudio.play().catch(() => {});
+      if(previous.startsWith('blob:'))URL.revokeObjectURL(previous);
     }
 
     clearActiveSourceButtons();
@@ -929,14 +930,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Conecta o player ao broadcast
     if (localMediaAudio) {
       try {
+        // captureStream() has no audio track until the media is loaded/playing.
+        await localMediaAudio.play();
         const stream = localMediaAudio.captureStream ? localMediaAudio.captureStream() : (localMediaAudio.mozCaptureStream ? localMediaAudio.mozCaptureStream() : null);
         if (stream && stream.getAudioTracks().length > 0) {
-          startBroadcastWithStream(stream, 'file');
-        } else if (!isBroadcasting) {
-          startBroadcastWithStream(null, 'mic');
-        }
+          localMediaAudio.pause();
+          localMediaAudio.currentTime=0;
+          await startBroadcastWithStream(stream, 'file');
+          await localMediaAudio.play();
+        } else throw Error('O arquivo não disponibilizou uma trilha de áudio.');
       } catch (err) {
-        console.warn('Erro ao conectar stream do arquivo:', err);
+        localMediaAudio.pause();
+        const status=document.getElementById('liveStatusBadge');
+        if(status)status.textContent='Não foi possível capturar o áudio deste arquivo. Escolha outro arquivo.';
       }
     }
   });
