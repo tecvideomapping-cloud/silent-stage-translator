@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Painel Administrativo | Videomappingtech Stage AI</title>
+  <title>Painel Administrativo | Silent Stage</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <link rel="stylesheet" href="/design-system.css">
   <link rel="stylesheet" href="/admin-v2.css">
   <script src="/design-system.js" defer></script>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
-</head>
+<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" href="/brand/silent-stage-icon-192.png" sizes="192x192"><link rel="apple-touch-icon" href="/brand/apple-touch-icon.png"><meta name="application-name" content="Silent Stage"><link rel="stylesheet" href="/brand/brand.css"></head>
 <body class="vmt-app vmt-admin">
 
   <aside class="admin-sidebar">
-    <a href="/admin.html" class="vmt-brand admin-brand"><span class="vmt-icon" data-icon="audio-lines"></span><span>Videomappingtech<small>SILENT TRANSLATOR</small></span></a>
+    <a href="/admin.html" class="vmt-brand admin-brand"><img class="silent-stage-mark" src="/brand/silent-stage-icon-192.png" width="40" height="40" alt=""><span>Silent Stage<small>ÁUDIO SEM FRONTEIRAS</small></span></a>
     <div class="admin-nav-label">WORKSPACE</div>
     <nav class="admin-navigation" aria-label="Administração">
       <button onclick="switchTab('events')" id="tabBtnEvents" class="text-cyan-400"><span data-icon="calendar-days"></span><span>Eventos e salas</span></button>
@@ -263,7 +263,7 @@
             <div>
               <label class="block font-semibold text-slate-400 mb-1">Marca d'água no Telão:</label>
               <select id="formScreenLogo" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200">
-                <option value="vmp" selected>Video Mapping (Padrão)</option>
+                <option value="vmp" selected>Silent Stage (Padrão)</option>
                 <option value="client">Logo do Cliente / Evento</option>
                 <option value="none">Nenhuma (Sem Marca)</option>
               </select>

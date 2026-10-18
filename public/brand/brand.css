@@ -1,0 +1,10 @@
+/* Silent Stage identity: the same lockup in every workspace and theme. */
+.vmt-app .vmt-brand { font-size:16px!important; letter-spacing:-.6px; line-height:1.2; }
+.vmt-app .vmt-brand .silent-stage-mark { display:block; width:40px; height:40px; flex:none; object-fit:contain; border-radius:12px; }
+.vmt-app .vmt-brand small { font-size:7px; letter-spacing:1.5px; line-height:1.4; margin-top:5px; white-space:nowrap; }
+.vmt-app .vmt-brand>span { white-space:nowrap; }
+@media(max-width:540px) {
+  .vmt-app .vmt-brand { font-size:14px!important; gap:9px; }
+  .vmt-app .vmt-brand .silent-stage-mark { width:36px; height:36px; }
+  .vmt-app .vmt-brand small { font-size:6px; letter-spacing:1.2px; }
+}

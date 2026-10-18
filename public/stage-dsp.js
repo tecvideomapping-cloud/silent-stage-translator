@@ -1,5 +1,5 @@
 /**
- * Silent Stage AI - Web Audio DSP & Noise Gate Engine
+ * Silent Stage - Web Audio DSP & Noise Gate Engine
  * Videomappingtech (C) 2026
  *
  * Cadeia de processamento acústico para palcos ao vivo:

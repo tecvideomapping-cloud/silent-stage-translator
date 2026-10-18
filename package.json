@@ -1,7 +1,7 @@
 {
   "name": "videomappingtech-silent-translator",
-  "version": "1.0.2",
-  "description": "Plataforma de Palestras Silenciosas e TraduÃƒÂ§ÃƒÂ£o SimultÃƒÂ¢nea com IA em Tempo Real",
+  "version": "1.0.3",
+  "description": "Silent Stage — Áudio ao vivo e tradução simultânea",
   "main": "desktop/main.js",
   "scripts": {
     "start": "node server/index.js",
@@ -18,15 +18,18 @@
   },
   "build": {
     "appId": "com.videomappingtech.silentstage",
-    "productName": "Silent Stage AI",
-    "asarUnpack": ["desktop/speech/worker.py"],
+    "productName": "Silent Stage",
+    "asarUnpack": [
+      "desktop/speech/worker.py"
+    ],
     "directories": {
       "output": "dist"
     },
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "public/brand/silent-stage.ico"
     },
     "mac": {
       "category": "public.app-category.business",
@@ -36,7 +39,8 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "desktop/entitlements.mac.plist",
-      "entitlementsInherit": "desktop/entitlements.mac.plist"
+      "entitlementsInherit": "desktop/entitlements.mac.plist",
+      "icon": "public/brand/silent-stage.icns"
     },
     "dmg": {
       "contents": [
@@ -57,7 +61,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Silent Stage AI"
+      "shortcutName": "Silent Stage",
+      "installerIcon": "public/brand/silent-stage.ico",
+      "uninstallerIcon": "public/brand/silent-stage.ico",
+      "installerHeaderIcon": "public/brand/silent-stage.ico"
     },
     "files": [
       "desktop/**/*",

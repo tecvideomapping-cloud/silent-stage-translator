@@ -91,7 +91,7 @@ async function initDb() {
     email: (process.env.ADMIN_EMAIL || 'admin@videomappingtech.com').toLowerCase().trim(),
     password_hash: defaultAdminPass.hash,
     password_salt: defaultAdminPass.salt,
-    name: 'Administrador Videomappingtech',
+    name: 'Administrador Silent Stage',
     role: 'superadmin',
     created_at: new Date()
   };

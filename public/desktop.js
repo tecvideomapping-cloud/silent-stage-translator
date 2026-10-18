@@ -1,6 +1,6 @@
 const escapeStageText=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /**
- * Silent Stage AI - Workstation Pro Desktop Controller
+ * Silent Stage - Workstation Pro Desktop Controller
  * Videomappingtech (C) 2026
  *
  * Módulos integrados:
@@ -954,7 +954,7 @@ document.addEventListener('DOMContentLoaded', () => {
     "O sinal capturado da mesa de som é analisado instantaneamente pelo motor de inferência neural local.",
     "Cada ouvinte recebe o áudio com fidelidade cristalina e latência inferior a trinta milissegundos no seu próprio smartphone.",
     "Com o estúdio de calibração de voz, a tradução sintetizada preserva o timbre, o tom e a velocidade naturais do orador.",
-    "Agradecemos a presença de todos nesta demonstração da workstation Silent Stage AI Pro."
+    "Agradecemos a presença de todos nesta demonstração da workstation Silent Stage."
   ];
 
   btnSrcSim?.addEventListener('click', async () => {

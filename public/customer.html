@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Minha conta | Silent Translator</title>
+<title>Minha conta | Silent Stage</title>
 <link rel="stylesheet" href="/design-system.css"><link rel="stylesheet" href="/customer.css">
 <script src="/design-system.js" defer></script><script src="/customer.js" defer></script>
-</head>
+<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" href="/brand/silent-stage-icon-192.png" sizes="192x192"><link rel="apple-touch-icon" href="/brand/apple-touch-icon.png"><meta name="application-name" content="Silent Stage"><link rel="stylesheet" href="/brand/brand.css"></head>
 <body class="vmt-app customer-app">
-<header class="customer-header"><a class="vmt-brand" href="/landing.html"><span class="vmt-brand-mark" data-icon="audio-lines"></span><span>Videomappingtech<small>SILENT TRANSLATOR</small></span></a><div class="header-actions"><a href="/landing.html" class="customer-site-link">Conheça os planos</a><button class="vmt-theme-toggle" data-theme-toggle aria-label="Alternar tema"><span data-icon="sun-moon"></span></button><button id="logoutButton" class="vmt-btn" hidden>Sair</button></div></header>
+<header class="customer-header"><a class="vmt-brand" href="/landing.html" aria-label="Silent Stage"><img class="silent-stage-mark" src="/brand/silent-stage-icon-192.png" width="40" height="40" alt=""><span>Silent Stage<small>ÁUDIO SEM FRONTEIRAS</small></span></a><div class="header-actions"><a href="/landing.html" class="customer-site-link">Conheça os planos</a><button class="vmt-theme-toggle" data-theme-toggle aria-label="Alternar tema"><span data-icon="sun-moon"></span></button><button id="logoutButton" class="vmt-btn" hidden>Sair</button></div></header>
 <main>
 <div id="pageStatus" class="page-status" role="status" aria-live="polite">Preparando sua área…</div>
 <section id="authSection" class="customer-auth" hidden>
@@ -34,7 +34,7 @@
 <section id="ordersSection" aria-labelledby="ordersHeading" hidden><div class="section-heading"><div><h2 id="ordersHeading">Sua jornada, em dia.</h2><p class="vmt-muted">Acompanhe pagamentos e acesse seus eventos contratados.</p></div></div><div id="ordersList" class="customer-orders"></div></section>
 </section>
 </main>
-<footer class="customer-footer"><span>Videomappingtech · Silent Translator</span><span>Uma experiência que aproxima.</span></footer>
+<footer class="customer-footer"><span>Silent Stage · Silent Stage</span><span>Uma experiência que aproxima.</span></footer>
 <dialog id="eventDialog" class="customer-dialog" aria-labelledby="eventDialogTitle"><div class="dialog-heading"><div><span class="vmt-eyebrow">IDENTIDADE DO EVENTO</span><h2 id="eventDialogTitle">Deixe a sala com a sua marca.</h2></div><button id="closeEditor" type="button" class="vmt-btn" aria-label="Fechar personalização">×</button></div><form id="eventForm">
 <label class="full-field">Nome do evento<input name="name" required maxlength="160"></label>
 <div class="asset-grid"><label class="asset-field">Logo do evento<img id="logoPreview" alt="Prévia do logo" hidden><input id="logoUpload" type="file" accept="image/png,image/jpeg,image/webp"><small>PNG, JPG ou WebP · até 5 MB</small><button id="removeLogo" type="button" class="text-button">Remover logo</button></label><label class="asset-field">Banner do evento<img id="bannerPreview" alt="Prévia do banner" hidden><input id="bannerUpload" type="file" accept="image/png,image/jpeg,image/webp"><small>PNG, JPG ou WebP · até 5 MB</small><button id="removeBanner" type="button" class="text-button">Remover banner</button></label></div>

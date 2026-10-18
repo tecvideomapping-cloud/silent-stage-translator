@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Silent Stage AI - Lançador Desktop macOS (Workstation Edition)
+# Silent Stage - Lançador Desktop macOS (Workstation Edition)
 # Videomappingtech - Palco Silencioso e Tradução Simultânea com IA
 # ==============================================================================
 
@@ -8,7 +8,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 cd "$DIR"
 
 echo "---------------------------------------------------------"
-echo "🎙️ SILENT STAGE AI - WORKSTATION PRO (MACOS)"
+echo "🎙️ SILENT STAGE - WORKSTATION PRO (MACOS)"
 echo "---------------------------------------------------------"
 
 if ! command -v node &> /dev/null; then
@@ -26,5 +26,5 @@ if [ ! -d "node_modules" ]; then
 fi
 
 echo "💡 Dica: Para compilar o instalador .DMG, execute: ./desktop/build-dmg.command"
-echo "🚀 Iniciando estação Silent Stage AI com aceleração Metal e CoreAudio..."
+echo "🚀 Iniciando estação Silent Stage com aceleração Metal e CoreAudio..."
 npm run desktop

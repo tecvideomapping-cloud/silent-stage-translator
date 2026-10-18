@@ -1560,7 +1560,7 @@ function startServer(port = PORT) {
       server.listen(targetPort,process.env.VMT_DESKTOP_MODE==='1'?'127.0.0.1':'0.0.0.0', () => {
         server.removeListener('error', onError);
         const actualPort = server.address().port;
-        console.log(`🚀 Videomappingtech Silent Translator no ar na porta ${actualPort}`);
+        console.log(`🚀 Silent Stage no ar na porta ${actualPort}`);
         resolve(actualPort);
       });
     };

@@ -1,6 +1,6 @@
 const escapeStageText=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /**
- * Silent Stage AI - Workspaces & Studios Manager
+ * Silent Stage - Workspaces & Studios Manager
  * Videomappingtech (C) 2026
  *
  * Módulos integrados:

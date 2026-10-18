@@ -1,6 +1,6 @@
 /**
- * Silent Stage AI - Native Desktop Host Entrypoint
- * Videomappingtech Workstation Edition
+ * Silent Stage - Native Desktop Host Entrypoint
+ * Silent Stage Workstation Edition
  */
 const path = require('path');
 process.env.VMT_DESKTOP_MODE='1';
@@ -15,6 +15,13 @@ try {
 
 if (isElectron) {
   const { app, BrowserWindow, Menu, screen, ipcMain } = require('electron');
+  // Keep the existing profile, sessions and license when changing the display name.
+  const legacyProfiles=['Silent Stage AI','videomappingtech-silent-translator'];
+  const existingProfile=legacyProfiles.map(name=>path.join(app.getPath('appData'),name)).find(dir=>require('fs').existsSync(dir));
+  app.setPath('userData',existingProfile||path.join(app.getPath('appData'),'videomappingtech-silent-translator'));
+  app.setName('Silent Stage');
+  if(process.platform==='win32')app.setAppUserModelId('com.videomappingtech.silentstage');
+
 
   const cloudBase=process.env.APP_BASE_URL||'https://silent-stage-translator-production.up.railway.app';
   ipcMain.handle('vmt:hardware',async event=>{if(new URL(event.senderFrame.url).origin!==new URL(cloudBase).origin&&new URL(event.senderFrame.url).hostname!=='localhost')throw Error('Origem não autorizada.');return require('./desktop-api').probe('static')});
@@ -31,7 +38,7 @@ if (isElectron) {
       height: 900,
       minWidth: 1200,
       minHeight: 750,
-      title: 'Silent Stage AI - Workstation Pro',
+      title: 'Silent Stage - Workstation Pro',
       icon: path.join(__dirname, '../public/favicon.ico'),
       backgroundColor: '#10111c',
       show:process.env.VMT_SMOKE_TEST!=='1',
@@ -69,8 +76,9 @@ if (isElectron) {
       </head>
       <body>
         <div class="splash">
+          <img src="data:image/png;base64,${require('fs').readFileSync(path.join(__dirname, '../public/brand/silent-stage-icon-192.png')).toString('base64')}" alt="" width="80" height="80" style="border-radius:24px;margin-bottom:24px">
           <div class="spinner"></div>
-          <div class="title">Silent Stage AI · Workstation Pro</div>
+          <div class="title">Silent Stage · Workstation Pro</div>
           <div class="subtitle">Inicializando motor de áudio e tradução neural...</div>
         </div>
       </body>
@@ -98,7 +106,7 @@ if (isElectron) {
           <div style="max-width:520px;background:#181926;border:1px solid #334155;border-radius:12px;padding:32px;text-align:center;">
             <div style="font-size:36px;margin-bottom:12px;">⚠️</div>
             <h2 style="margin:0 0 10px;font-size:18px;">Falha ao iniciar o motor local</h2>
-            <p style="color:#94a3b8;font-size:13px;margin:0 0 18px;">Não foi possível inicializar o servidor interno do Silent Stage AI:</p>
+            <p style="color:#94a3b8;font-size:13px;margin:0 0 18px;">Não foi possível inicializar o servidor interno do Silent Stage:</p>
             <pre style="background:#0b0c14;color:#f87171;padding:12px;border-radius:6px;font-size:12px;text-align:left;overflow:auto;margin:0 0 20px;">${String(err.message||err).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}</pre>
             <button onclick="location.reload()" style="background:#38bdf8;color:#0f172a;border:none;padding:10px 24px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;">Tentar Novamente</button>
           </div>
@@ -145,7 +153,7 @@ if (isElectron) {
       height: targetDisplay.bounds.height,
       fullscreen: true,
       frame: false,
-      title: 'Silent Stage AI - Telão de Projeção',
+      title: 'Silent Stage - Telão de Projeção',
       backgroundColor: '#000000',
       webPreferences: {
         nodeIntegration: false,
@@ -170,11 +178,11 @@ if (isElectron) {
   });
 } else {
   // Modo Standalone Local (Node.js Direct Launcher)
-  console.log('[Silent Stage AI] Iniciando Servidor Local de Alta Performance...');
+  console.log('[Silent Stage] Iniciando Servidor Local de Alta Performance...');
   const { startServer } = require('../server/index');
   startServer(process.env.PORT || 3000).then((port) => {
     const url = `http://localhost:${port}/desktop.html`;
-    console.log(`[Silent Stage AI] Estação Desktop pronta em: ${url}`);
+    console.log(`[Silent Stage] Estação Desktop pronta em: ${url}`);
 
     // Abre automaticamente no navegador padrão do Windows em modo aplicativo
     if (process.platform === 'win32') {
@@ -183,6 +191,6 @@ if (isElectron) {
       exec(`xdg-open ${url} || open ${url}`);
     }
   }).catch(err => {
-    console.error('[Silent Stage AI] Erro ao iniciar servidor:', err);
+    console.error('[Silent Stage] Erro ao iniciar servidor:', err);
   });
 }

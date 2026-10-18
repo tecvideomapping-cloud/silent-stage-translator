@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Palestra Silenciosa & Tradução ao Vivo | Videomappingtech</title>
+  <title>Palestra Silenciosa & Tradução ao Vivo | Silent Stage</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root {
@@ -25,7 +25,7 @@
   <script src="/audio-clock.js"></script>
   <script src="/tts-cadence.js"></script>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
-</head>
+<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" href="/brand/silent-stage-icon-192.png" sizes="192x192"><link rel="apple-touch-icon" href="/brand/apple-touch-icon.png"><meta name="application-name" content="Silent Stage"><link rel="stylesheet" href="/brand/brand.css"></head>
 <body class="vmt-app vmt-audience bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-cyan-500 selection:text-white pb-8">
 
   <!-- Header Dinâmico com Branding do Evento -->
@@ -35,9 +35,9 @@
         <img id="eventLogoImg" src="" alt="Logo" class="h-6 max-w-[100px] object-contain">
       </div>
       <div class="flex items-center gap-2">
-        <div class="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></div>
+        <img src="/brand/silent-stage-icon-192.png" alt="Silent Stage" width="32" height="32" style="width:32px;height:32px;flex:none;border-radius:10px">
         <span id="headerTitle" class="font-bold text-sm tracking-wide bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent truncate max-w-[180px]">
-          Silent Stage AI
+          Silent Stage
         </span>
       </div>
     </div>
@@ -175,7 +175,7 @@
   </main>
 
   <footer class="mt-auto text-center text-xs text-slate-500 py-3">
-    <span>Tecnologia de Áudio por Videomappingtech</span>
+    <span>Tecnologia Silent Stage</span>
   </footer>
 
   <script>
@@ -984,7 +984,7 @@
         if ('mediaSession' in navigator) {
           navigator.mediaSession.metadata = new MediaMetadata({
             title: roomConfig?.name || 'Palestra Silenciosa',
-            artist: 'Videomappingtech Live',
+            artist: 'Silent Stage Live',
             album: 'Tradução Simultânea & Palco Silencioso'
           });
           navigator.mediaSession.playbackState = 'playing';

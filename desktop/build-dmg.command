@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Silent Stage AI - Compilador de Instalador .DMG macOS
+# Silent Stage - Compilador de Instalador .DMG macOS
 # Videomappingtech - Palco Silencioso e Tradução Simultânea com IA
 # ==============================================================================
 
@@ -9,7 +9,7 @@ cd "$DIR"
 
 clear
 echo "=========================================================="
-echo "🍏 SILENT STAGE AI - GERADOR DO INSTALADOR .DMG (MACOS)"
+echo "🍏 SILENT STAGE - GERADOR DO INSTALADOR .DMG (MACOS)"
 echo "=========================================================="
 echo ""
 

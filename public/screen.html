@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Telão de Legendas ao Vivo | Videomappingtech Stage Screen</title>
+  <title>Telão de Legendas ao Vivo | Silent Stage</title>
   <script src="https://cdn.tailwindcss.com"></script>
     <style>
     body.theme-transparent,
@@ -110,11 +110,11 @@
   <link rel="stylesheet" href="/screen-v2.css">
   <script src="/design-system.js" defer></script>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
-</head>
+<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" href="/brand/silent-stage-icon-192.png" sizes="192x192"><link rel="apple-touch-icon" href="/brand/apple-touch-icon.png"><meta name="application-name" content="Silent Stage"><link rel="stylesheet" href="/brand/brand.css"></head>
 <body class="vmt-app vmt-screen theme-lowerthird min-h-screen flex flex-col justify-between p-8 font-sans overflow-hidden select-none">
 
   <!-- Barra de Configurações (Oculta automaticamente em apresentação) -->
-  <header class="vmt-screen-masthead"><div class="vmt-brand"><span class="vmt-icon" data-icon="audio-lines"></span><span>Silent Stage AI<small>VIDEOMAPPINGTECH</small></span></div><div class="vmt-screen-actions">      <span id="roomTag" class="text-xs bg-slate-800 px-2.5 py-1 rounded-md text-slate-300 font-mono">Sala: demo</span>      <span id="liveDot" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>      <button type="button" class="vmt-btn" data-theme-toggle aria-label="Alternar tema dos controles"><span data-icon="sun-moon"></span></button>      <button onclick="toggleFullScreen()" class="bg-cyan-600 hover:bg-cyan-500 text-white text-xs px-3 py-1 rounded font-semibold transition">
+  <header class="vmt-screen-masthead"><div class="vmt-brand" aria-label="Silent Stage"><img class="silent-stage-mark" src="/brand/silent-stage-icon-192.png" width="40" height="40" alt=""><span>Silent Stage<small>ÁUDIO SEM FRONTEIRAS</small></span></div><div class="vmt-screen-actions">      <span id="roomTag" class="text-xs bg-slate-800 px-2.5 py-1 rounded-md text-slate-300 font-mono">Sala: demo</span>      <span id="liveDot" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>      <button type="button" class="vmt-btn" data-theme-toggle aria-label="Alternar tema dos controles"><span data-icon="sun-moon"></span></button>      <button onclick="toggleFullScreen()" class="bg-cyan-600 hover:bg-cyan-500 text-white text-xs px-3 py-1 rounded font-semibold transition">
         <span data-icon="maximize"></span> Tela Cheia
       </button></div></header>
   <div class="vmt-screen-editorial"><p class="vmt-screen-eyebrow">TELÃO AO VIVO</p><h1>Voz em palavras.<br>Em qualquer palco.</h1><p>Legendas em tempo real, com a composição ideal para sua apresentação.</p></div>
@@ -125,7 +125,7 @@
       <p class="text-slate-600 text-2xl font-normal italic">Aguardando início do áudio no palco...</p>
     </div>
   <div id="screenWatermarkBox" class="fixed bottom-6 right-8 z-20 pointer-events-none transition-opacity duration-300 opacity-90">
-    <img id="watermarkVMP" src="/logo_VMP.svg" alt="Video Mapping" class="h-16 w-auto filter drop-shadow-lg">
+    <img id="watermarkVMP" src="/brand/silent-stage-symbol.png" alt="Silent Stage" class="h-16 w-auto filter drop-shadow-lg">
     <img id="watermarkClient" src="" alt="Logo do Cliente" class="h-16 w-auto filter drop-shadow-lg hidden">
   </div>
   </main>
@@ -151,7 +151,7 @@
         <option value="original">Original (Transcrição)</option>
       </select></div><div class="vmt-screen-field">      <label class="text-xs text-slate-300" for="screenLogoLocalSelect">Marca:</label>
       <select id="screenLogoLocalSelect" onchange="changeScreenLogo(this.value)" class="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded border border-slate-700">
-        <option value="vmp">Video Mapping</option>
+        <option value="vmp">Silent Stage</option>
         <option value="client">Logo do Cliente</option>
         <option value="none">Ocultar Marca</option>
       </select></div><div class="vmt-screen-field"><span class="vmt-font-label">Tamanho das legendas</span>      <div class="flex items-center gap-1">
@@ -165,7 +165,7 @@
 
   <!-- Rodapé discreto -->
   <footer class="text-center py-2 opacity-30 text-xs">
-    <span>Legendas geradas em tempo real com IA • Videomappingtech</span>
+    <span>Legendas geradas em tempo real com IA • Silent Stage</span>
   </footer>
 
   <script>
