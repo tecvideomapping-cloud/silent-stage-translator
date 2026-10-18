@@ -2140,7 +2140,7 @@
 
         await startBroadcastWithStream(displayStream, 'system');
       } catch (err) {
-        if (err.name !== 'NotAllowedError') {
+        if (!['NotAllowedError','AbortError'].includes(err.name)) {
           alert('Não foi possível capturar o áudio do sistema: ' + err.message);
         }
       }
@@ -3422,4 +3422,5 @@ if (!localStorage.getItem('vmt_admin_token')) {
 }
 </script></body>
 </html>
+
 

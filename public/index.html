@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="/design-system.css">
   <link rel="stylesheet" href="/audience-v2.css">
   <script src="/design-system.js" defer></script>
+  <script src="/participant-view.js" defer></script>
   <script src="/live-captions.js"></script>
   <script src="/audio-clock.js"></script>
   <script src="/tts-cadence.js"></script>
@@ -35,7 +36,7 @@
         <img id="eventLogoImg" src="" alt="Logo" class="h-6 max-w-[100px] object-contain">
       </div>
       <div class="flex items-center gap-2">
-        <img src="/brand/silent-stage-icon-192.png" alt="Silent Stage" width="32" height="32" style="width:32px;height:32px;flex:none;border-radius:10px">
+        <img id="silentStageLogo" src="/brand/silent-stage-icon-192.png" alt="Silent Stage" width="32" height="32" style="width:32px;height:32px;flex:none;border-radius:10px">
         <span id="headerTitle" class="font-bold text-sm tracking-wide bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent truncate max-w-[180px]">
           Silent Stage
         </span>
@@ -159,6 +160,7 @@
             <span id="listenerFontSizeBadge" class="text-[11px] font-mono text-cyan-400 px-1">20px</span>
             <button type="button" onclick="changeFontSize(2)" title="Aumentar fonte" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-2.5 py-1 rounded transition">A+</button>
           </div>
+          <button id="expandCaptionsButton" type="button" aria-pressed="false" aria-controls="subtitlesSection" class="vmt-btn">Legendas em tela cheia</button>
         </div>
       </div>
 
@@ -225,10 +227,11 @@
         document.getElementById('eventTitle').innerText = room.name;
         document.title = `${room.name} | Palestra Silenciosa`;
       }
-      if (room.logo_url) {
-        document.getElementById('eventLogoImg').src = room.logo_url;
-        document.getElementById('eventLogoBox').classList.remove('hidden');
-      }
+      const eventLogo=document.getElementById('eventLogoImg'),eventLogoBox=document.getElementById('eventLogoBox'),platformLogo=document.getElementById('silentStageLogo');
+      platformLogo.hidden=false;eventLogoBox.classList.add('hidden');
+      eventLogo.onload=()=>{eventLogoBox.classList.remove('hidden');platformLogo.hidden=true;};
+      eventLogo.onerror=()=>{eventLogoBox.classList.add('hidden');platformLogo.hidden=false;};
+      if(room.logo_url)eventLogo.src=room.logo_url;else eventLogo.removeAttribute('src');
       if (room.banner_url) {
         document.getElementById('bannerImg').src = room.banner_url;
         document.getElementById('bannerContainer').classList.remove('hidden');

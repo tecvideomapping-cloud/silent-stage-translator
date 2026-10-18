@@ -49,7 +49,7 @@ if (isElectron) {
       }
     });
 
-    require('./display-media').registerDisplayMedia({window:mainWindow,cloudBase,getLocalOrigin:()=>localOrigin,desktopCapturer:require('electron').desktopCapturer,dialog:require('electron').dialog});
+    require('./display-media').registerDisplayMedia({window:mainWindow,cloudBase,getLocalOrigin:()=>localOrigin,desktopCapturer:require('electron').desktopCapturer,dialog:require('electron').dialog,openExternal:url=>require('electron').shell.openExternal(url)});
 
     // Tela de inicialização instantânea no carregamento
     const splashHtml = `

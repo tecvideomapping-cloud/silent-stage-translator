@@ -893,7 +893,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       await startBroadcastWithStream(displayStream, 'system');
     } catch (e) {
-      if (e.name !== 'NotAllowedError') {
+      if (!['NotAllowedError','AbortError'].includes(e.name)) {
         alert('Falha ao capturar som do computador: ' + e.message);
       }
     }
@@ -1148,7 +1148,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       startSampleCapture(stream, 'Saída do PC / YouTube', btnRecordSystem, true);
     } catch (e) {
-      if (e.name !== 'NotAllowedError') {
+      if (!['NotAllowedError','AbortError'].includes(e.name)) {
         alert('Não foi possível capturar o áudio do sistema: ' + e.message);
       }
       isRecordingSample = false;
@@ -1616,3 +1616,4 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById(id)?.addEventListener('change', broadcastScreenConfig);
   });
 });
+

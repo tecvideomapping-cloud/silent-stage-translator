@@ -1,4 +1,11 @@
 /* Participant — approved session story and listening surface. */
+.vmt-audience #silentStageLogo[hidden] { display:none!important; }
+.vmt-audience #expandCaptionsButton { padding:7px 10px; font-size:11px; white-space:normal; }
+.vmt-audience.captions-focused { overflow:hidden; }
+.vmt-audience.captions-focused .vmt-listener { backdrop-filter:none; -webkit-backdrop-filter:none; animation:none; transform:none; }
+.vmt-audience #subtitlesSection.captions-expanded { position:fixed; inset:0; z-index:1000; width:100%; height:100%; height:100dvh; margin:0; padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left)); display:flex; flex-direction:column; background:var(--vmt-bg); border:0; border-radius:0; box-shadow:none; }
+.vmt-audience #subtitlesSection.captions-expanded #subtitlesBox { flex:1; min-height:0; max-height:none; overflow:auto; margin-top:20px; }
+.vmt-audience #subtitlesSection.captions-expanded > div:first-child { flex:none; }
 .vmt-audience { min-height:100vh; background:var(--vmt-bg); color:var(--vmt-ink); }
 .vmt-audience > header { position:relative; min-height:88px; padding:22px max(28px,calc((100vw - 1180px)/2)); background:transparent; border-color:var(--vmt-line); gap:18px; }
 .vmt-audience #headerTitle { background:none; color:var(--vmt-ink); max-width:280px; font-size:15px; letter-spacing:-.035em; }
