@@ -23,6 +23,7 @@
   <script src="/design-system.js" defer></script>
   <script src="/live-captions.js"></script>
   <script src="/audio-clock.js"></script>
+  <script src="/tts-cadence.js"></script>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
 </head>
 <body class="vmt-app vmt-audience bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-cyan-500 selection:text-white pb-8">
@@ -133,6 +134,10 @@
           <option value="high">⚡ Forçar Qualidade Máxima (PCM Puro)</option>
         </select>
       </div>
+      <label class="flex items-center gap-3 pt-3 text-sm cursor-pointer">
+        <input id="gentlePacingToggle" type="checkbox" checked onchange="setGentlePacing(this.checked)" style="width:18px!important;height:18px!important;flex:none;accent-color:#a78bfa">
+        <span>Ajuste suave de ritmo<span class="block text-xs text-slate-400">Aproxima a tradução da fala, preservando o timbre.</span></span>
+      </label>
     </section>
 
     <!-- Área de Legendas e Transcrição Simultânea em Tempo Real -->
@@ -1002,11 +1007,27 @@
     let ttsPlaybackGeneration = 0;
     let activeTtsItem = null;
     let currentTtsObjectUrl = null;
+    const ttsCadence = new VmtTtsCadence.Controller();
+    try { ttsCadence.enabled = localStorage.getItem('vmt.gentlePacing') !== 'off'; } catch(e) {}
+    document.getElementById('gentlePacingToggle').checked = ttsCadence.enabled;
+
+    function setGentlePacing(enabled) {
+      ttsCadence.setEnabled(enabled);
+      try { localStorage.setItem('vmt.gentlePacing', enabled ? 'on' : 'off'); } catch(e) {}
+      if(currentTtsAudioEl && !enabled) currentTtsAudioEl.playbackRate = 1;
+    }
+
+    function updateTtsCadence(audio) {
+      const oldest = ttsAudioQueue[0];
+      audio.playbackRate = ttsCadence.update(oldest ? Math.max(0, performance.now()-oldest.enqueuedAt) : 0, ttsAudioQueue.length);
+    }
+
 
     function clearTtsAudioQueue() {
       // Pausing switches back to reading: retain text that was waiting for voice.
       if(activeTtsItem)renderSubtitle(activeTtsItem.text,true,activeTtsItem.lang,activeTtsItem.metadata);
       for(const item of ttsAudioQueue)renderSubtitle(item.text,true,item.lang,item.metadata);
+      ttsCadence.reset();
       ttsPlaybackGeneration++;
       for(const item of ttsAudioQueue)item.controller?.abort();
       activeTtsItem?.controller?.abort();
@@ -1124,7 +1145,7 @@
       audio.src=currentTtsObjectUrl;
       applyVoiceProfileEq(item.voice);
       audio.preservesPitch=true;audio.mozPreservesPitch=true;audio.webkitPreservesPitch=true;
-      // Speed is applied exactly once by the synthesizer, never again by backlog size.
+      // The configured voice speed is synthesized once; optional catch-up is bounded and pitch-preserving.
       audio.defaultPlaybackRate=1;audio.playbackRate=1;
       audio.volume=1;
       audio.onended=finishCurrent;
@@ -1134,6 +1155,7 @@
       const watchProgress=()=>{
         if(finished||generation!==ttsPlaybackGeneration)return;
         if(audio.ended){finishCurrent();return;}
+        updateTtsCadence(audio);
         if(audio.currentTime>lastPosition){lastPosition=audio.currentTime;lastProgressAt=Date.now();}
         if(Date.now()-lastProgressAt>20000){fallback();return;}
         ttsWatchdogTimer=setTimeout(watchProgress,1000);
