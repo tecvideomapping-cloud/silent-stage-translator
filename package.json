@@ -1,6 +1,6 @@
 {
   "name": "videomappingtech-silent-translator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Plataforma de Palestras Silenciosas e TraduÃƒÂ§ÃƒÂ£o SimultÃƒÂ¢nea com IA em Tempo Real",
   "main": "desktop/main.js",
   "scripts": {
@@ -64,6 +64,8 @@
       "server/**/*",
       "package.json",
       "!desktop/.vmt-*",
+      "!desktop/**/__pycache__/**",
+      "!desktop/speech/test_*.py",
       "!**/.env",
       "!**/*.dpapi"
     ]

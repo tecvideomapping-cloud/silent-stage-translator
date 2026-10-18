@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let analyserNode = null;
   let stageDsp = null;
   let socket = null;
+  window.addEventListener('vmt-local-speech-state',event=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'recognition_mode',mode:event.detail.active||event.detail.loading?'desktop-local':'current'}));});
   let vuAnimId = null;
 
   // VoiceStudio State
@@ -540,6 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
       socket.binaryType = 'arraybuffer';
 
       socket.onopen = () => {
+        if(window.localSpeech?.selected)socket.send(JSON.stringify({type:'recognition_mode',mode:'desktop-local'}));
         // Server authorizes the host during the handshake using its session cookie.
         broadcastAudioMeta();
         broadcastScreenConfig();
@@ -725,6 +727,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const numSamples = targetFloats.length;
+        window.localSpeech?.feed(targetFloats,audioContext.sampleRate);
         const pcm16 = new Int16Array(numSamples);
         for (let i = 0; i < numSamples; i++) {
           const s = Math.max(-1, Math.min(1, targetFloats[i]));
@@ -775,6 +778,7 @@ document.addEventListener('DOMContentLoaded', () => {
       };
 
       isBroadcasting = true;
+      await window.localSpeech?.begin(event=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'speech_transcript',...event}));},'pt-BR');
 
       const btn = document.getElementById('btnToggleBroadcast');
       const badge = document.getElementById('liveStatusBadge');
@@ -798,6 +802,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function stopBroadcastCleanly() {
+    window.localSpeech?.end();
     isBroadcasting = false;
 
     if (scriptProcessor) {

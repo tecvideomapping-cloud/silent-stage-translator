@@ -1202,13 +1202,13 @@ async function handleConnection(ws,req){
       }
 
       // Se o Host já estiver transcrevendo nativamente pelo navegador, ignora STT secundário
-      if (ws.hasHostSpeechSTT&&!aiPipeline.useStreaming(roomId)) {
+      if (ws.localRecognition || (ws.hasHostSpeechSTT&&!aiPipeline.useStreaming(roomId))) {
         return;
       }
 
       // Feed frames synchronously in arrival order; translation reads room settings separately.
       let pcm;try{ws.sttDecoder??={};pcm=require('./audio-codec').decodeForStt(data,ws.sttDecoder)}catch{return;}
-      aiPipeline.feedAudio(roomId,pcm,ws.speechRoom?.source_language||'pt-BR',event=>processRecognizedSpeech(roomId,ws,event));
+      aiPipeline.feedAudio(roomId,pcm,ws.speechRoom?.source_language||'pt-BR',event=>ws.localRecognition?undefined:processRecognizedSpeech(roomId,ws,event));
 
       return;
     }
@@ -1216,7 +1216,7 @@ async function handleConnection(ws,req){
     // 2. Mensagens JSON
     try {
       const msg = JSON.parse(data.toString());
-      const hostMessages=['audio_meta','speech_transcript','set_screen_lang','speaker_voice_profile'];
+      const hostMessages=['audio_meta','speech_transcript','set_screen_lang','speaker_voice_profile','recognition_mode'];
       if(hostMessages.includes(msg.type)&&ws.role!=='host')return;
       if(msg.type==='speech_transcript'&&(typeof msg.text!=='string'||msg.text.length>4000))return;
       if(managed&&msg.type==='speech_transcript'&&!await commerce.consumeSocket(managed)){ws.close(1008,'As horas de transmissão foram utilizadas.');return;}
@@ -1238,10 +1238,15 @@ async function handleConnection(ws,req){
             client.send(JSON.stringify(msg));
           }
         }
+      } else if (msg.type === 'recognition_mode') {
+        ws.localRecognition=msg.mode==='desktop-local';
+        if(ws.localRecognition)aiPipeline.closeSession(roomId);
       } else if (msg.type === 'speech_transcript') {
-        if(aiPipeline.useStreaming(roomId))return;
+        if(aiPipeline.useStreaming(roomId)&&!ws.localRecognition)return;
         ws.hasHostSpeechSTT=true;
-        processRecognizedSpeech(roomId,ws,{text:msg.text,isFinal:msg.isFinal===true,sourceLang:msg.sourceLang,source:'browser'}).catch(()=>{});
+        const local=msg.source==='desktop-local';
+        const safeId=value=>typeof value==='string'&&/^[a-zA-Z0-9:_-]{1,160}$/.test(value)?value:null;
+        processRecognizedSpeech(roomId,ws,{text:msg.text,isFinal:msg.isFinal===true,sourceLang:msg.sourceLang,source:local?'desktop-local':'browser',speakerId:local&&Number.isInteger(msg.speakerId)&&msg.speakerId>=0&&msg.speakerId<10000?msg.speakerId:null,turnId:local?safeId(msg.turnId):null,segmentId:local?safeId(msg.segmentId):null}).catch(()=>{});
       } else if (msg.type === 'set_screen_lang') {
         // Administrador/Host define remotamente o idioma, fundo chroma/preto e logo de todos os telões da sala
         for (const client of roomClients) {

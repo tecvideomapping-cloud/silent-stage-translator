@@ -392,6 +392,7 @@ class AIPipeline {
     const dg = this.sttSockets.get(roomId);
     this.roomContextMemory.delete(roomId);
     if (dg) {
+      dg.intentionalClose=true;
       try { dg.close(); } catch (e) {}
       this.sttSockets.delete(roomId);
     }

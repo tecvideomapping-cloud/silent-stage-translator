@@ -14,6 +14,8 @@
   <script src="/stage-studios.js" defer></script>
   <script src="/design-system.js" defer></script>
   <script src="/live-captions.js"></script>
+  <link rel="stylesheet" href="/local-speech.css">
+  <script src="/local-speech.js"></script>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
 </head>
 <body class="vmt-app vmt-host">
@@ -1700,14 +1702,20 @@
     function applyRecognitionStatus(status){
       const previous=window.serverSpeechRecognition;window.serverSpeechRecognition=status?.provider==='deepgram';
       if(window.serverSpeechRecognition){if(window.speechEngine?.isActive)window.speechEngine.stop();const badge=document.getElementById('transcriptionIntegrityBadge');if(badge)badge.textContent='Reconhecimento com locutores ativo';}
-      else if(previous&&isBroadcasting)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
+      else if(previous&&isBroadcasting&&!window.localSpeech?.selected)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
     }
+    window.addEventListener('vmt-local-speech-state',event=>{
+      if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'recognition_mode',mode:event.detail.active||event.detail.loading?'desktop-local':'current'}));
+      if(event.detail.active||event.detail.loading)window.speechEngine?.stop();
+      else if(isBroadcasting&&!window.serverSpeechRecognition)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
+    });
     function connectHostWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=host`;
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
+        if(window.localSpeech?.selected)socket.send(JSON.stringify({type:'recognition_mode',mode:'desktop-local'}));
         document.getElementById('connStatus').className = 'text-xs bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 px-3 py-1 rounded-full font-medium';
         document.getElementById('connStatus').innerText = '● Online (Sala ' + roomId + ')';
         broadcastAudioMeta();
@@ -1732,7 +1740,7 @@
               if (el) el.innerText = data.text;
             }
           } else if (data.type === 'subtitle') {
-            if(window.serverSpeechRecognition&&window.speechEngine){if(data.isFinal)window.speechEngine.appendConfirmed(data.text,data);else window.speechEngine.updateInterim(data.text);}
+            if((window.serverSpeechRecognition||window.localSpeech?.selected)&&window.speechEngine){if(data.isFinal)window.speechEngine.appendConfirmed(data.text,data);else window.speechEngine.updateInterim(data.text);}
 
           }
         } catch (e) {}
@@ -1747,6 +1755,7 @@
     }
 
     function stopActiveBroadcastCleanly() {
+      window.localSpeech?.end();
       isBroadcasting = false;
       if (window.speechEngine) {
         window.speechEngine.stop();
@@ -1980,6 +1989,7 @@
           }
 
           const sourceRate = audioContext.sampleRate;
+          window.localSpeech?.feed(inputData,sourceRate);
           const targetRate = currentAudioProfile.sampleRate;
           const codec = currentAudioProfile.codec;
 
@@ -2019,7 +2029,7 @@
 
           // Se estiver capturando Saída de Áudio do PC ou Arquivo e o WebSpeech local não captou pelo mic nos últimos 3.2s,
           // envia fatias WAV de 3s para transcrição digital no servidor (/api/stt-chunk)
-          if (!window.serverSpeechRecognition && (sourceMode === 'system' || sourceMode === 'file') && currentRmsLevel > 0.012) {
+          if (!window.localSpeech?.selected && !window.serverSpeechRecognition && (sourceMode === 'system' || sourceMode === 'file') && currentRmsLevel > 0.012) {
             const nativeIdleMs = Date.now() - (window.speechEngine?.lastNativeResultTime || 0);
             if (nativeIdleMs > 3200) {
               digitalPcmChunks.push(new Int16Array(pcm16));
@@ -2100,7 +2110,8 @@
 
         // Passa a trilha de áudio capturada para o reconhecedor (suporte nativo MediaStreamTrack no Chrome + microfone)
         const trackForStt = (sourceMode === 'system' || sourceMode === 'file') ? audioTracks[0] : null;
-        if(!window.serverSpeechRecognition)window.speechEngine.start(trackForStt);
+        await window.localSpeech?.begin(event=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'speech_transcript',...event}));},document.getElementById('sourceLang')?.value||'pt-BR');
+        if(!window.localSpeech?.selected&&!window.serverSpeechRecognition)window.speechEngine.start(trackForStt);
       } catch (err) {
         alert('Erro ao capturar o dispositivo de áudio: ' + err.message);
       }

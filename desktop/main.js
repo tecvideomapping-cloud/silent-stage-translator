@@ -21,6 +21,9 @@ if (isElectron) {
   if(process.env.VMT_SMOKE_TEST==='1'&&process.env.VMT_TEST_PROFILE)app.setPath('userData',process.env.VMT_TEST_PROFILE);
   let mainWindow = null;
   let screenWindow = null;
+  let localOrigin=null;
+  const localSpeech=require('./speech-ipc').registerSpeechIpc({ipcMain,cloudBase,getWindow:()=>mainWindow,getLocalOrigin:()=>localOrigin});
+  app.on('before-quit',()=>localSpeech.stop());
 
   async function createMainWindow() {
     mainWindow = new BrowserWindow({
@@ -80,6 +83,7 @@ if (isElectron) {
       process.env.VMT_LICENSE_PATH=path.join(app.getPath('userData'),'license.json');
       const { startServer } = require('../server/index');
       const port = await startServer(process.env.PORT || 3000);
+      localOrigin=`http://localhost:${port}`;
       const appUrl=process.env.VMT_LOCAL_ONLY==='1'?`http://localhost:${port}/desktop.html`:cloudBase+'/customer.html';
 
       // Carrega a interface da Workstation Pro
@@ -123,9 +127,11 @@ if (isElectron) {
     });
 
     mainWindow.on('closed', () => {
+      localSpeech.stop();
       mainWindow = null;
       if (screenWindow) screenWindow.close();
     });
+    mainWindow.webContents.on('did-start-navigation',(_event,_url,inPlace,isMainFrame)=>{if(isMainFrame&&!inPlace)localSpeech.stop();});
   }
 
   function createProjectorWindow(displayIndex = 1) {
