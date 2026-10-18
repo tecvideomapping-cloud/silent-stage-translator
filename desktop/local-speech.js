@@ -23,7 +23,10 @@ class LocalSpeech extends EventEmitter {
     this.session=crypto.randomUUID();this.generation++;this.parts=[];this.samples=0;this.silence=0;this.speaking=false;this.preroll=[];this.prerollSamples=0;this.pending=0;this.sequence=0;this.inputSeconds=0;
     const generation=this.generation;
     this.report('loading','Carregando os modelos locais…');
-    const child=this.child=this.spawn(this.python,['-u',path.join(__dirname,'speech','worker.py'),'--model',this.model,'--language',this.language,...(this.diarization?['--diarization']:[])],{windowsHide:true,stdio:['pipe','pipe','pipe'],env:{...process.env,PYTHONUTF8:'1',HF_HUB_DISABLE_TELEMETRY:'1',PYANNOTE_METRICS_ENABLED:'0'}});
+    const token=this.diarization?require('./speech-credentials').loadToken():'';
+    // Python cannot read Electron's virtual ASAR filesystem.
+    const workerPath=path.join(__dirname.replace(/app\.asar(?=[\\/])/,'app.asar.unpacked'),'speech','worker.py');
+    const child=this.child=this.spawn(this.python,['-u',workerPath,'--model',this.model,'--language',this.language,...(this.diarization?['--diarization']:[])],{windowsHide:true,stdio:['pipe','pipe','pipe'],env:{...process.env,...(token?{HF_TOKEN:token}:{}),PYTHONUTF8:'1',HF_HUB_DISABLE_TELEMETRY:'1',PYANNOTE_METRICS_ENABLED:'0'}});
     const fail=message=>{if(this.generation===generation&&this.child===child)this.stop(message);};
     // Dependency diagnostics may contain paths/tokens. Never forward stderr.
     child.stderr.on('data',()=>{});

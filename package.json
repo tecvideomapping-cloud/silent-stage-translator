@@ -19,6 +19,7 @@
   "build": {
     "appId": "com.videomappingtech.silentstage",
     "productName": "Silent Stage AI",
+    "asarUnpack": ["desktop/speech/worker.py"],
     "directories": {
       "output": "dist"
     },

@@ -27,6 +27,8 @@ Não é requisito da transcrição. Para habilitar:
 4. Execute o instalador com `-Diarization` e reinicie o aplicativo.
 5. Marque **Separar locutores (Pyannote)** antes de ativar o motor.
 
+No Windows, a integração também lê a credencial do arquivo `.silentstageai/huggingface.encrypted` no perfil do usuário, protegido pelo armazenamento seguro do Electron. A configuração desse arquivo é uma operação administrativa local; não há endpoint ou campo web que leia a chave. A variável `HF_TOKEN`, se existir no ambiente do aplicativo, tem precedência.
+
 O Pyannote executa na CPU em uma janela de até 30 segundos. Isso pode aumentar o atraso. Os rótulos entre janelas são associados pelo áudio em comum. Quando um locutor retorna depois de sair do contexto, pode receber outro número. Sobreposição ambígua fica sem rótulo; não inferimos identidade ou gênero pelo texto ou pelo tom da voz.
 
 ## Escopo e distribuição
