@@ -15,8 +15,8 @@
   function action(text, fn, primary=false) { const b=el('button','vmt-btn'+(primary?' vmt-primary':''),text); b.type='button'; b.addEventListener('click', fn); return b; }
   function link(text, url, cls='vmt-btn') { const href=safeUrl(url); if(!href)return null; const a=el('a',cls,text); a.href=href; a.target='_blank'; a.rel='noopener noreferrer'; return a; }
   function append(parent, ...nodes) { nodes.filter(Boolean).forEach(n=>parent.append(n)); return parent; }
-  function showTab(tab) { const events=tab==='events'; $('eventsSection').hidden=!events; $('ordersSection').hidden=events; $('eventsTab').setAttribute('aria-pressed',String(events)); $('ordersTab').setAttribute('aria-pressed',String(!events)); }
-  function unauthorized() { localStorage.removeItem("vmt_customer_token"); state.customer=null; state.csrfToken=''; state.events=[]; state.orders=[]; state.accountBalance=null; $("accountBalance").replaceChildren(); $("accountBalance").hidden=true; if($("createEventDialog").open)$("createEventDialog").close(); state.selected=null; $('eventsList').replaceChildren(); $('ordersList').replaceChildren(); if($('eventDialog').open)$('eventDialog').close(); if($('qrDialog').open)$('qrDialog').close(); $('dashboardSection').hidden=true; $('logoutButton').hidden=true; $('authSection').hidden=false; setMode('login'); }
+  function showTab(tab) { document.querySelectorAll('[data-workspace-tab]').forEach(button=>{if(button.dataset.workspaceTab===tab)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}); const events=tab==='events'; $('eventsSection').hidden=!events; $('ordersSection').hidden=events; $('eventsTab').setAttribute('aria-pressed',String(events)); $('ordersTab').setAttribute('aria-pressed',String(!events)); }
+  function unauthorized() { document.body.classList.remove("workspace-open"); $("customerSidebar").hidden=true; $("workspaceStudio").hidden=true; localStorage.removeItem("vmt_customer_token"); state.customer=null; state.csrfToken=''; state.events=[]; state.orders=[]; state.accountBalance=null; $("accountBalance").replaceChildren(); $("accountBalance").hidden=true; if($("createEventDialog").open)$("createEventDialog").close(); state.selected=null; $('eventsList').replaceChildren(); $('ordersList').replaceChildren(); if($('eventDialog').open)$('eventDialog').close(); if($('qrDialog').open)$('qrDialog').close(); $('dashboardSection').hidden=true; $('logoutButton').hidden=true; $('authSection').hidden=false; setMode('login'); }
   async function api(path, { method='GET', data, headers={}, raw, quietAuth=false }={}) {
     const mutation=method!=='GET';
     const init={method,credentials:'same-origin',headers:{'Accept':'application/json',...headers}}; const cTok=localStorage.getItem('vmt_customer_token'); if(cTok)init.headers['X-Session-Token']=cTok;
@@ -59,6 +59,7 @@
     }catch(err){feedback('authFeedback',err.message,'error');}finally{b.disabled=false;}
   }
   async function openDashboard() {
+    document.body.classList.add('workspace-open'); $('customerSidebar').hidden=false;
     $('authSection').hidden=true;$('dashboardSection').hidden=false;$('logoutButton').hidden=false;pageStatus();
     $('customerGreeting').textContent=state.customer?.name?'Bem-vindo(a), '+state.customer.name+'. Seu próximo encontro começa aqui.':'Seu próximo encontro começa aqui.';
     if(returnOrder){showTab('orders');feedback('dashboardFeedback','Confira abaixo a atualização do seu pedido. A confirmação do pagamento pode levar alguns instantes.');}
@@ -69,7 +70,7 @@
     const results=await Promise.allSettled([api('/events'),api('/orders')]);
     if(!state.customer){state.refreshing=false;$('refreshButton').disabled=false;return;}
     const errors=[];
-    if(results[0].status==='fulfilled'){state.events=Array.isArray(results[0].value.events)?results[0].value.events:[];state.accountBalance=results[0].value.accountBalance||null;renderAccountBalance();renderEvents();}else errors.push('Eventos: '+results[0].reason.message);
+    if(results[0].status==='fulfilled'){state.events=Array.isArray(results[0].value.events)?results[0].value.events:[];state.accountBalance=results[0].value.accountBalance||null;renderAccountBalance();renderEvents();updateWorkspaceStudio();}else errors.push('Eventos: '+results[0].reason.message);
     if(results[1].status==='fulfilled'){state.orders=Array.isArray(results[1].value.orders)?results[1].value.orders:[];renderOrders();}else errors.push('Pedidos: '+results[1].reason.message);
     if(errors.length)feedback('dashboardFeedback',errors.join(' '),'error');else if(!returnOrder)feedback('dashboardFeedback');
     state.refreshing=false;$('refreshButton').disabled=false;
@@ -78,6 +79,8 @@
   const numeric=value=>Number.isFinite(Number(value))?Math.max(0,Number(value)):0;
   function hoursLabel(seconds){const mins=Math.ceil(numeric(seconds)/60);return Math.floor(mins/60)+'h '+String(mins%60).padStart(2,'0')+'min';}
   function limitLabel(value){return value===null||value===undefined?'Não informado':String(value);}
+  function updateWorkspaceStudio(){const event=state.events.find(event=>String(event.id)===params.get('room'));const studio=$('workspaceStudio');studio.hidden=!event;if(event){studio.href=event.hostUrl;$('workspaceHome').href='/customer.html?room='+encodeURIComponent(event.id);}}
+  document.querySelectorAll('[data-workspace-tab]').forEach(button=>button.addEventListener('click',()=>showTab(button.dataset.workspaceTab)));
   function renderAccountBalance(){
     const box=$('accountBalance'),balance=state.accountBalance;box.replaceChildren();box.hidden=!balance;if(!balance)return;
     append(box,el('span','vmt-eyebrow','SALDO DA SUA CONTA'),el('h2','',hoursLabel(balance.remainingSeconds)+' disponíveis'),el('p','vmt-muted',hoursLabel(balance.totalSeconds)+' contratadas · '+hoursLabel(balance.usedSeconds)+' utilizadas'),el('p','vmt-muted','Até '+limitLabel(balance.maxRooms)+' eventos · '+limitLabel(balance.maxParticipants)+' participantes simultâneos'));
@@ -204,4 +207,5 @@
   }
   init();
 })();
+
 

@@ -47,9 +47,6 @@
         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
         <span id="hostOnlineCountText">0 ouvintes online</span>
       </div>
-      <a href="/admin.html" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-slate-300 transition">
-        ⚙️ Painel Admin
-      </a>
       <a id="openScreenBtn" href="/screen.html?room=palco1" target="_blank"
         class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-slate-300 flex items-center gap-1.5 transition">
         <span>📺</span> Telão
@@ -3417,7 +3414,7 @@
   </script>
 <script>
 if (!localStorage.getItem('vmt_admin_token')) {
- document.querySelectorAll('a[href="/admin.html"]').forEach(a=>a.href='/customer.html');
+ document.querySelectorAll('a[href="/admin.html"]').forEach(a=>a.href='/customer.html?room='+encodeURIComponent(roomId));
  document.querySelectorAll('[onclick*="TtsKeys"],[onclick*="ttsKeys"]').forEach(b=>b.hidden=true);
 }
 </script></body>
