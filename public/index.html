@@ -1111,7 +1111,7 @@
     async function playNextTtsAudio() {
       if(isTtsPlaying)return;
       const item=ttsAudioQueue.shift();
-      if(!item){currentTtsAudioEl=null;return;}
+      if(!item){currentTtsAudioEl=null;ttsCadence.reset();return;}
       if(!isPlaying||item.lang!==currentChannel)return;
       const generation=ttsPlaybackGeneration;
       isTtsPlaying=true;
@@ -1151,11 +1151,11 @@
       applyVoiceProfileEq(item.voice);
       audio.preservesPitch=true;audio.mozPreservesPitch=true;audio.webkitPreservesPitch=true;
       // The configured voice speed is synthesized once; optional catch-up is bounded and pitch-preserving.
-      audio.defaultPlaybackRate=1;audio.playbackRate=1;
+      audio.defaultPlaybackRate=1;audio.playbackRate=ttsCadence.enabled?ttsCadence.rate:1;
       audio.volume=1;
       audio.onended=finishCurrent;
       audio.onerror=fallback;
-      audio.onplaying=()=>{if(generation===ttsPlaybackGeneration&&!finished)renderSubtitle(item.text,true,item.lang,item.metadata);};
+      audio.onplaying=()=>{if(generation===ttsPlaybackGeneration&&!finished){audio.playbackRate=ttsCadence.enabled?ttsCadence.rate:1;renderSubtitle(item.text,true,item.lang,item.metadata);}};
       let lastPosition=-1,lastProgressAt=Date.now();
       const watchProgress=()=>{
         if(finished||generation!==ttsPlaybackGeneration)return;
