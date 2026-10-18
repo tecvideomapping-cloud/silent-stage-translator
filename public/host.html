@@ -38,6 +38,7 @@
         <h1 class="font-bold text-lg bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
           Workspace / Estúdio ao vivo
         </h1>
+        <p id="hostTranslationStatus" role="status" aria-live="polite" class="text-xs text-amber-300" hidden></p>
         <p id="eventSubtitle" class="text-xs text-slate-400">Carregando informações da sessão...</p>
       </div>
     </div>
@@ -1728,6 +1729,8 @@
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          if(data.type==='service_warning'){const warning=document.getElementById('hostTranslationStatus');warning.textContent=data.message;warning.hidden=false;return;}
+          if(data.type==='subtitle_translated'&&data.isFinal!==false)document.getElementById('hostTranslationStatus').hidden=true;
           if(data.type==='service_warning'){const status=document.getElementById('connStatus');if(status)status.textContent=data.message;return;}
           if (data.type === 'speech_recognition') { applyRecognitionStatus(data); }
           else if (data.type === 'connected') { applyRecognitionStatus(data.speechRecognition); broadcastAudioMeta(); broadcastSpeakerVoiceProfile(); fetchRoomStats(); }

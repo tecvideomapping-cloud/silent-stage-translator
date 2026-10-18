@@ -3,6 +3,7 @@
   const $ = id => document.getElementById(id);
   const state = { customer:null, csrfToken:'', events:[], orders:[], mode:'login', selected:null, assets:{}, uploads:0, refreshing:false, saving:false };
   const params = new URLSearchParams(location.search);
+  if(window.desktopHost?.isElectron)$('desktopAdminLogin').hidden=false;
   let resetToken = params.get('reset') || '';
   const returnOrder = params.get('order');
   const authFields = $('authForm').elements;
@@ -85,11 +86,11 @@
       if(banner){cover.classList.add('has-banner');cover.style.backgroundImage='linear-gradient(0deg,rgba(15,12,30,.8),rgba(15,12,30,.12)),url('+JSON.stringify(banner)+')';}
       const top=el('div','cover-meta');top.append(el('span','cover-label','SILENT STAGE'));const logo=safeUrl(event.logo_url);if(logo){const img=el('img','event-logo');img.src=logo;img.alt='Logo de '+event.name;img.loading='lazy';img.addEventListener('error',()=>img.hidden=true);top.append(img);}append(cover,top,el('h3','',event.name||'Evento'));
       const content=el('div','event-content'),meta=el('div','event-meta-row');append(meta,el('span','event-plan',event.plan?.name||'Plano do evento'),el('span','customer-badge'+(event.published?' live':''),event.published?'Publicado':'Não publicado'));
-      const balance=el('div','event-balance'),remaining=el('div');append(remaining,el('strong','balance-number',hoursLabel(event.remainingSeconds)),el('span','balance-label','de transmissão restantes'));
+      const balance=el('div','event-balance'),remaining=el('div');append(remaining,el('strong','balance-number',hoursLabel(event.remainingSeconds)),el('span','balance-label',event.legacy?'de saldo contratual':'de transmissão restantes'));
       const limits=el('div','event-limits');append(limits,el('div','',limitLabel(event.plan?.hours)+' horas contratadas'),el('div','',event.plan?.maxParticipants==null?'Participantes ilimitados':'Até '+limitLabel(event.plan.maxParticipants)+' participantes'),el('div','','Até '+limitLabel(event.plan?.maxLanguages)+' idiomas'));append(balance,remaining,limits);
       append(content,meta,balance);
       if(event.status){const status=el('p','event-note','Situação: '+statusName(event.status));content.append(status);}
-      const edit=action('Personalizar evento',()=>openEditor(event),true);edit.disabled=['refunded','charged_back'].includes(event.status);const actions=el('div','event-actions');actions.append(edit);content.append(actions);
+      const edit=action('Personalizar evento',()=>openEditor(event),true);edit.disabled=['refunded','charged_back'].includes(event.status);const actions=el('div','event-actions');if(event.legacy)actions.append(el('p','event-note','Configuração gerenciada pela equipe.'));else actions.append(edit);content.append(actions);
       const participantUrl=safeUrl(event.participantUrl);
       if(participantUrl){const box=el('div','participant-box');const label=el('label','','Link dos participantes');const input=el('input');input.value=participantUrl;input.readOnly=true;input.setAttribute('aria-label','Link dos participantes de '+event.name);input.addEventListener('focus',()=>input.select());label.append(input);box.append(label);const controls=el('div','participant-controls');append(controls,action('Copiar link',()=>copy(participantUrl)),action('QR code',()=>openQr(event)),link('Abrir sala',participantUrl));box.append(controls);content.append(box);}
       const footer=el('div','event-footer'),tools=el('div','event-actions');append(tools,
@@ -98,7 +99,7 @@
         link('Abrir projeção',event.screenUrl),
         link('📄 Ata (.TXT)', `/api/rooms/${encodeURIComponent(event.id)}/export?format=txt`),
         link('🎬 Legendas (.SRT)', `/api/rooms/${encodeURIComponent(event.id)}/export?format=srt`)
-      );const publish=action(event.published?'Despublicar':'Publicar evento',()=>publishEvent(event,publish));publish.classList.add('publish-button');publish.disabled=['expired','refunded','charged_back'].includes(event.status);append(footer,tools,publish);content.append(footer);
+      );const publish=action(event.published?'Despublicar':'Publicar evento',()=>publishEvent(event,publish));publish.classList.add('publish-button');publish.disabled=['expired','refunded','charged_back'].includes(event.status);append(footer,tools,event.legacy?null:publish);content.append(footer);
       if(!event.published)content.append(el('p','event-note','Publique quando a identidade e os idiomas estiverem prontos para seus participantes.'));
       append(card,cover,content);list.append(card);
     });

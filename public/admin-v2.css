@@ -17,3 +17,10 @@
 @media(max-width:580px){#eventsGrid{grid-template-columns:1fr!important}.admin-main{gap:25px}.admin-page-intro h1{font-size:28px}.admin-main section>div:first-child{flex-wrap:wrap;gap:14px}.admin-main section>div:first-child>div>div{flex-wrap:wrap;gap:8px}.admin-event-art{height:188px}.admin-event-art strong{font-size:30px}.admin-main h2{font-size:20px!important}.admin-breadcrumb-divider{margin:0 9px}.admin-topbar{font-size:10px}.admin-theme{padding:8px 10px!important}.vmt-admin [id$="Modal"]>div{padding:20px!important}.admin-navigation button{flex:0 0 auto}.admin-count{display:none}.admin-account-actions button{min-width:55px;font-size:9px}.admin-user p:first-child{font-size:10px}.admin-avatar{width:28px;height:28px}.admin-user{gap:7px}}
 @media(prefers-reduced-motion:reduce){.vmt-admin *{animation:none!important;transition:none!important}}
 @media(max-width:580px){.vmt-admin .admin-navigation{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible;gap:5px}.vmt-admin .admin-navigation button{width:100%;min-width:0;white-space:normal}.vmt-admin input:not([type="checkbox"]):not([type="color"]),.vmt-admin select,.vmt-admin textarea{font-size:16px!important}}
+
+/* Client management: readable controls and compact tabs in both themes. */
+.vmt-admin #clientModal :is(input:not([type="checkbox"]),select,textarea){color:var(--vmt-ink)!important;background-color:var(--vmt-input)!important;-webkit-text-fill-color:var(--vmt-ink);}
+.vmt-admin #clientModal :is(input,select,textarea):disabled{opacity:.55;}
+.vmt-admin #clientModal [id^="tabBtnClient"]{flex:1;min-width:0;justify-content:center;white-space:nowrap;font-size:12px;padding:12px 8px;}
+.vmt-admin #clientModal [id^="tabBtnClient"] [data-icon]{width:16px;flex:none;}
+@media(max-width:540px){.vmt-admin #clientModal [id^="tabBtnClient"]{gap:5px;font-size:11px;padding:12px 4px;}.vmt-admin #clientModal [id^="tabBtnClient"] [data-icon]{display:none;}}

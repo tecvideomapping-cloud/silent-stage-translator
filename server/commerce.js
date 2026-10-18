@@ -46,7 +46,8 @@ class Commerce {
  readiness(){return {paymentConfigured:this.provider.configured,emailConfigured:this.mailer.configured,databaseConfigured:this.store.persistent&&!!this.healthy,publicUrlConfigured:!!this.baseUrl()};}
  checkoutAvailable(){return Object.values(this.readiness()).every(Boolean);}
   async readyOrFail(){await this.ready;if(!this.healthy)throw fail(503,'Serviço temporariamente indisponível. Nenhuma alteração foi confirmada.');}
- async session(req){const token=tokenFrom(req);if(!/^[a-f0-9]{64}$/.test(token))return null;const session=await this.store.get('session',sha(token));if(!session||session.expiresAt<Date.now())return null;const customer=await this.store.get('customer',session.customerId);if(!customer||customer.passwordVersion!==session.passwordVersion)return null;return {session,customer};}
+ async session(req){const token=tokenFrom(req);if(!/^[a-f0-9]{64}$/.test(token))return null;const session=await this.store.get('session',sha(token));if(!session||session.expiresAt<Date.now())return null;const customer=await this.store.get('customer',session.customerId);if(!customer||customer.passwordVersion!==session.passwordVersion)return null;if(!await this.clientAccessAllowed(customer))return null;return {session,customer};}
+ async clientAccessAllowed(customer){if(!customer.legacyClientId)return true;const client=await require('./db').getClient(customer.legacyClientId);return !!client&&client.status==='active'&&['active','trial'].includes(client.license_status)&&(!client.license_expires_at||Date.parse(client.license_expires_at)>Date.now());}
  async requireSession(req,res,next){try{await this.readyOrFail();const auth=await this.session(req);if(!auth)throw fail(401,'Entre na sua área para continuar.');req.customer=auth.customer;req.customerSession=auth.session;next();}catch(e){next(e);}}
  async issueSession(tx,customer){const token=crypto.randomBytes(32).toString('hex');const session={id:sha(token),customerId:customer.id,csrfToken:crypto.randomBytes(24).toString('hex'),passwordVersion:customer.passwordVersion,expiresAt:Date.now()+7*86400000};await tx.put('session',session.id,session);return {token,session};}
  setCookie(res,token,req){const isHttps=Boolean(req?.secure||this.baseUrl());res.cookie(cookieName,token,{httpOnly:true,secure:isHttps,sameSite:'lax',maxAge:7*86400000,path:'/'});res.setHeader('Cache-Control','no-store');}
@@ -65,9 +66,10 @@ class Commerce {
  }
  async afterEvent(event){this.legacy.invalidateRoom?.(event.id);if(!this.store.persistent&&this.legacy.saveRoom)await this.legacy.saveRoom(this.roomFromEvent(event));}
  async managedEvent(id){await this.readyOrFail();return this.store.get('event',id);}
+ async isLegacyOwner(req,room){if(!room?.client_id)return false;const auth=await this.session(req);return !!auth&&Number(auth.customer.legacyClientId)===Number(room.client_id);}
  async isOwner(req,event){const auth=await this.session(req);return auth?.customer.id===event.customerId;}
  async checkEventAccess(req,id,{operator=false,admin=false}={}){
-  const event=await this.managedEvent(id);if(!event){if(String(id).startsWith('evt-'))throw fail(404,'Evento não encontrado.');return null;}
+  const event=await this.managedEvent(id);if(!event){if(String(id).startsWith('evt-'))throw fail(404,'Evento não encontrado.');if(operator&&await this.isLegacyOwner(req,await require('./db').getRoom(id)))return {legacy:true,owner:true};return null;}
   const order=await this.store.get('order',event.orderId);if(order?.status!=='paid'||event.revoked)throw fail(403,'O acesso a este evento não está ativo.');
   const owner=admin||await this.isOwner(req,event);
   if(operator&&!owner)throw fail(403,'Acesso reservado ao responsável pelo evento.');
@@ -76,7 +78,7 @@ class Commerce {
   return {event,order,owner};
  }
  async acquireSocket(req,id,role,channel,admin=false){
-  const access=await this.checkEventAccess(req,id,{operator:role==='host',admin});if(!access)return null;
+  const access=await this.checkEventAccess(req,id,{operator:role==='host',admin});if(!access||access.legacy)return null;
   const {event,order}=access;
   if(!['original','text',...event.target_languages].includes(channel))throw fail(403,'Este canal não está disponível no evento.');
   const leaseId=uuid();
@@ -208,7 +210,17 @@ class Commerce {
    let customer = mapping ? await this.store.get('customer', mapping.customerId) : null;
    const password = req.body?.password;
    let valid = customer && typeof password === 'string' && password.length<=128 && await passwordMatches(password, customer.passwordHash);
+   // Older administrative registrations may not have a portal record yet.
+   if(!customer&&typeof password==='string'&&password.length<=128){
+    const legacy=await require('./db').getClientByEmail(rawAddress);
+    const hash=legacy?.password_hash?.startsWith('scrypt:')?`scrypt:${legacy.password_salt}:${legacy.password_hash.slice(7)}`:null;
+    if(hash&&await passwordMatches(password,hash)){
+     customer=await this.store.transaction(async tx=>{const existing=await tx.get('email',rawAddress);if(existing)return tx.get('customer',existing.customerId);const record={id:uuid(),legacyClientId:legacy.id,name:legacy.name||legacy.company,email:rawAddress,company:legacy.company||'',phone:legacy.phone||'',passwordHash:hash,passwordVersion:1,createdAt:now()};await tx.put('customer',record.id,record);await tx.put('email',rawAddress,{customerId:record.id});return record;});
+     valid=customer&&await passwordMatches(password,customer.passwordHash);
+    }
+   }
    if (!valid) throw fail(401, 'E-mail ou senha inválidos.');
+   if(!await this.clientAccessAllowed(customer))throw fail(403,'O acesso deste cliente está suspenso ou a licença expirou. Entre em contato com o suporte.');
    const result = await this.store.transaction(tx => this.issueSession(tx, customer));
    this.setCookie(res, result.token, req);
    res.json({ customer: publicCustomer(customer), token: result.token, csrfToken: result.session.csrfToken });
@@ -250,7 +262,11 @@ class Commerce {
    if((req.body?.type||req.query.type)!=='payment')return res.sendStatus(200);
    const payment=await this.provider.getPayment(id);if(String(payment.id)!==String(id))throw fail(422,'Pagamento inválido.');await this.processPayment(payment);res.sendStatus(200);this.drainOutbox().catch(()=>{});
   }));
-  router.get('/customer/events',auth,wrap(async(req,res)=>{const events=await this.store.list('event',{customerId:req.customer.id});res.json({events:await Promise.all(events.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(e=>this.eventView(e)))});}));
+  router.get('/customer/events',auth,wrap(async(req,res)=>{
+   const events=await this.store.list('event',{customerId:req.customer.id});const views=await Promise.all(events.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(e=>this.eventView(e)));
+   if(req.customer.legacyClientId){const db=require('./db'),client=await db.getClient(req.customer.legacyClientId);for(const room of await db.listRooms())if(Number(room.client_id)===client.id&&!views.some(e=>e.id===room.id))views.push({id:room.id,name:room.name,legacy:true,logo_url:room.logo_url,banner_url:room.banner_url,plan:{name:client.plan,hours:client.total_hours,maxParticipants:client.max_listeners,maxLanguages:(room.target_languages||[]).length},remainingSeconds:Math.max(0,(client.total_hours-client.used_hours)*3600),status:room.status,published:room.status==='active',participantUrl:(this.baseUrl()||'')+'/?room='+encodeURIComponent(room.id),hostUrl:'/host.html?room='+encodeURIComponent(room.id),screenUrl:'/screen.html?room='+encodeURIComponent(room.id)});}
+   res.json({events:views});
+  }));
   router.get('/customer/glossaries',auth,wrap(async(req,res)=>res.json({glossaries:await this.store.list('glossary',{customerId:req.customer.id})})));
   router.get('/customer/glossaries/:id',auth,wrap(async(req,res)=>{const g=await this.store.get('glossary',req.params.id);if(!g||g.customerId!==req.customer.id)throw fail(404,'Glossário não encontrado.');res.json(g);}));
   const saveGlossary=wrap(async(req,res)=>{

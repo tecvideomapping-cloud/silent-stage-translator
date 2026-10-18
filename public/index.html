@@ -140,6 +140,7 @@
       </label>
     </section>
 
+    <p id="translationServiceStatus" role="status" aria-live="polite" class="text-xs text-amber-300" hidden></p>
     <!-- Área de Legendas e Transcrição Simultânea em Tempo Real -->
     <section id="subtitlesSection" class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex-1 flex flex-col shadow-xl min-h-[240px]">
       <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
@@ -165,6 +166,7 @@
         <p id="listenerPlaceholderMsg" class="text-slate-500 italic text-sm text-center my-12">Aguardando início da fala no palco...</p>
         <div id="listenerLiveStreamFlow" class="hidden leading-relaxed tracking-wide break-words">
           <span id="listenerConfirmedStream" class="text-slate-100 font-medium"></span>
+          <small id="listenerInterimLabel" hidden class="block text-xs text-slate-400">Prévia ao vivo</small>
           <span id="listenerInterimStream" class="text-cyan-300 font-semibold transition-all"></span>
           <span id="listenerLiveCursor" class="hidden inline-block w-2 h-5 bg-cyan-400 ml-1 animate-pulse align-middle rounded-sm"></span>
         </div>
@@ -552,7 +554,7 @@
 
         try {
           const data = JSON.parse(event.data);
-          if(data.type==='service_warning'){ console.warn(String(data.message||'Tradução indisponível')); return; }
+          if(data.type==='service_warning'){if(data.lang===currentChannel||data.lang===selectedSubtitleLang){const status=document.getElementById('translationServiceStatus');status.textContent=data.message;status.hidden=false;}return;}
           if (data.type === 'connected') {
             myClientId = data.clientId;
           } else if (data.type === 'speaker_voice_profile') {
@@ -589,7 +591,8 @@
             const isFinalSub = data.isFinal !== false;
             // Legenda traduzida (exibe simultaneamente durante a fala e confirma ao fechar o trecho lógico)
             const syncWithVoice=isPlaying&&currentChannel===data.lang&&(selectedSubtitleLang==='auto'||selectedSubtitleLang===data.lang);
-            if(!syncWithVoice)renderSubtitle(data.text, isFinalSub, data.lang,data);
+            if(!syncWithVoice||!isFinalSub)renderSubtitle(data.text, isFinalSub, data.lang,data);
+            if(isFinalSub&&(data.lang===currentChannel||data.lang===selectedSubtitleLang))document.getElementById('translationServiceStatus').hidden=true;
             // Reproduz o áudio sintetizado apenas quando o trecho lógico completo é fechado
             if (isFinalSub && currentChannel === data.lang) {
               playTranslatedAudio(data.text, data.lang,data);
@@ -870,6 +873,8 @@
     function resetListenerStreamDisplay(customPlaceholderText = null) {
       const confirmed = document.getElementById('listenerConfirmedStream');
       const interim = document.getElementById('listenerInterimStream');
+      listenerInterimAt=0;listenerConfirmedAt=0;
+      const preview=document.getElementById('listenerInterimLabel');if(preview)preview.hidden=true;
       const cursor = document.getElementById('listenerLiveCursor');
       const flow = document.getElementById('listenerLiveStreamFlow');
       const placeholder = document.getElementById('listenerPlaceholderMsg');
@@ -1329,6 +1334,7 @@
     }
 
     let lastConfirmedSubtitleText = '';
+    let listenerInterimAt=0,listenerConfirmedAt=0;
 
     function renderSubtitle(text, isFinal, lang = 'original',metadata={}) {
       const box = document.getElementById('subtitlesBox');
@@ -1355,13 +1361,17 @@
       if (placeholder) placeholder.classList.add('hidden');
       if (flow) flow.classList.remove('hidden');
 
+      const at=Number(metadata.recognizedAt||metadata.timestamp)||Date.now();
+      const interimLabel=document.getElementById('listenerInterimLabel');
+      if(!isFinal&&at<listenerConfirmedAt)return;
       // 3. Escrita Simultânea Contínua (Teleprompter em Tempo Real sem saltar caixas)
       if (isFinal) {
-        if (interimStream) interimStream.innerText = '';
-        if (cursor) cursor.classList.add('hidden');
+        listenerConfirmedAt=Math.max(listenerConfirmedAt,at);
+        if(listenerInterimAt<=at){if (interimStream) interimStream.innerText = '';if(interimLabel)interimLabel.hidden=true;if (cursor) cursor.classList.add('hidden');}
 
         if (confirmedStream) window.VmtCaptions.append(confirmedStream,cleanText,{...metadata,lang});
       } else {
+        listenerInterimAt=at;if(interimLabel)interimLabel.hidden=lang==='original';
         if (interimStream) {
           interimStream.innerText = cleanText;
         }

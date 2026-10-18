@@ -7,7 +7,7 @@ const router=express.Router();
 const {Worker}=require('worker_threads');
 const path=require('path');
 const cache=new Map();let activeProbe=null;
-async function probe(type){const hit=cache.get(type);if(hit&&hit.until>Date.now())return hit.value;if(activeProbe)return activeProbe.then(()=>probe(type));activeProbe=new Promise((resolve,reject)=>{const worker=new Worker(path.join(__dirname,'hardware-worker.js'),{workerData:type});const timeout=setTimeout(()=>{worker.terminate();reject(new Error('Tempo de coleta excedido.'))},12000);worker.once('message',result=>{clearTimeout(timeout);worker.terminate();if(result.error)return reject(new Error('Coleta indisponível.'));cache.set(type,{value:result.value,until:Date.now()+(type==='metrics'?8000:600000)});resolve(result.value)});worker.once('error',e=>{clearTimeout(timeout);reject(e)})}).finally(()=>{activeProbe=null});return activeProbe;}
+async function probe(type){const hit=cache.get(type);if(hit&&hit.until>Date.now())return hit.value;if(activeProbe)return activeProbe.then(()=>probe(type));activeProbe=new Promise((resolve,reject)=>{const worker=new Worker(path.join(__dirname,'hardware-worker.js'),{workerData:type});const timeout=setTimeout(()=>{worker.terminate();reject(new Error('Tempo de coleta excedido.'))},type==='metrics'?5000:25000);worker.once('message',result=>{clearTimeout(timeout);worker.terminate();if(result.error)return reject(new Error('Coleta indisponível.'));cache.set(type,{value:result.value,until:Date.now()+(type==='metrics'?8000:600000)});resolve(result.value)});worker.once('error',e=>{clearTimeout(timeout);reject(e)})}).finally(()=>{activeProbe=null});return activeProbe;}
 
 /**
  * GET /api/desktop/hardware

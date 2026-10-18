@@ -30,7 +30,8 @@ const {
   deleteSavedGlossary
 } = require('./db');
 const { verifyPassword, createSession, removeSession, requireAuth, getSession, setSessionStore, tokenFrom: adminTokenFrom, revokeUserSessions } = require('./auth');
-const { Commerce, passwordHash } = require('./commerce');
+const { Commerce,tokenFrom:customerTokenFrom } = require('./commerce');
+const {ClientManagement,positiveId}=require('./client-management');
 
 const { aiPipeline } = require('./ai-pipeline');
 const QRCode = require('qrcode');
@@ -61,6 +62,7 @@ commerce.ready=Promise.all([ledgerReady,databaseReady]).then(([,database])=>{
   if(process.env.NODE_ENV==='production'&&!database)commerce.healthy=false;
 });
 commerce.startWorkers();
+const clientManagement=new ClientManagement(require('./db'),commerce);
 setSessionStore(commerce.store,()=>commerce.ready);
 const adminSession=req=>getSession(adminTokenFrom(req));
 const isAdminRequest=async req=>['admin','superadmin'].includes((await adminSession(req))?.role);
@@ -83,6 +85,7 @@ app.use('/api',async(req,res,next)=>{
       if(!admin){
         const roomId=String(req.query.room||'');const isTts=req.path==='/tts';
         const access=await commerce.checkEventAccess(req,roomId,{operator:!isTts});
+        if(!access){const legacyRoom=await getRoom(roomId);if(legacyRoom)await validateLegacyRoom(legacyRoom);}
         if(!access&&!isTts)return res.status(403).json({error:'Entre na área do responsável para operar o evento.'});
         if(isTts&&!access?.owner){
           if(!access&&!await getRoom(roomId))return res.status(403).json({error:'Evento não disponível.'});
@@ -91,10 +94,11 @@ app.use('/api',async(req,res,next)=>{
           if(!recent.some(item=>item.text===text&&Date.now()-item.timestamp<=120000))return res.status(403).json({error:'Trecho de áudio não disponível neste evento.'});
         }
         if(req.path==='/stt-chunk'&&access){
+          if(access.legacy){await validateLegacyRoom(await getRoom(roomId));if(![...(roomsClients.get(roomId)||[])].some(c=>c.role==='host'&&c.readyState===WebSocket.OPEN))return res.status(403).json({error:'Inicie uma transmissão antes de enviar o áudio.'});}
           const auth=await commerce.session(req);
           if(req.get('X-CSRF-Token')!==auth?.session.csrfToken)return res.status(403).json({error:'Sessão desatualizada.'});
           const lease=(await commerce.store.list('connection',{eventId:roomId})).find(c=>c.role==='host'&&c.expiresAt>Date.now());
-          if(!lease||!await commerce.consumeSocket({eventId:roomId,leaseId:lease.id,role:'host'}))return res.status(403).json({error:'Inicie uma transmissão com horas disponíveis.'});
+          if(!access.legacy&&(!lease||!await commerce.consumeSocket({eventId:roomId,leaseId:lease.id,role:'host'})))return res.status(403).json({error:'Inicie uma transmissão com horas disponíveis.'});
         }
       }
     }
@@ -109,11 +113,13 @@ app.use('/api',async(req,res,next)=>{
         else if(!owner&&(order?.status!=='paid'||!event.published||event.revoked))return res.status(403).json({error:'Este evento ainda não está disponível para os participantes.'});
         if(req.method==='DELETE')return res.status(409).json({error:'Um evento contratado não pode ser excluído pelo cadastro de salas.'});
       }
-      if(action&&action!=='glossary'&&!event&&!admin)return res.status(403).json({error:'Acesso administrativo obrigatório.'});
+      const legacyOwner=!event&&!admin&&await commerce.isLegacyOwner(req,await getRoom(id));
+      if(action&&action!=='glossary'&&!event&&!admin&&!legacyOwner)return res.status(403).json({error:'Acesso administrativo obrigatório.'});
       if(action==='glossary'){
         const room=event?commerce.roomFromEvent(event):await getRoom(id);
         const key=req.body?.hostKey;
-        if(!admin&&!(event&&await commerce.isOwner(req,event))&&(!room||!key||key==='admin'||key!==room.host_key))return res.status(403).json({error:'Acesso de operador obrigatório.'});
+        if(!admin&&!legacyOwner&&!(event&&await commerce.isOwner(req,event))&&(!room||!key||key==='admin'||key!==room.host_key))return res.status(403).json({error:'Acesso de operador obrigatório.'});
+        if(legacyOwner){const auth=await commerce.session(req);if(req.get('X-CSRF-Token')!==auth?.session.csrfToken)return res.status(403).json({error:'Sessão desatualizada.'});}
         req.operatorAuthorized=true;
         if(event){
           if(!admin){const auth=await commerce.session(req);if(req.get('X-CSRF-Token')!==auth?.session.csrfToken)return res.status(403).json({error:'Sessão desatualizada.'});}
@@ -127,6 +133,12 @@ app.use('/api',async(req,res,next)=>{
     next();
   }catch(e){res.status(e.status||503).json({error:e.status?e.message:'Serviço temporariamente indisponível.'});}
 });
+
+async function validateLegacyRoom(room){
+ if(!room?.client_id)return;
+ const client=await getClient(room.client_id);
+ if(!client||client.status!=='active'||!['active','trial'].includes(client.license_status)||client.license_expires_at&&Date.parse(client.license_expires_at)<=Date.now()||Number(client.used_hours)>=Number(client.total_hours))throw Object.assign(new Error('A licença ou o saldo deste cliente não está disponível.'),{status:403});
+}
 
 // Map de clientes conectados: roomId -> Set<ws>
 const roomsClients=new Map();
@@ -283,6 +295,8 @@ app.get('/api/clients', ...requireAdmin, async (req, res) => {
   }
 });
 
+app.use('/api/clients/:id',(req,res,next)=>{try{positiveId(req.params.id);next();}catch(e){res.status(400).json({error:e.message});}});
+
 app.get('/api/clients/:id', ...requireAdmin, async (req, res) => {
   try {
     const client = await getClient(req.params.id);
@@ -295,103 +309,15 @@ app.get('/api/clients/:id', ...requireAdmin, async (req, res) => {
   }
 });
 
-app.post('/api/clients', ...requireAdmin, async (req, res) => {
-  try {
-    const client = await saveClient(req.body);
-    if (req.body.password && client.email && commerce?.store) {
-      try {
-        const emailAddr = String(client.email).trim().toLowerCase();
-        const hash = await passwordHash(req.body.password.trim());
-        await commerce.store.transaction(async tx => {
-          const mapping = await tx.get('email', emailAddr);
-          if (mapping) {
-            const cust = await tx.get('customer', mapping.customerId);
-            if (cust) {
-              cust.passwordHash = hash;
-              cust.passwordVersion = (cust.passwordVersion || 1) + 1;
-              if (client.name) cust.name = client.name;
-              if (client.company) cust.company = client.company;
-              if (client.phone) cust.phone = client.phone;
-              await tx.put('customer', cust.id, cust);
-            }
-          } else {
-            const custId = require('crypto').randomUUID();
-            const cust = {
-              id: custId,
-              name: client.name || emailAddr.split('@')[0],
-              email: emailAddr,
-              company: client.company || '',
-              phone: client.phone || '',
-              passwordHash: hash,
-              passwordVersion: 1,
-              createdAt: new Date().toISOString()
-            };
-            await tx.put('customer', custId, cust);
-            await tx.put('email', emailAddr, { customerId: custId });
-          }
-        });
-      } catch (syncErr) {
-        console.warn('[Sync] Aviso ao sincronizar senha com portal do cliente:', syncErr.message);
-      }
-    }
-    res.json({ success: true, client });
-  } catch (err) {
-    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
-  }
-});
-
-app.put('/api/clients/:id', ...requireAdmin, async (req, res) => {
-  try {
-    const client = await saveClient({ ...req.body, id: req.params.id });
-    if (req.body.password && client.email && commerce?.store) {
-      try {
-        const emailAddr = String(client.email).trim().toLowerCase();
-        const hash = await passwordHash(req.body.password.trim());
-        await commerce.store.transaction(async tx => {
-          const mapping = await tx.get('email', emailAddr);
-          if (mapping) {
-            const cust = await tx.get('customer', mapping.customerId);
-            if (cust) {
-              cust.passwordHash = hash;
-              cust.passwordVersion = (cust.passwordVersion || 1) + 1;
-              if (client.name) cust.name = client.name;
-              if (client.company) cust.company = client.company;
-              if (client.phone) cust.phone = client.phone;
-              await tx.put('customer', cust.id, cust);
-            }
-          }
-        });
-      } catch (syncErr) {
-        console.warn('[Sync] Aviso ao sincronizar senha:', syncErr.message);
-      }
-    }
-    res.json({ success: true, client });
-  } catch (err) {
-    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
-  }
-});
-
-app.put('/api/clients/:id/license', ...requireAdmin, async (req, res) => {
-  try {
-    const current = await getClient(req.params.id);
-    if (!current) return res.status(404).json({ error: 'Cliente não encontrado.' });
-    const { plan, license_status, license_expires_at, max_rooms, max_listeners, total_hours, used_hours, notes } = req.body;
-    const updated = await saveClient({
-      ...current,
-      id: req.params.id,
-      plan: plan ?? current.plan,
-      license_status: license_status ?? current.license_status,
-      license_expires_at: license_expires_at !== undefined ? license_expires_at : current.license_expires_at,
-      max_rooms: max_rooms !== undefined ? max_rooms : current.max_rooms,
-      max_listeners: max_listeners !== undefined ? max_listeners : current.max_listeners,
-      total_hours: total_hours !== undefined ? total_hours : current.total_hours,
-      used_hours: used_hours !== undefined ? used_hours : current.used_hours,
-      notes: notes !== undefined ? notes : current.notes
-    });
-    res.json({ success: true, client: updated });
-  } catch (err) {
-    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
-  }
+const clientWrite=async(req,res)=>{
+ try{const client=await clientManagement.save(req.body,req.params.id||null);res.json({success:true,client});}
+ catch(error){res.status(error.status||500).json({error:error.status&&error.status<500?error.message:'Não foi possível salvar o cliente. Nenhuma alteração foi confirmada.'});}
+};
+app.post('/api/clients',...requireAdmin,clientWrite);
+app.put('/api/clients/:id',...requireAdmin,clientWrite);
+app.put('/api/clients/:id/license',...requireAdmin,async(req,res)=>{
+ const fields=['plan','license_status','license_expires_at','max_rooms','max_listeners','total_hours','used_hours','notes'];
+ req.body=Object.fromEntries(fields.filter(key=>req.body[key]!==undefined).map(key=>[key,req.body[key]]));return clientWrite(req,res);
 });
 
 app.get('/api/clients/:id/payments', ...requireAdmin, async (req, res) => {
@@ -420,7 +346,7 @@ app.get('/api/clients/:id/payments', ...requireAdmin, async (req, res) => {
             is_commerce_order: true
           }));
         }
-      } catch {}
+      } catch { return res.status(503).json({error:'Histórico online temporariamente indisponível. Tente novamente.'}); }
     }
     const allPayments = [...dbPayments, ...commerceOrders].sort((a, b) => new Date(b.paid_at || b.created_at) - new Date(a.paid_at || a.created_at));
     res.json({ payments: allPayments });
@@ -429,33 +355,17 @@ app.get('/api/clients/:id/payments', ...requireAdmin, async (req, res) => {
   }
 });
 
-app.post('/api/clients/:id/payments', ...requireAdmin, async (req, res) => {
-  try {
-    const client = await getClient(req.params.id);
-    if (!client) return res.status(404).json({ error: 'Cliente não encontrado.' });
-    const payment = await saveClientPayment({
-      ...req.body,
-      client_id: req.params.id
-    });
-    if (req.body.add_hours && Number(req.body.add_hours) > 0) {
-      await saveClient({
-        ...client,
-        id: client.id,
-        total_hours: (Number(client.total_hours) || 0) + Number(req.body.add_hours)
-      });
-    }
-    res.json({ success: true, payment });
-  } catch (err) {
-    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
-  }
+app.post('/api/clients/:id/payments',...requireAdmin,async(req,res)=>{
+ try{const payment=await clientManagement.payment(req.params.id,req.body);res.json({success:true,payment});}
+ catch(error){res.status(error.status||500).json({error:error.status&&error.status<500?error.message:'Não foi possível registrar o pagamento. Nenhuma alteração foi confirmada.'});}
 });
 
 app.delete('/api/clients/:id/payments/:paymentId', ...requireAdmin, async (req, res) => {
   try {
-    await deleteClientPayment(req.params.paymentId, req.params.id);
+    await clientManagement.removePayment(req.params.id,req.params.paymentId);
     res.json({ success: true });
   } catch (err) {
-    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
+    res.status(err.status||500).json({error:err.status&&err.status<500?err.message:'Não foi possível excluir o pagamento.'});
   }
 });
 
@@ -525,6 +435,7 @@ app.post('/api/rooms', ...requireAdmin, async (req, res) => {
     const roomId = (id || `evento-${Date.now().toString(36)}`).trim().toLowerCase();
     if(!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(roomId))return res.status(400).json({error:'Identificador de sala inválido.'});
     if(targetLanguages!==undefined&&(!Array.isArray(targetLanguages)||targetLanguages.length>11||targetLanguages.some(x=>typeof x!=='string'||!['en','es','fr','de','it','ja','ko','zh','pt','ar','hi'].includes(x))))return res.status(400).json({error:'Idiomas inválidos.'});
+    if(clientId){positiveId(clientId);const client=await getClient(clientId);if(!client)return res.status(400).json({error:'Cliente não encontrado.'});const assigned=(await listRooms()).filter(r=>Number(r.client_id)===Number(clientId)&&r.id!==roomId);if(assigned.length>=client.max_rooms)return res.status(409).json({error:'O cliente atingiu o limite de eventos da licença.'});}
     const existing = await getRoom(roomId);
     const hostKey = existing?.host_key || `host-${Math.random().toString(36).substring(2, 10)}`;
 
@@ -1140,7 +1051,8 @@ const roomLastInterimTranslate = new Map(); // roomId -> { text, time, seq }
 const roomInterimInFlight=new Set();
 const roomCatchupHistory = new Map(); // roomId -> Array<{ seqId, type, lang, text, timestamp }>
 let globalCatchupSeqId=Date.now()*1000;
-aiPipeline.onTranslationFailure=(roomId,lang)=>{for(const c of roomsClients.get(roomId)||[])if(c.readyState===WebSocket.OPEN)c.send(JSON.stringify({type:'service_warning',message:'Tradução temporariamente indisponível para '+lang+'.'}));};
+const translationWarnings=new Map();
+aiPipeline.onTranslationFailure=(roomId,lang)=>{const key=roomId+':'+lang;if(Date.now()-(translationWarnings.get(key)||0)<10000)return;translationWarnings.set(key,Date.now());for(const c of roomsClients.get(roomId)||[])if(c.readyState===WebSocket.OPEN)c.send(JSON.stringify({type:'service_warning',lang,message:'A tradução está temporariamente indisponível. A transcrição original continua ativa.'}));};
 
 function appendToCatchupHistory(roomId, entry) {
   if (!roomCatchupHistory.has(roomId)) {
@@ -1177,7 +1089,7 @@ async function processRecognizedSpeech(roomId,ws,event){
    const room=await getRoom(roomId);if(!room)return;
    const lookupMs=Date.now()-now;
    const task=orderedTranslations.translate(roomId,text,room.target_languages||['en','es'],room.glossary||{},aiPipeline,(lang,translatedText,timing)=>{
-    const readyAt=Date.now(),seqId=globalCatchupSeqId;
+    const readyAt=Date.now(),seqId=globalCatchupSeqId;translationWarnings.delete(roomId+':'+lang);
     appendToCatchupHistory(roomId,{...meta,lang,text:translatedText,sourceText:text});
     const profile=roomSpeakerProfile.get(roomId)||{};
     if([...clients].some(client=>client.role==='listener'&&client.channel===lang&&client.readyState===WebSocket.OPEN))getOrGenerateTts(lang,translatedText,profile.voice||'male_deep',profile.speed||1.05,profile.pitch||0).catch(()=>{});
@@ -1187,7 +1099,7 @@ async function processRecognizedSpeech(roomId,ws,event){
    task.then(translations=>saveTranscript(roomId,text,translations,meta)).catch(()=>{});
   });
  }else{
-  const last=roomLastInterimTranslate.get(roomId);if(roomInterimInFlight.has(roomId)||text.split(/\s+/).length<4||last&&now-last.time<900)return;
+  const last=roomLastInterimTranslate.get(roomId);if(roomInterimInFlight.has(roomId)||!aiPipeline.freeTranslator.canTranslateInterim()||text.split(/\s+/).length<4||last&&now-last.time<1500)return;
   roomInterimInFlight.add(roomId);
   const seq=(last?.seq||0)+1;roomLastInterimTranslate.set(roomId,{text,time:now,seq});
   getRoom(roomId).then(room=>room&&aiPipeline.translateText(text,room.target_languages||['en','es'],room.glossary||{},(lang,translatedText)=>{
@@ -1278,23 +1190,26 @@ async function handleConnection(ws,req){
   let channel = parsedUrl.searchParams.get('channel') || 'original';
   const lastSeenSeq = parseInt(parsedUrl.searchParams.get('lastSeq') || '0', 10);
   if(!['host','listener','screen'].includes(role)){ws.close(1008,'Tipo de conexão inválido');return;}
-  let managed=null;
+  let managed=null,operatorAdmin=false;
   try{
-    const admin=await isAdminRequest(req);
+    const admin=await isAdminRequest(req);operatorAdmin=admin;
     managed=await commerce.acquireSocket(req,roomId,role,channel,admin);
     if(!managed&&role==='host'){
       const room=await getRoom(roomId),key=parsedUrl.searchParams.get('hostKey');
-      if(!admin&&(!room||!key||key!==room.host_key))throw Object.assign(new Error('Acesso de operador obrigatório.'),{status:403});
+      if(!admin&&!await commerce.isLegacyOwner(req,room)&&(!room||!key||key!==room.host_key))throw Object.assign(new Error('Acesso de operador obrigatório.'),{status:403});
     }
     if(!managed){const room=await getRoom(roomId);if(!room)throw new Error('Evento não encontrado.');if(role!=='host'&&room.status!=='active')throw new Error('Evento indisponível.');if(role!=='host'&&!channelAllowed(room,channel))throw new Error('Canal indisponível.');if(role==='host'&&Array.from(roomsClients.get(roomId)||[]).some(c=>c.role==='host'&&c.readyState===WebSocket.OPEN))throw Object.assign(new Error('Já existe um transmissor conectado. Aguarde a reconexão.'),{status:409});}
+    if(!managed){const room=await getRoom(roomId);await validateLegacyRoom(room);if(role==='listener'&&room.client_id){const client=await getClient(room.client_id),ids=new Set((await listRooms()).filter(r=>Number(r.client_id)===Number(room.client_id)).map(r=>r.id));let count=0;for(const id of ids)count+=[...(roomsClients.get(id)||[])].filter(c=>c.role==='listener'&&c.readyState===WebSocket.OPEN).length;if(count>=client.max_listeners)throw Object.assign(new Error('O cliente atingiu o limite de participantes simultâneos.'),{status:403});}}
     if(ws.readyState!==WebSocket.OPEN){await commerce.releaseSocket(managed);return;}
   }catch(e){ws.close(e.status===409?1013:1008,String(e.message||'Acesso indisponível').slice(0,115));return;}
   ws.commerce=managed;
-  const operatorToken=role==='host'?adminTokenFrom(req):'';
+  const operatorToken=role==='host'&&operatorAdmin?adminTokenFrom(req):'';
+  const customerOperatorToken=role==='host'&&!operatorAdmin?customerTokenFrom(req):'';
   const entitlementTimer=setInterval(async()=>{
     try{
+    if(customerOperatorToken&&!await commerce.session({headers:{'x-session-token':customerOperatorToken}})){ws.close(1008,'Sessão encerrada. Entre novamente.');return;}
     if(operatorToken&&!await getSession(operatorToken)){ws.close(1008,'Sessão encerrada. Entre novamente.');return;}
-    if(!managed&&!await getRoom(roomId)){ws.close(1008,'Evento indisponível.');return;}
+    if(!managed){const room=await getRoom(roomId);if(!room){ws.close(1008,'Evento indisponível.');return;}await validateLegacyRoom(room);}
     if(!await commerce.refreshSocket(managed))ws.close(1008,'O acesso a este evento não está ativo.');}catch{ws.close(1011,'Verificação de acesso indisponível.');}
   },15000);
 

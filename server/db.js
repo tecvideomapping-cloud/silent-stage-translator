@@ -2,6 +2,7 @@ const { Pool } = require('pg');
 const { hashPassword } = require('./auth');
 
 let pool = null;
+let nextClientId=1,nextClientPaymentId=1;
 const memoryStore = {
   users: new Map(),
   clients: new Map(),
@@ -388,13 +389,15 @@ function sanitizeClient(c) {
 // ----------------------------------------------------
 // CLIENTES (EMPRESAS CONTRATANTES)
 // ----------------------------------------------------
-async function saveClient(client) {
+async function saveClient(client, executor=null) {
+  const connection=executor?.query?executor:pool;
+  if(client.id){const current=await getClient(client.id,executor);if(!current)throw Object.assign(new Error('Cliente não encontrado.'),{status:404});client={...current,...client};}
   let pwdHash = null;
   let pwdSalt = null;
   if (client.password && typeof client.password === 'string' && client.password.trim().length > 0) {
-    const hashed = hashPassword(client.password.trim());
-    pwdHash = hashed.hash;
-    pwdSalt = hashed.salt;
+    pwdSalt=require('crypto').randomBytes(16).toString('hex');
+    const bytes=await require('util').promisify(require('crypto').scrypt)(client.password,pwdSalt,64);
+    pwdHash='scrypt:'+bytes.toString('hex');
   }
 
   const plan = client.plan || 'Pro';
@@ -405,10 +408,10 @@ async function saveClient(client) {
   const totalHours = client.total_hours != null ? Number(client.total_hours) : 10;
   const usedHours = client.used_hours != null ? Number(client.used_hours) : 0;
 
-  if (pool) {
+  if (connection) {
     try {
       if (client.id) {
-        const res = await pool.query(
+        const res = await connection.query(
           `UPDATE clients SET
             name = $1, company = $2, email = $3, phone = $4, cnpj_cpf = $5,
             total_hours = $6, used_hours = $7, status = $8, notes = $9,
@@ -430,7 +433,7 @@ async function saveClient(client) {
           return sanitizeClient(saved);
         }
       } else {
-        const res = await pool.query(
+        const res = await connection.query(
           `INSERT INTO clients (
             name, company, email, phone, cnpj_cpf, total_hours, used_hours, status, notes,
             plan, license_status, license_expires_at, max_rooms, max_listeners, password_hash, password_salt
@@ -450,12 +453,12 @@ async function saveClient(client) {
         }
       }
     } catch (e) {
-      if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
+      if(executor?.query||process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao salvar cliente no Postgres:', e.message);
     }
   }
 
-  const id = client.id ? parseInt(client.id, 10) : (memoryStore.clients.size + 1);
+  const id = client.id ? parseInt(client.id, 10) : nextClientId++;
   const existing = memoryStore.clients.get(id) || {};
   const saved = {
     ...existing,
@@ -475,23 +478,25 @@ async function saveClient(client) {
     saved.password_hash = pwdHash;
     saved.password_salt = pwdSalt;
   }
+  delete saved.password;
   memoryStore.clients.set(id, saved);
   return sanitizeClient(saved);
 }
 
-async function getClient(id) {
+async function getClient(id, executor=null) {
+  const connection=executor?.query?executor:pool;
   const numId = parseInt(id, 10);
   if (isNaN(numId)) return null;
-  if (pool) {
+  if (connection) {
     try {
-      const res = await pool.query('SELECT * FROM clients WHERE id = $1', [numId]);
+      const res = await connection.query('SELECT * FROM clients WHERE id = $1', [numId]);
       if (res.rows[0]) {
         memoryStore.clients.set(res.rows[0].id, res.rows[0]);
         return sanitizeClient(res.rows[0]);
       }
       return null;
     } catch (e) {
-      if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
+      if(executor?.query||process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao obter cliente no Postgres:', e.message);
     }
   }
@@ -499,19 +504,20 @@ async function getClient(id) {
   return client ? sanitizeClient(client) : null;
 }
 
-async function getClientByEmail(email) {
+async function getClientByEmail(email, executor=null) {
+  const connection=executor?.query?executor:pool;
   if (!email || typeof email !== 'string') return null;
   const normalized = email.trim().toLowerCase();
-  if (pool) {
+  if (connection) {
     try {
-      const res = await pool.query('SELECT * FROM clients WHERE LOWER(TRIM(email)) = $1 LIMIT 1', [normalized]);
+      const res = await connection.query('SELECT * FROM clients WHERE LOWER(TRIM(email)) = $1 LIMIT 1', [normalized]);
       if (res.rows[0]) {
         memoryStore.clients.set(res.rows[0].id, res.rows[0]);
         return res.rows[0];
       }
       return null;
     } catch (e) {
-      if(process.env.NODE_ENV==='production'){e.status=503;throw e;}
+      if(executor?.query||process.env.NODE_ENV==='production'){e.status=503;throw e;}
       console.error('[DB] Erro ao buscar cliente por e-mail:', e.message);
     }
   }
@@ -557,7 +563,8 @@ async function deleteClient(id) {
 // ----------------------------------------------------
 // HISTÓRICO DE PAGAMENTOS DE CLIENTES
 // ----------------------------------------------------
-async function saveClientPayment(payment) {
+async function saveClientPayment(payment, executor=null) {
+  const connection=executor?.query?executor:pool;
   const numClientId = parseInt(payment.client_id, 10);
   const amountCents = parseInt(payment.amount_cents ?? Math.round(Number(payment.amount || 0) * 100), 10);
   const currency = payment.currency || 'BRL';
@@ -567,10 +574,10 @@ async function saveClientPayment(payment) {
   const referenceId = payment.reference_id || '';
   const paidAt = payment.paid_at ? new Date(payment.paid_at) : new Date();
 
-  if (pool) {
+  if (connection) {
     try {
       if (payment.id) {
-        const res = await pool.query(
+        const res = await connection.query(
           `UPDATE client_payments SET
              amount_cents = $1, currency = $2, status = $3, method = $4,
              description = $5, reference_id = $6, paid_at = $7
@@ -583,7 +590,7 @@ async function saveClientPayment(payment) {
           return saved;
         }
       } else {
-        const res = await pool.query(
+        const res = await connection.query(
           `INSERT INTO client_payments (client_id, amount_cents, currency, status, method, description, reference_id, paid_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
           [numClientId, amountCents, currency, status, method, description, referenceId, paidAt]
@@ -595,12 +602,12 @@ async function saveClientPayment(payment) {
         }
       }
     } catch (e) {
-      if (process.env.NODE_ENV === 'production') { e.status = 503; throw e; }
+      if (executor?.query || process.env.NODE_ENV === 'production') { e.status = 503; throw e; }
       console.error('[DB] Erro ao salvar pagamento no Postgres:', e.message);
     }
   }
 
-  const id = payment.id ? parseInt(payment.id, 10) : (memoryStore.clientPayments.size + 1);
+  const id = payment.id ? parseInt(payment.id, 10) : nextClientPaymentId++;
   const saved = {
     id,
     client_id: numClientId,
@@ -634,20 +641,22 @@ async function listClientPayments(clientId) {
     .sort((a, b) => new Date(b.paid_at || b.created_at) - new Date(a.paid_at || a.created_at));
 }
 
-async function deleteClientPayment(id, clientId) {
+async function deleteClientPayment(id, clientId, executor=null) {
+  const connection=executor?.query?executor:pool;
   const numId = parseInt(id, 10);
   const numClientId = clientId ? parseInt(clientId, 10) : null;
-  if (pool) {
+  if (connection) {
     try {
-      await pool.query('DELETE FROM client_payments WHERE id = $1 AND ($2::int IS NULL OR client_id = $2::int)', [numId, numClientId]);
+      await connection.query('DELETE FROM client_payments WHERE id = $1 AND ($2::int IS NULL OR client_id = $2::int)', [numId, numClientId]);
       memoryStore.clientPayments.delete(numId);
       return true;
     } catch (e) {
-      if (process.env.NODE_ENV === 'production') { e.status = 503; throw e; }
+      if (executor?.query || process.env.NODE_ENV === 'production') { e.status = 503; throw e; }
       console.error('[DB] Erro ao excluir pagamento no Postgres:', e.message);
     }
   }
-  memoryStore.clientPayments.delete(numId);
+  const record=memoryStore.clientPayments.get(numId);
+  if(record&&(!numClientId||record.client_id===numClientId))memoryStore.clientPayments.delete(numId);
   return true;
 }
 

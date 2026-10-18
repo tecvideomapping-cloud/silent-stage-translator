@@ -345,15 +345,15 @@
       <div class="flex border-b border-slate-800 gap-2 text-xs">
         <button type="button" id="tabBtnClientData" onclick="switchClientTab('data')"
           class="px-3.5 py-2 font-semibold text-cyan-400 border-b-2 border-cyan-400 flex items-center gap-1.5 transition">
-          <span data-icon="building-2"></span> <span>1. Dados &amp; Acesso</span>
+          <span data-icon="building-2"></span> <span>Cadastro</span>
         </button>
         <button type="button" id="tabBtnClientLicense" onclick="switchClientTab('license')"
           class="px-3.5 py-2 font-semibold text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center gap-1.5 transition">
-          <span data-icon="shield-check"></span> <span>2. Revisão de Licença</span>
+          <span data-icon="shield-check"></span> <span>Licença</span>
         </button>
         <button type="button" id="tabBtnClientPayments" onclick="switchClientTab('payments')"
           class="px-3.5 py-2 font-semibold text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center gap-1.5 transition">
-          <span data-icon="credit-card"></span> <span>3. Histórico de Pagamentos</span>
+          <span data-icon="credit-card"></span> <span>Pagamentos</span>
           <span id="clientPaymentsBadge" class="admin-count">0</span>
         </button>
       </div>
@@ -406,7 +406,7 @@
                 <span id="clientHasPasswordBadge" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">Sem senha configurada</span>
               </div>
               <div class="relative flex items-center">
-                <input type="password" id="clientPassword" autocomplete="new-password" placeholder="Definir senha de acesso (mínimo 6 caracteres)"
+                <input type="password" id="clientPassword" minlength="10" maxlength="128" autocomplete="new-password" placeholder="Definir senha de acesso (mínimo 6 caracteres)"
                   class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 pr-28 text-slate-200 focus:border-cyan-500 focus:outline-none font-mono">
                 <div class="absolute right-2 flex items-center gap-1.5">
                   <button type="button" onclick="togglePasswordVisibility('clientPassword')" class="text-xs text-slate-400 hover:text-white px-1.5 py-1" title="Ver / Ocultar">👁️</button>
@@ -457,7 +457,7 @@
                 <input type="date" id="clientLicenseExpires"
                   class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-cyan-500 focus:outline-none flex-1">
                 <label class="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
-                  <input type="checkbox" id="clientNoExpiry" onchange="toggleLicenseNoExpiry(this.checked)" class="rounded text-cyan-500">
+                  <input style="width:18px!important;height:18px!important;flex:none" type="checkbox" id="clientNoExpiry" onchange="toggleLicenseNoExpiry(this.checked)" class="rounded text-cyan-500">
                   <span>Sem expiração (Vitalício / Contínuo)</span>
                 </label>
               </div>
@@ -576,7 +576,7 @@
                 </div>
                 <div class="sm:col-span-2 flex items-center gap-2 pt-1">
                   <label class="inline-flex items-center gap-2 text-slate-300 cursor-pointer">
-                    <input type="checkbox" id="payAddHoursCheck" onchange="togglePayAddHours(this.checked)" class="rounded text-cyan-500">
+                    <input style="width:18px!important;height:18px!important;flex:none" type="checkbox" id="payAddHoursCheck" onchange="togglePayAddHours(this.checked)" class="rounded text-cyan-500">
                     <span>Adicionar horas contratadas ao cliente com este pagamento?</span>
                   </label>
                   <input type="number" id="payAddHoursVal" min="1" step="0.5" placeholder="Horas" disabled
@@ -1136,12 +1136,12 @@
       }
 
       // Licença
-      document.getElementById('clientPlan').value = client.plan || 'Pro';
+      const planSelect=document.getElementById('clientPlan');if(client.plan&&![...planSelect.options].some(o=>o.value===client.plan))planSelect.add(new Option(client.plan,client.plan));planSelect.value=client.plan||'Pro';
       document.getElementById('clientLicenseStatus').value = client.license_status || 'active';
       const noExpiry = !client.license_expires_at;
       document.getElementById('clientNoExpiry').checked = noExpiry;
       if (!noExpiry) {
-        document.getElementById('clientLicenseExpires').value = client.license_expires_at.slice(0, 10);
+        document.getElementById('clientLicenseExpires').value = clientLocalDate(client.license_expires_at);
       } else {
         document.getElementById('clientLicenseExpires').value = '';
       }
@@ -1160,7 +1160,7 @@
       // Reset payment sub-form
       const payForm = document.getElementById('newPaymentForm');
       if (payForm) payForm.reset();
-      document.getElementById('payDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('payDate').value = clientLocalDate(new Date());
       togglePayAddHours(false);
 
       await loadClientPayments(client.id);
@@ -1195,6 +1195,8 @@
         }
       }
     }
+
+    function clientLocalDate(value){const date=new Date(value);return Number.isFinite(date.getTime())?new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,10):'';}
 
     function toggleLicenseNoExpiry(isChecked) {
       const dateInput = document.getElementById('clientLicenseExpires');
@@ -1249,6 +1251,7 @@
       tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-center text-slate-500">Carregando pagamentos...</td></tr>';
       try {
         const res = await fetch('/api/clients/' + clientId + '/payments', { headers: getAuthHeaders() });
+        if(!res.ok)throw Error('Histórico temporariamente indisponível.');
         if (res.ok) {
           const data = await res.json();
           currentClientPayments = data.payments || [];
@@ -1306,7 +1309,7 @@
                 <td class="p-2.5 font-medium text-white">${escapeMarkup(p.description || 'Pagamento')}</td>
                 <td class="p-2.5 text-slate-400">${escapeMarkup(mLabel)}</td>
                 <td class="p-2.5 font-bold text-slate-200">${valStr}</td>
-                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] border ${sStyle}">${sName}</span></td>
+                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] border ${sStyle}">${escapeMarkup(sName)}</span></td>
                 <td class="p-2.5 text-right">${deleteAction}</td>
               </tr>
             `;
@@ -1341,7 +1344,7 @@
         method: document.getElementById('payMethod').value,
         status: document.getElementById('payStatus').value,
         description: document.getElementById('payDescription').value.trim(),
-        paid_at: document.getElementById('payDate').value || new Date().toISOString(),
+        paid_at: document.getElementById('payDate').value ? new Date(document.getElementById('payDate').value+'T12:00:00').toISOString() : new Date().toISOString(),
         add_hours: addHours > 0 ? addHours : undefined
       };
 
@@ -1377,17 +1380,18 @@
 
     async function handleDeletePayment(paymentId) {
       const clientId = document.getElementById('clientId').value.trim();
-      if (!confirm('Deseja excluir este lançamento de pagamento?')) return;
+      if (!confirm('Excluir este pagamento? As horas vinculadas ao registro serão descontadas do saldo, se ainda não foram utilizadas.')) return;
       try {
         const res = await fetch('/api/clients/' + clientId + '/payments/' + paymentId, {
           method: 'DELETE',
           headers: getAuthHeaders()
         });
         if (res.ok) {
-          await loadClientPayments(clientId);
           await loadClients();
+          await loadClientPayments(clientId);
+          const updated=clientsList.find(c=>String(c.id)===String(clientId));if(updated){document.getElementById('clientHours').value=updated.total_hours;document.getElementById('clientHoursBalanceText').innerText=(Number(updated.total_hours)-Number(updated.used_hours)).toFixed(1)+'h';}
         } else {
-          alert('Não foi possível excluir o pagamento.');
+          const error=await res.json().catch(()=>({}));alert(error.error||'Não foi possível excluir o pagamento.');
         }
       } catch (err) {
         alert('Falha na conexão: ' + err.message);
@@ -1710,14 +1714,14 @@
         notes: document.getElementById('clientNotes').value.trim(),
         plan: document.getElementById('clientPlan').value,
         license_status: document.getElementById('clientLicenseStatus').value,
-        license_expires_at: document.getElementById('clientNoExpiry').checked ? null : (document.getElementById('clientLicenseExpires').value || null),
+        license_expires_at: document.getElementById('clientNoExpiry').checked ? null : (document.getElementById('clientLicenseExpires').value ? new Date(document.getElementById('clientLicenseExpires').value+'T23:59:59.999').toISOString() : null),
         total_hours: parseFloat(document.getElementById('clientHours').value) || 0,
         used_hours: parseFloat(document.getElementById('clientUsedHours').value) || 0,
-        max_rooms: parseInt(document.getElementById('clientMaxRooms').value) || 2,
-        max_listeners: parseInt(document.getElementById('clientMaxListeners').value) || 250
+        max_rooms: Number(document.getElementById('clientMaxRooms').value),
+        max_listeners: Number(document.getElementById('clientMaxListeners').value)
       };
 
-      const pwd = document.getElementById('clientPassword').value.trim();
+      const pwd = document.getElementById('clientPassword').value;
       if (pwd) payload.password = pwd;
 
       const btn = document.getElementById('clientSubmitBtn') || e.target.querySelector('button[type="submit"]');

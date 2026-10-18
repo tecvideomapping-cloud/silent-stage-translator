@@ -13,7 +13,7 @@ class HardwareProbe {
    */
   _execSafe(command, timeout = 3000) {
     try {
-      return execSync(command, { encoding: 'utf8', timeout, stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+      return execSync(command, { encoding: 'utf8', timeout, windowsHide:true, stdio: ['pipe', 'pipe', 'ignore'] }).trim();
     } catch {
       return null;
     }
