@@ -14,7 +14,7 @@
     "dist:mac": "electron-builder --mac dmg",
     "dist:mac:arm64": "electron-builder --mac dmg --arm64",
     "dist:mac:x64": "electron-builder --mac dmg --x64",
-    "test": "node --test --test-concurrency=2 scripts/*.test.js"
+    "test": "node --require ./scripts/test-console.cjs --test --test-concurrency=2 scripts/*.test.js"
   },
   "build": {
     "appId": "com.videomappingtech.silentstage",
