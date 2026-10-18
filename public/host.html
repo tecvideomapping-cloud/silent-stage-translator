@@ -15,6 +15,7 @@
   <script src="/design-system.js" defer></script>
   <script src="/live-captions.js"></script>
   <script src="/speech-ledger.js"></script>
+  <script src="/audio-clock.js"></script>
   <link rel="stylesheet" href="/local-speech.css">
   <script src="/local-speech.js"></script>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
@@ -1966,6 +1967,7 @@
         window.__activeAudioSource = source;
 
         // Buffer de transcrição digital direta para Saída do PC / Arquivo (quando o microfone físico está mudo/fone)
+        const pcmResampler=new window.VmtAudioClock.PcmResampler();
         let digitalPcmChunks = [];
         let digitalPcmSamplesCount = 0;
         let isSendingDigitalStt = false;
@@ -1994,32 +1996,9 @@
           const targetRate = currentAudioProfile.sampleRate;
           const codec = currentAudioProfile.codec;
 
-          let targetFloats = inputData;
-          if (sourceRate !== targetRate) {
-            // Filtro Passa-Baixas Anti-Aliasing por Integração de Janela (Boxcar Averaging Decimation)
-            // Evita ruído metálico de aliasing ao converter 48kHz (YouTube/Windows) para 16kHz/24kHz
-            const ratio = sourceRate / targetRate;
-            const newLen = Math.round(inputData.length / ratio);
-            targetFloats = new Float32Array(newLen);
-            for (let i = 0; i < newLen; i++) {
-              const startPos = i * ratio;
-              const endPos = startPos + ratio;
-              const startIdx = Math.floor(startPos);
-              const endIdx = Math.min(inputData.length - 1, Math.ceil(endPos));
-              let acc = 0;
-              let weightSum = 0;
-              for (let j = startIdx; j <= endIdx; j++) {
-                let w = 1.0;
-                if (j < startPos) w -= (startPos - j);
-                if (j + 1 > endPos) w -= ((j + 1) - endPos);
-                if (w > 0) {
-                  acc += inputData[j] * w;
-                  weightSum += w;
-                }
-              }
-              targetFloats[i] = weightSum > 0 ? (acc / weightSum) : (inputData[startIdx] || 0);
-            }
-          }
+          // Preserve fractional samples across capture blocks; per-block rounding
+          // creates clock drift and eventually overlapping playback packets.
+          const targetFloats=pcmResampler.process(inputData,sourceRate,targetRate);
 
           const numSamples = targetFloats.length;
           const pcm16 = new Int16Array(numSamples);

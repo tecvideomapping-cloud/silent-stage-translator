@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="/audience-v2.css">
   <script src="/design-system.js" defer></script>
   <script src="/live-captions.js"></script>
+  <script src="/audio-clock.js"></script>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
 </head>
 <body class="vmt-app vmt-audience bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-cyan-500 selection:text-white pb-8">
@@ -489,10 +490,10 @@
       const qBadge = document.getElementById('audioQualityBadge');
       if (!qBadge) return;
       if (currentServerAbrTier === 2) {
-        qBadge.innerText = '🛡️ 64 kbps • Resiliência Anti-Corte (-75% Dados)';
+        qBadge.innerText = '🛡️ Rede oscilando · áudio original preservado';
         qBadge.className = 'inline-block mt-0.5 text-[10px] bg-amber-950 text-amber-300 border border-amber-700/80 px-2 py-0.5 rounded-full font-semibold';
       } else if (currentServerAbrTier === 1) {
-        qBadge.innerText = '🛡️ 128 kbps • Adaptação Anti-Falha (-50% Dados)';
+        qBadge.innerText = '🛡️ Proteção contra oscilações de rede';
         qBadge.className = 'inline-block mt-0.5 text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-700/80 px-2 py-0.5 rounded-full font-semibold';
       } else {
         qBadge.innerText = hostDefaultQualityLabel;
@@ -539,7 +540,8 @@
             playRawPCM(event.data);
           }
           // Distribui para pares vizinhos na malha P2P
-          relayAudioP2P(event.data);
+          // Original audio has one delivery path: the direct WebSocket.
+          // Peer DataChannels do not consume audio frames.
           return;
         }
 
@@ -581,10 +583,11 @@
             }
             const isFinalSub = data.isFinal !== false;
             // Legenda traduzida (exibe simultaneamente durante a fala e confirma ao fechar o trecho lógico)
-            renderSubtitle(data.text, isFinalSub, data.lang,data);
+            const syncWithVoice=isPlaying&&currentChannel===data.lang&&(selectedSubtitleLang==='auto'||selectedSubtitleLang===data.lang);
+            if(!syncWithVoice)renderSubtitle(data.text, isFinalSub, data.lang,data);
             // Reproduz o áudio sintetizado apenas quando o trecho lógico completo é fechado
             if (isFinalSub && currentChannel === data.lang) {
-              playTranslatedAudio(data.text, data.lang);
+              playTranslatedAudio(data.text, data.lang,data);
             }
           } else if (data.type === 'subtitle_catchup' && Array.isArray(data.items)) {
             // Recupera automaticamente todas as frases perdidas durante uma micro-queda de internet
@@ -745,8 +748,9 @@
       return rxAdpcmPredictor / 32768;
     }
 
+    const rawPlayout=new window.VmtAudioClock.RawPlayout();
     const rawAudioSources=new Set();
-    function stopRawAudio(){for(const source of rawAudioSources){try{source.stop()}catch{}}rawAudioSources.clear();nextAudioTime=0;}
+    function stopRawAudio(){for(const source of rawAudioSources){try{source.stop()}catch{}}rawAudioSources.clear();nextAudioTime=0;rawPlayout.reset();lastPacketArrivalPerfMs=0;}
     function playRawPCM(arrayBuffer) {
       if (!audioContext) return;
       const u8 = new Uint8Array(arrayBuffer);
@@ -810,12 +814,12 @@
 
       const now = audioContext.currentTime;
 
-      // Agendamento limpo e linear sem distorção de pitch ('rádio dessintonizado')
-      if (nextAudioTime < now) {
-        nextAudioTime = now + 0.025; // 25ms pré-buffer seguro contra underrun
-      } else if (nextAudioTime > now + 0.5) {
-        nextAudioTime = now + 0.035; // Se acumular mais de 500ms, reseta para tempo real
-      }
+      const slot=rawPlayout.schedule(now,performance.now(),audioBuffer.duration,currentAbrMode);
+      if(slot.reset){for(const pending of rawAudioSources){if(pending!==source){try{pending.stop()}catch{}}}rawAudioSources.clear();rawAudioSources.add(source);}
+      if(slot.underrun)windowUnderrunCount++;
+      targetJitterBufferSec=slot.target;packetJitterEwmaMs=slot.jitterMs;
+      nextAudioTime=slot.startAt;
+      if(rawPlayout.packets%20===0)updateQualityAndBufferBadges();
 
       source.playbackRate.value = 1.0; // Afinação 100% natural, sem alteração de velocidade
       source.start(nextAudioTime);
@@ -1026,7 +1030,7 @@
       return String(str || '').replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
     }
 
-    function playTranslatedAudio(text, lang) {
+    function playTranslatedAudio(text, lang,metadata={}) {
       if (!text) return;
       const clean = stripLangPrefix(text);
       if (!clean) return;
@@ -1040,7 +1044,7 @@
 
       if(!isPlaying)return;
 
-      const item={text:clean,lang,voice:currentSpeakerProfile?.voice||'male_deep',speed:currentSpeakerProfile?.speed||1.05,pitch:currentSpeakerProfile?.pitch||0,controller:new AbortController()};
+      const item={text:clean,lang,metadata,enqueuedAt:performance.now(),voice:currentSpeakerProfile?.voice||'male_deep',speed:currentSpeakerProfile?.speed||1.05,pitch:currentSpeakerProfile?.pitch||0,controller:new AbortController()};
       const url=`/api/tts?room=${encodeURIComponent(roomId)}&lang=${encodeURIComponent(lang)}&text=${encodeURIComponent(clean)}&voice=${encodeURIComponent(item.voice)}&speed=${item.speed}&pitch=${item.pitch}`;
       // Prefetch while the preceding sentence plays; playback still follows queue order.
       item.url=url;
@@ -1086,7 +1090,7 @@
         if(finished||generation!==ttsPlaybackGeneration)return;
         finished=true;
         clearTimeout(ttsWatchdogTimer);ttsWatchdogTimer=null;
-        audio.onended=null;audio.onerror=null;
+        audio.onended=null;audio.onerror=null;audio.onplaying=null;
         audio.pause();
         if(currentTtsObjectUrl){URL.revokeObjectURL(currentTtsObjectUrl);currentTtsObjectUrl=null;}
         currentTtsAudioEl=null;activeTtsItem=null;isTtsPlaying=false;
@@ -1095,13 +1099,13 @@
       const fallback=async()=>{
         if(finished||fallingBack||generation!==ttsPlaybackGeneration)return;
         fallingBack=true;
-        audio.onended=null;audio.onerror=null;audio.pause();
+        audio.onended=null;audio.onerror=null;audio.onplaying=null;audio.pause();
         clearTimeout(ttsWatchdogTimer);ttsWatchdogTimer=null;
         // Retry the same server voice once; never replace it with a random OS voice.
         if(!item.retried){
           item.retried=true;
-          try{const response=await fetch(item.url,{signal:AbortSignal.any([item.controller.signal,AbortSignal.timeout(12000)])});if(!response.ok||!String(response.headers.get('content-type')).startsWith('audio/'))throw Error('Voz indisponível');const blob=await response.blob();if(blob.size<256)throw Error('Áudio vazio');if(generation!==ttsPlaybackGeneration)return;item.prepared=Promise.resolve({blob});ttsAudioQueue.unshift(item);}catch(error){if(generation!==ttsPlaybackGeneration)return;const status=document.getElementById('playerStatus');if(status)status.textContent='Voz temporariamente indisponível. Retomando com a mesma voz.';}
-        }
+          try{const response=await fetch(item.url,{signal:AbortSignal.any([item.controller.signal,AbortSignal.timeout(12000)])});if(!response.ok||!String(response.headers.get('content-type')).startsWith('audio/'))throw Error('Voz indisponível');const blob=await response.blob();if(blob.size<256)throw Error('Áudio vazio');if(generation!==ttsPlaybackGeneration)return;item.prepared=Promise.resolve({blob});ttsAudioQueue.unshift(item);}catch(error){if(generation!==ttsPlaybackGeneration)return;renderSubtitle(item.text,true,item.lang,item.metadata);const status=document.getElementById('playerStatus');if(status)status.textContent='Voz temporariamente indisponível. Retomando com a mesma voz.';}
+        }else renderSubtitle(item.text,true,item.lang,item.metadata);
         finishCurrent();
       };
       const prepared=await item.prepared;
@@ -1118,6 +1122,7 @@
       audio.volume=1;
       audio.onended=finishCurrent;
       audio.onerror=fallback;
+      audio.onplaying=()=>{if(generation===ttsPlaybackGeneration&&!finished)renderSubtitle(item.text,true,item.lang,item.metadata);};
       let lastPosition=-1,lastProgressAt=Date.now();
       const watchProgress=()=>{
         if(finished||generation!==ttsPlaybackGeneration)return;
