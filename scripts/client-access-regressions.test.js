@@ -13,6 +13,10 @@ test('administrative edits preserve credentials, portal identity, balances and p
  const update=await request('/api/clients/'+id,'PUT',{password:'Client-password-2026!'},admin.token);assert.equal(update.status,200);assert.equal(update.client.company,'Empresa QA');assert.equal(update.client.plan,'Enterprise');
  let login=await request('/api/customer/login','POST',{email:'client-access@example.test',password:'Client-password-2026!'});assert.equal(login.status,200,'editing a password must create a missing portal account');
  assert.equal((await request('/api/customer/me','GET',undefined,login.token)).status,200);
+ const noEvents=await request('/api/customer/events','GET',undefined,login.token);assert.equal(noEvents.status,200);assert.deepEqual(noEvents.events,[]);assert.equal(noEvents.accountBalance.remainingSeconds,30*3600,'administrative credit must be visible without any event');assert.equal(noEvents.accountBalance.usedSeconds,0);assert.ok(!JSON.stringify(noEvents).includes('password'));
+ await request('/api/clients/'+id+'/license','PUT',{total_hours:32,used_hours:1},admin.token);
+ assert.equal((await request('/api/customer/events','GET',undefined,login.token)).accountBalance.remainingSeconds,31*3600,'existing sessions must see administrative balance changes');
+ await request('/api/clients/'+id+'/license','PUT',{total_hours:30,used_hours:0},admin.token);
  await db.saveRoom({id:'assigned-client-qa',client_id:id,name:'Assigned event',host_key:'private-operator-key',status:'active',target_languages:['es']});
  const assigned=await request('/api/customer/events','GET',undefined,login.token);assert.equal(assigned.status,200);assert.ok(assigned.events.some(e=>e.id==='assigned-client-qa'&&e.legacy));assert.ok(!JSON.stringify(assigned).includes('private-operator-key'));
  assert.equal((await request('/api/rooms/assigned-client-qa/transcripts','GET',undefined,login.token)).status,200);

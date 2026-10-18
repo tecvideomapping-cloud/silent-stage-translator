@@ -27,6 +27,7 @@ class ClientManagement {
   // Hash before taking the database lock; never block the audio event loop.
   const hash=patch.password?await passwordHash(patch.password):null;
   return this.commerce.store.transaction(async tx=>{
+   if(current){Object.assign(merged,await this.db.getClient(current.id,tx),patch);if(merged.used_hours>merged.total_hours)throw fail(400,'As horas utilizadas não podem superar o total contratado.');}
    const linked=current&&(await tx.list('customer',{legacyClientId:current.id}))[0];
    const previousMapping=current?.email?await tx.get('email',current.email.toLowerCase()):null;
    let customer=linked||(previousMapping?await tx.get('customer',previousMapping.customerId):null);

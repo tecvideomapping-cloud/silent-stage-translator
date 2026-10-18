@@ -176,6 +176,7 @@ async function initDb() {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS license_expires_at TIMESTAMP WITH TIME ZONE;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS max_rooms INT DEFAULT 2;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS max_listeners INT DEFAULT 250;
+      ALTER TABLE clients ALTER COLUMN used_hours TYPE NUMERIC(12,8);
 
       CREATE TABLE IF NOT EXISTS client_payments (
         id SERIAL PRIMARY KEY,

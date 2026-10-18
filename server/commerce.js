@@ -1,5 +1,6 @@
 const crypto=require('crypto');
 const upsells=require('./commerce-upsells');
+const accountEvents=require('./account-events');
 const {promisify}=require('util');
 const express=require('express');
 const {CommerceStore}=require('./commerce-store');
@@ -61,7 +62,9 @@ class Commerce {
   origin(req,res,next){if(!require('./security').isAllowed(req.get('origin')))return next(fail(403,'Origem não autorizada.'));next();}
 
  async eventFor(customerId,id,tx=this.store){const event=await tx.get('event',id);if(!event||event.customerId!==customerId)throw fail(404,'Evento não encontrado.');return event;}
- async eventView(event){const stored=await this.store.get('order',event.orderId);const order={...stored,plan:await this.entitlement(event)};const remaining=Math.max(0,order.plan.hours*3600-event.usedSeconds);return {...event,hostKey:undefined,customerId:undefined,plan:order.plan,status:order.status!=='paid'?order.status:remaining<=0?'expired':event.published?'active':'draft',remainingSeconds:remaining,participantUrl:(this.baseUrl()||'')+'/?room='+event.id,hostUrl:'/host.html?room='+event.id,screenUrl:'/screen.html?room='+event.id,published:event.published&&order.status==='paid'&&remaining>0};}
+ async funding(event,tx=this.store){return accountEvents.funding(this,event,tx);}
+ async remaining(event,tx=this.store){const source=await this.funding(event,tx);return event.fundingType==='account'?(source.account?.remainingSeconds||0):Math.max(0,(await this.entitlement(event,tx)).hours*3600-event.usedSeconds);}
+ async eventView(event){const stored=await this.funding(event);const order={...stored,plan:await this.entitlement(event)};const remaining=await this.remaining(event);return {...event,packageLinked:event.fundingType==='account'?!!stored.account:true,hostKey:undefined,customerId:undefined,plan:order.plan,status:order.status!=='paid'?(event.fundingType==='account'?'unfunded':order.status):remaining<=0?'expired':event.published?'active':'draft',remainingSeconds:remaining,participantUrl:(this.baseUrl()||'')+'/?room='+event.id,hostUrl:'/host.html?room='+event.id,screenUrl:'/screen.html?room='+event.id,published:event.published&&order.status==='paid'&&remaining>0};}
  orderView(order){return {id:order.id,kind:order.kind||'base',grants:order.grants||null,offerId:order.kind==='upsell'?order.plan.id:null,offerVersion:order.kind==='upsell'?order.plan.revision:null,planName:order.plan.name,status:order.status,amountCents:order.amountCents,priceCents:order.amountCents,currency:order.currency,eventName:order.eventName,createdAt:order.createdAt,checkoutUrl:order.status==='pending'?order.checkoutUrl:null,eventId:order.eventId||null,emailStatus:order.emailStatus||(order.status==='paid'?'pending':'not_sent'),duplicatePayment:!!order.duplicatePayment};}
  async queue(tx,key,message,orderId=null){if(await tx.get('outbox',key))return;await tx.put('outbox',key,{id:key,message,orderId,status:'pending',attempts:0,dueAt:Date.now(),createdAt:now()});}
  roomFromEvent(event){return {id:event.id,name:event.name,host_key:event.hostKey,source_language:event.source_language,target_languages:event.target_languages,glossary:event.glossary||{},logo_url:event.logo_url||'',banner_url:event.banner_url||'',primary_color:event.primary_color,secondary_color:event.secondary_color,bg_color:event.bg_color,font_family:event.font_family,custom_css:'',sponsors:[],allow_original_audio:true,allow_translation:true,allow_subtitles:true,status:event.published?'active':'draft',created_at:event.createdAt};}
@@ -75,11 +78,11 @@ class Commerce {
  async isOwner(req,event){const auth=await this.session(req);return auth?.customer.id===event.customerId;}
  async checkEventAccess(req,id,{operator=false,admin=false}={}){
   const event=await this.managedEvent(id);if(!event){if(String(id).startsWith('evt-'))throw fail(404,'Evento não encontrado.');if(operator&&await this.isLegacyOwner(req,await require('./db').getRoom(id)))return {legacy:true,owner:true};return null;}
-  const order=await this.store.get('order',event.orderId);if(order?.status!=='paid'||event.revoked)throw fail(403,'O acesso a este evento não está ativo.');
+  const order=await this.funding(event);if(order?.status!=='paid'||event.revoked)throw fail(403,'O acesso a este evento não está ativo.');
   const owner=admin||await this.isOwner(req,event);
   if(operator&&!owner)throw fail(403,'Acesso reservado ao responsável pelo evento.');
   if(!operator&&!owner&&!event.published)throw fail(403,'Este evento ainda não está disponível para os participantes.');
-  if(event.usedSeconds>=(await this.entitlement(event)).hours*3600)throw fail(403,'O período de transmissão deste evento foi utilizado.');
+  if(await this.remaining(event)<=0)throw fail(403,'O período de transmissão deste evento foi utilizado.');
   return {event,order,owner};
  }
  async acquireSocket(req,id,role,channel,admin=false){
@@ -88,10 +91,11 @@ class Commerce {
   if(!['original','text',...event.target_languages].includes(channel))throw fail(403,'Este canal não está disponível no evento.');
   const leaseId=uuid();
   await this.store.transaction(async tx=>{
-   const current=await tx.get('event',id),base=await tx.get('order',current.orderId);
-   if(base.status!=='paid'||current.revoked||current.usedSeconds>=(await this.entitlement(current,tx)).hours*3600)throw fail(403,'O acesso a este evento não está ativo.');
+   const current=await tx.get('event',id),base=await this.funding(current,tx);
+   if(base.status!=='paid'||current.revoked||await this.remaining(current,tx)<=0)throw fail(403,'O acesso a este evento não está ativo.');
    const effective=await this.entitlement(current,tx);
    const leases=await tx.list('connection',{eventId:id});const active=leases.filter(l=>l.expiresAt>Date.now());
+   if(role==='listener'&&current.fundingType==='account'){const ids=new Set((await tx.list('event',{customerId:current.customerId})).filter(e=>e.fundingType==='account'&&e.fundingClientId===current.fundingClientId).map(e=>e.id));const count=(await tx.list('connection')).filter(l=>ids.has(l.eventId)&&l.role==='listener'&&l.expiresAt>Date.now()).length;if(count>=effective.maxParticipants)throw fail(403,'A conta atingiu o limite de participantes simultâneos.');}
    if(role==='host'&&active.some(l=>l.role==='host'))throw fail(409,'Já existe um transmissor conectado a este evento.');
    if(role==='listener'&&effective.maxParticipants&&active.filter(l=>l.role==='listener').length>=effective.maxParticipants)throw fail(403,'O evento atingiu o limite de participantes simultâneos.');
    for(const lease of leases)if(lease.expiresAt<Date.now())await tx.remove('connection',lease.id);
@@ -101,21 +105,22 @@ class Commerce {
  async releaseSocket(context){if(context)await this.store.transaction(tx=>tx.remove('connection',context.leaseId));}
  async refreshSocket(context){
   if(!context)return true;
-  return this.store.transaction(async tx=>{const lease=await tx.get('connection',context.leaseId),event=await tx.get('event',context.eventId);const order=event&&await tx.get('order',event.orderId);
+  return this.store.transaction(async tx=>{const lease=await tx.get('connection',context.leaseId),event=await tx.get('event',context.eventId);const order=event&&await this.funding(event,tx);
    if(!lease||!event||order?.status!=='paid'||event.revoked||context.role!=='host'&&!event.published)return false;
-   if(context.role!=='host'&&event.usedSeconds>=(await this.entitlement(event,tx)).hours*3600)return false;
+   if(await this.remaining(event,tx)<=0)return false;
    lease.expiresAt=Date.now()+75000;await tx.put('connection',lease.id,lease);return true;});
  }
  async consumeSocket(context){
   if(!context||context.role!=='host')return true;
   if(context.budgetUntil>Date.now())return true;
   if(context.charging)return context.charging;
-  context.charging=this.store.transaction(async tx=>{const event=await tx.get('event',context.eventId);const order=event&&await tx.get('order',event.orderId);const lease=await tx.get('connection',context.leaseId);
+  context.charging=this.store.transaction(async tx=>{const event=await tx.get('event',context.eventId);const order=event&&await this.funding(event,tx);const lease=await tx.get('connection',context.leaseId);
    if(!event||!lease||lease.expiresAt<Date.now()||order?.status!=='paid'||event.revoked)return false;
-   if(lease.budgetUntil>Date.now()){context.budgetUntil=lease.budgetUntil;return true;}
-   const seconds=Math.min(5,(await this.entitlement(event,tx)).hours*3600-event.usedSeconds);if(seconds<=0)return false;
-   event.usedSeconds+=seconds;await tx.put('event',event.id,event);context.budgetUntil=Date.now()+seconds*1000;lease.budgetUntil=context.budgetUntil;await tx.put('connection',lease.id,lease);return true;
-  }).finally(()=>{context.charging=null;});return context.charging;
+   if(lease.budgetUntil>Date.now())return lease.budgetUntil;
+   const seconds=Math.min(5,await this.remaining(event,tx));if(seconds<=0)return false;
+   if(event.fundingType==='account'&&!await accountEvents.charge(this,event,seconds,tx))return false;
+   event.usedSeconds+=seconds;await tx.put('event',event.id,event);lease.budgetUntil=Date.now()+seconds*1000;await tx.put('connection',lease.id,lease);return lease.budgetUntil;
+  }).then(budgetUntil=>{if(budgetUntil)context.budgetUntil=budgetUntil;return !!budgetUntil;}).finally(()=>{context.charging=null;});return context.charging;
  }
  async processPayment(payment){
   const orderId=String(payment.external_reference||'');
@@ -271,7 +276,21 @@ class Commerce {
   router.get('/customer/events',auth,wrap(async(req,res)=>{
    const events=await this.store.list('event',{customerId:req.customer.id});const views=await Promise.all(events.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(e=>this.eventView(e)));
    if(req.customer.legacyClientId){const db=require('./db'),client=await db.getClient(req.customer.legacyClientId);for(const room of await db.listRooms())if(Number(room.client_id)===client.id&&!views.some(e=>e.id===room.id))views.push({id:room.id,name:room.name,legacy:true,logo_url:room.logo_url,banner_url:room.banner_url,plan:{name:client.plan,hours:client.total_hours,maxParticipants:client.max_listeners,maxLanguages:(room.target_languages||[]).length},remainingSeconds:Math.max(0,(client.total_hours-client.used_hours)*3600),status:room.status,published:room.status==='active',participantUrl:(this.baseUrl()||'')+'/?room='+encodeURIComponent(room.id),hostUrl:'/host.html?room='+encodeURIComponent(room.id),screenUrl:'/screen.html?room='+encodeURIComponent(room.id)});}
-   res.json({events:views});
+   const accountBalance=await accountEvents.balance(this,req.customer);
+   res.json({events:views,accountBalance});
+  }));
+  router.post('/customer/events',auth,csrf,this.throttle('create-event',20),wrap(async(req,res)=>{
+   const name=clean(req.body?.name,120);if(!name)throw fail(400,'Informe o nome do evento.');
+   const event=await this.store.transaction(async tx=>{
+    const account=await accountEvents.balance(this,req.customer,tx),events=await tx.list('event',{customerId:req.customer.id});
+    const legacy=req.customer.legacyClientId?(await require('./db').listRooms()).filter(r=>Number(r.client_id)===Number(req.customer.legacyClientId)&&!events.some(e=>e.id===r.id)):[];
+    if(events.length+legacy.length>=(account?.maxRooms||2))throw fail(409,'O limite de eventos da sua conta foi atingido.');
+    const event={id:'evt-'+crypto.randomBytes(10).toString('hex'),customerId:req.customer.id,fundingType:'account',fundingClientId:req.body?.useAccountBalance===true&&account?account.clientId:null,name,hostKey:crypto.randomBytes(32).toString('hex'),published:false,revoked:false,usedSeconds:0,source_language:'pt-BR',target_languages:['en','es'],logo_url:'',banner_url:'',primary_color:'#b3a0ff',secondary_color:'#7250d6',bg_color:'#10111c',font_family:'DM Sans',glossary:{},createdAt:now(),status:'draft'};
+    await tx.put('event',event.id,event);await this.syncRoom(tx,event);return event;
+   });await this.afterEvent(event);res.status(201).json({event:await this.eventView(event)});
+  }));
+  router.post('/customer/events/:id/funding',auth,csrf,wrap(async(req,res)=>{
+   const event=await this.store.transaction(async tx=>{const event=await this.eventFor(req.customer.id,req.params.id,tx);if(event.fundingType!=='account')throw fail(409,'Este evento possui um pacote próprio.');const account=await accountEvents.balance(this,req.customer,tx);if(!account?.active||account.remainingSeconds<=0)throw fail(409,'Sua conta não possui um pacote válido com saldo disponível.');event.fundingClientId=account.clientId;await tx.put('event',event.id,event);return event;});res.json({event:await this.eventView(event)});
   }));
   router.get('/customer/glossaries',auth,wrap(async(req,res)=>res.json({glossaries:await this.store.list('glossary',{customerId:req.customer.id})})));
   router.get('/customer/glossaries/:id',auth,wrap(async(req,res)=>{const g=await this.store.get('glossary',req.params.id);if(!g||g.customerId!==req.customer.id)throw fail(404,'Glossário não encontrado.');res.json(g);}));
@@ -283,7 +302,7 @@ class Commerce {
   router.delete('/customer/glossaries/:id',auth,csrf,wrap(async(req,res)=>{await this.store.transaction(async tx=>{const g=await tx.get('glossary',req.params.id);if(!g||g.customerId!==req.customer.id)throw fail(404,'Glossário não encontrado.');await tx.remove('glossary',req.params.id);});res.json({success:true});}));
   router.patch('/customer/events/:id',auth,csrf,wrap(async(req,res)=>{
    const event=await this.store.transaction(async tx=>{
-    const event=await this.eventFor(req.customer.id,req.params.id,tx);const order=await tx.get('order',event.orderId);if(order.status!=='paid')throw fail(409,'O acesso ao evento não está ativo.');const body=req.body||{};
+    const event=await this.eventFor(req.customer.id,req.params.id,tx);const order=await tx.get('order',event.orderId);if(event.fundingType!=='account'&&order?.status!=='paid')throw fail(409,'O acesso ao evento não está ativo.');const body=req.body||{};
     if(body.name!==undefined){if(!clean(body.name,120))throw fail(400,'Informe o nome do evento.');event.name=clean(body.name,120);}
     for(const [input,key] of [['primaryColor','primary_color'],['secondaryColor','secondary_color'],['bgColor','bg_color']])if(body[input]!==undefined){if(!/^#[a-f0-9]{6}$/i.test(body[input]))throw fail(400,'Informe cores no formato hexadecimal.');event[key]=body[input];}
     if(body.sourceLanguage!==undefined){if(!sourceLangs.has(body.sourceLanguage))throw fail(400,'Idioma do palco inválido.');event.source_language=body.sourceLanguage;}
@@ -297,11 +316,11 @@ class Commerce {
    const kind=req.get('X-Asset-Kind');const bytes=req.body;const mime=req.get('Content-Type')?.split(';')[0];
    const valid=Buffer.isBuffer(bytes)&&bytes.length>12&&(mime==='image/png'&&bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))||mime==='image/jpeg'&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255||mime==='image/webp'&&bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP');
    if(!['logo','banner'].includes(kind)||!valid)throw fail(400,'Envie uma imagem PNG, JPEG ou WebP de até 5 MB.');
-   const id=uuid();await this.store.transaction(async tx=>{const event=await this.eventFor(req.customer.id,req.params.id,tx);const order=await tx.get('order',event.orderId);if(order.status!=='paid')throw fail(409,'O evento não está ativo.');if((await tx.list('asset',{eventId:event.id})).length>=30)throw fail(409,'Limite de 30 imagens por evento atingido.');await tx.asset({id,customerId:req.customer.id,eventId:event.id,kind,mime,bytes});await tx.put('asset',id,{id,customerId:req.customer.id,eventId:event.id,kind});});res.status(201).json({url:'/api/assets/'+id});
+   const id=uuid();await this.store.transaction(async tx=>{const event=await this.eventFor(req.customer.id,req.params.id,tx);const order=await tx.get('order',event.orderId);if(event.fundingType!=='account'&&order?.status!=='paid')throw fail(409,'O evento não está ativo.');if((await tx.list('asset',{eventId:event.id})).length>=30)throw fail(409,'Limite de 30 imagens por evento atingido.');await tx.asset({id,customerId:req.customer.id,eventId:event.id,kind,mime,bytes});await tx.put('asset',id,{id,customerId:req.customer.id,eventId:event.id,kind});});res.status(201).json({url:'/api/assets/'+id});
   }));
   router.get('/assets/:id',wrap(async(req,res)=>{await this.readyOrFail();const asset=await this.store.asset(req.params.id);if(!asset)return res.sendStatus(404);res.setHeader('Content-Type',asset.mime);res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Security-Policy',"default-src 'none'; sandbox");res.setHeader('Cache-Control','public,max-age=31536000,immutable');res.send(asset.bytes);}));
   router.post('/customer/events/:id/publish',auth,csrf,wrap(async(req,res)=>{
-   if(typeof req.body?.published!=='boolean')throw fail(400,'Informe se o evento deve ser publicado.');const event=await this.store.transaction(async tx=>{const event=await this.eventFor(req.customer.id,req.params.id,tx);const order=await tx.get('order',event.orderId);if(order.status!=='paid'||event.revoked)throw fail(409,'O pagamento deste evento não está ativo.');if(req.body.published&&event.usedSeconds>=(await this.entitlement(event,tx)).hours*3600)throw fail(409,'As horas de transmissão deste evento foram utilizadas.');event.published=req.body.published;event.status=event.published?'active':'draft';await tx.put('event',event.id,event);await this.syncRoom(tx,event);return event;});await this.afterEvent(event);res.json({event:await this.eventView(event)});
+   if(typeof req.body?.published!=='boolean')throw fail(400,'Informe se o evento deve ser publicado.');const event=await this.store.transaction(async tx=>{const event=await this.eventFor(req.customer.id,req.params.id,tx);const order=await this.funding(event,tx);if(req.body.published){accountEvents.validateActive(order);if(event.revoked)throw fail(409,'O acesso ao evento foi revogado.');}if(req.body.published&&await this.remaining(event,tx)<=0)throw fail(409,'As horas de transmissão deste evento foram utilizadas.');event.published=req.body.published;event.status=event.published?'active':'draft';await tx.put('event',event.id,event);await this.syncRoom(tx,event);return event;});await this.afterEvent(event);res.json({event:await this.eventView(event)});
   }));
   if(requireAdmin){
    router.get('/admin/commerce/products',requireAdmin,wrap(async(req,res)=>{await this.readyOrFail();res.json({products:(await this.store.list('product')).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0))});}));
@@ -329,3 +348,4 @@ class Commerce {
 Commerce.prototype.entitlement=upsells.entitlement;
 Commerce.prototype.usageView=upsells.usageView;
 module.exports={Commerce,plans,passwordHash,passwordMatches,tokenFrom};
+

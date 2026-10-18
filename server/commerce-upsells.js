@@ -6,6 +6,7 @@ const stamp = () => new Date().toISOString();
 
 // Purchased grants are derived from paid, immutable order snapshots, never live offers.
 async function entitlement(event, tx = this.store) {
+ if(event.fundingType==='account')return (await this.funding(event,tx)).plan;
  const base = await tx.get('order',event.orderId);
  const plan = {...base.plan};
  for (const order of await tx.list('order',{eventId:event.id})) {
@@ -21,11 +22,12 @@ function useful(offer,plan) {
   (offer.addHours>0 || offer.addParticipants>0&&plan.maxParticipants!==null || offer.addLanguages>0);
 }
 async function usageView(event,tx=this.store) {
- const base=await tx.get('order',event.orderId),plan=await this.entitlement(event,tx);
+ const base=await this.funding(event,tx),plan=await this.entitlement(event,tx);
  const leases=await tx.list('connection',{eventId:event.id});
  const metric=(used,limit)=>({used,limit,remaining:limit===null?null:Math.max(0,limit-used),percent:limit===null?0:limit===0?100:Math.min(100,used/limit*100)});
  const usage={hours:metric(event.usedSeconds/3600,plan.hours),participants:metric(leases.filter(l=>l.role==='listener'&&l.expiresAt>Date.now()).length,plan.maxParticipants),languages:metric(event.target_languages.length,plan.maxLanguages)};
- const active=base.status==='paid'&&!event.revoked;
+ if(event.fundingType==='account')usage.hours=metric((base.account?.usedSeconds||0)/3600,plan.hours);
+ const active=event.fundingType!=='account'&&base.status==='paid'&&!event.revoked;
  const offers=active?(await tx.list('upsell')).filter(o=>o.active&&(!o.eligibleProductIds.length||o.eligibleProductIds.includes(base.plan.id))&&useful(o,plan)).filter(o=>{
   const m=usage[o.triggerMetric];return m.limit!==null&&(m.percent>=o.thresholdPercent||o.triggerMetric==='hours'&&m.remaining*60<=o.leadMinutes);
  }).map(o=>({...o,reason:o.triggerMetric==='hours'?'Seu tempo de transmissão está próximo do limite.':o.triggerMetric==='participants'?'O público está se aproximando da capacidade contratada.':'Você está próximo do limite de idiomas.'})):[];
@@ -48,7 +50,8 @@ function routes(router,{wrap,auth,csrf,requireAdmin}) {
   const key=String(req.get('Idempotency-Key')||'').slice(0,100);
   const order=await this.store.transaction(async tx=>{
    const event=await this.eventFor(req.customer.id,req.params.id,tx),base=await tx.get('order',event.orderId);
-   if(base.status!=='paid'||event.revoked)throw fail(409,'O pagamento do evento não está ativo.');
+   if(event.fundingType==='account')throw fail(409,'Os adicionais deste evento são gerenciados no pacote da conta.');
+   if(base?.status!=='paid'||event.revoked)throw fail(409,'O pagamento do evento não está ativo.');
    const offer=await tx.get('upsell',String(req.body.offerId||''));
    if(!offer||!offer.active||offer.eligibleProductIds.length&&!offer.eligibleProductIds.includes(base.plan.id))throw fail(409,'Esta oferta não está disponível para este evento.');
    if(req.body.offerVersion!==offer.revision)throw fail(409,'Esta oferta foi atualizada. Confira as condições novamente.');

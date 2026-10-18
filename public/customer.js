@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
-  const state = { customer:null, csrfToken:'', events:[], orders:[], mode:'login', selected:null, assets:{}, uploads:0, refreshing:false, saving:false };
+  const state = { customer:null, csrfToken:'', events:[], orders:[], accountBalance:null, mode:'login', selected:null, assets:{}, uploads:0, refreshing:false, saving:false };
   const params = new URLSearchParams(location.search);
   if(window.desktopHost?.isElectron)$('desktopAdminLogin').hidden=false;
   let resetToken = params.get('reset') || '';
@@ -16,7 +16,7 @@
   function link(text, url, cls='vmt-btn') { const href=safeUrl(url); if(!href)return null; const a=el('a',cls,text); a.href=href; a.target='_blank'; a.rel='noopener noreferrer'; return a; }
   function append(parent, ...nodes) { nodes.filter(Boolean).forEach(n=>parent.append(n)); return parent; }
   function showTab(tab) { const events=tab==='events'; $('eventsSection').hidden=!events; $('ordersSection').hidden=events; $('eventsTab').setAttribute('aria-pressed',String(events)); $('ordersTab').setAttribute('aria-pressed',String(!events)); }
-  function unauthorized() { localStorage.removeItem("vmt_customer_token"); state.customer=null; state.csrfToken=''; state.events=[]; state.orders=[]; state.selected=null; $('eventsList').replaceChildren(); $('ordersList').replaceChildren(); if($('eventDialog').open)$('eventDialog').close(); if($('qrDialog').open)$('qrDialog').close(); $('dashboardSection').hidden=true; $('logoutButton').hidden=true; $('authSection').hidden=false; setMode('login'); }
+  function unauthorized() { localStorage.removeItem("vmt_customer_token"); state.customer=null; state.csrfToken=''; state.events=[]; state.orders=[]; state.accountBalance=null; $("accountBalance").replaceChildren(); $("accountBalance").hidden=true; if($("createEventDialog").open)$("createEventDialog").close(); state.selected=null; $('eventsList').replaceChildren(); $('ordersList').replaceChildren(); if($('eventDialog').open)$('eventDialog').close(); if($('qrDialog').open)$('qrDialog').close(); $('dashboardSection').hidden=true; $('logoutButton').hidden=true; $('authSection').hidden=false; setMode('login'); }
   async function api(path, { method='GET', data, headers={}, raw, quietAuth=false }={}) {
     const mutation=method!=='GET';
     const init={method,credentials:'same-origin',headers:{'Accept':'application/json',...headers}}; const cTok=localStorage.getItem('vmt_customer_token'); if(cTok)init.headers['X-Session-Token']=cTok;
@@ -69,7 +69,7 @@
     const results=await Promise.allSettled([api('/events'),api('/orders')]);
     if(!state.customer){state.refreshing=false;$('refreshButton').disabled=false;return;}
     const errors=[];
-    if(results[0].status==='fulfilled'){state.events=Array.isArray(results[0].value.events)?results[0].value.events:[];renderEvents();}else errors.push('Eventos: '+results[0].reason.message);
+    if(results[0].status==='fulfilled'){state.events=Array.isArray(results[0].value.events)?results[0].value.events:[];state.accountBalance=results[0].value.accountBalance||null;renderAccountBalance();renderEvents();}else errors.push('Eventos: '+results[0].reason.message);
     if(results[1].status==='fulfilled'){state.orders=Array.isArray(results[1].value.orders)?results[1].value.orders:[];renderOrders();}else errors.push('Pedidos: '+results[1].reason.message);
     if(errors.length)feedback('dashboardFeedback',errors.join(' '),'error');else if(!returnOrder)feedback('dashboardFeedback');
     state.refreshing=false;$('refreshButton').disabled=false;
@@ -78,19 +78,26 @@
   const numeric=value=>Number.isFinite(Number(value))?Math.max(0,Number(value)):0;
   function hoursLabel(seconds){const mins=Math.ceil(numeric(seconds)/60);return Math.floor(mins/60)+'h '+String(mins%60).padStart(2,'0')+'min';}
   function limitLabel(value){return value===null||value===undefined?'Não informado':String(value);}
+  function renderAccountBalance(){
+    const box=$('accountBalance'),balance=state.accountBalance;box.replaceChildren();box.hidden=!balance;if(!balance)return;
+    append(box,el('span','vmt-eyebrow','SALDO DA SUA CONTA'),el('h2','',hoursLabel(balance.remainingSeconds)+' disponíveis'),el('p','vmt-muted',hoursLabel(balance.totalSeconds)+' contratadas · '+hoursLabel(balance.usedSeconds)+' utilizadas'),el('p','vmt-muted','Até '+limitLabel(balance.maxRooms)+' eventos · '+limitLabel(balance.maxParticipants)+' participantes simultâneos'));
+    if(balance.expiresAt)box.append(el('p','vmt-muted','Validade: '+new Date(balance.expiresAt).toLocaleDateString('pt-BR')));
+    box.append(el('p','vmt-muted','Horas liberadas pela administração. O saldo é compartilhado entre os eventos vinculados à sua conta.'));
+  }
   function renderEvents() {
     const list=$('eventsList');list.replaceChildren();$('eventCount').textContent=state.events.length+' evento'+(state.events.length===1?'':'s');
-    if(!state.events.length){list.append(empty('Sua próxima experiência vem aí.','Após a confirmação do pagamento, seu evento aparecerá aqui para você personalizar e compartilhar.',true));return;}
+    if(!state.events.length){list.append(empty('Seu próximo evento começa aqui.',state.accountBalance?'Seu saldo já está disponível. Crie um evento e vincule o pacote da sua conta. Não é necessário comprar outro pacote.':'Crie e personalize seu evento como rascunho. Para ativá-lo, será necessário vincular um pacote de horas.'));return;}
     state.events.forEach(event=>{
       const card=el('article','customer-event vmt-glass');const cover=el('div','event-cover');const banner=safeUrl(event.banner_url);
       if(banner){cover.classList.add('has-banner');cover.style.backgroundImage='linear-gradient(0deg,rgba(15,12,30,.8),rgba(15,12,30,.12)),url('+JSON.stringify(banner)+')';}
       const top=el('div','cover-meta');top.append(el('span','cover-label','SILENT STAGE'));const logo=safeUrl(event.logo_url);if(logo){const img=el('img','event-logo');img.src=logo;img.alt='Logo de '+event.name;img.loading='lazy';img.addEventListener('error',()=>img.hidden=true);top.append(img);}append(cover,top,el('h3','',event.name||'Evento'));
       const content=el('div','event-content'),meta=el('div','event-meta-row');append(meta,el('span','event-plan',event.plan?.name||'Plano do evento'),el('span','customer-badge'+(event.published?' live':''),event.published?'Publicado':'Não publicado'));
-      const balance=el('div','event-balance'),remaining=el('div');append(remaining,el('strong','balance-number',hoursLabel(event.remainingSeconds)),el('span','balance-label',event.legacy?'de saldo contratual':'de transmissão restantes'));
+      const balance=el('div','event-balance'),remaining=el('div');append(remaining,el('strong','balance-number',hoursLabel(event.remainingSeconds)),el('span','balance-label',event.fundingType==='account'?'de saldo compartilhado da conta':event.legacy?'de saldo contratual':'de transmissão restantes'));
       const limits=el('div','event-limits');append(limits,el('div','',limitLabel(event.plan?.hours)+' horas contratadas'),el('div','',event.plan?.maxParticipants==null?'Participantes ilimitados':'Até '+limitLabel(event.plan.maxParticipants)+' participantes'),el('div','','Até '+limitLabel(event.plan?.maxLanguages)+' idiomas'));append(balance,remaining,limits);
       append(content,meta,balance);
       if(event.status){const status=el('p','event-note','Situação: '+statusName(event.status));content.append(status);}
       const edit=action('Personalizar evento',()=>openEditor(event),true);edit.disabled=['refunded','charged_back'].includes(event.status);const actions=el('div','event-actions');if(event.legacy)actions.append(el('p','event-note','Configuração gerenciada pela equipe.'));else actions.append(edit);content.append(actions);
+      if(event.fundingType==='account'&&!event.packageLinked){const bind=action('Vincular pacote de horas',async()=>{bind.disabled=true;try{await api('/events/'+encodeURIComponent(event.id)+'/funding',{method:'POST',data:{}});await refresh();}catch(err){feedback('dashboardFeedback',err.message,'error');}finally{bind.disabled=false;}});actions.append(bind);}
       const participantUrl=safeUrl(event.participantUrl);
       if(participantUrl){const box=el('div','participant-box');const label=el('label','','Link dos participantes');const input=el('input');input.value=participantUrl;input.readOnly=true;input.setAttribute('aria-label','Link dos participantes de '+event.name);input.addEventListener('focus',()=>input.select());label.append(input);box.append(label);const controls=el('div','participant-controls');append(controls,action('Copiar link',()=>copy(participantUrl)),action('QR code',()=>openQr(event)),link('Abrir sala',participantUrl));box.append(controls);content.append(box);}
       const footer=el('div','event-footer'),tools=el('div','event-actions');append(tools,
@@ -99,12 +106,12 @@
         link('Abrir projeção',event.screenUrl),
         link('📄 Ata (.TXT)', `/api/rooms/${encodeURIComponent(event.id)}/export?format=txt`),
         link('🎬 Legendas (.SRT)', `/api/rooms/${encodeURIComponent(event.id)}/export?format=srt`)
-      );const publish=action(event.published?'Despublicar':'Publicar evento',()=>publishEvent(event,publish));publish.classList.add('publish-button');publish.disabled=['expired','refunded','charged_back'].includes(event.status);append(footer,tools,event.legacy?null:publish);content.append(footer);
-      if(!event.published)content.append(el('p','event-note','Publique quando a identidade e os idiomas estiverem prontos para seus participantes.'));
+      );const publish=action(event.published?'Despublicar':'Ativar evento',()=>publishEvent(event,publish));publish.classList.add('publish-button');publish.disabled=!event.published&&['unfunded','expired','refunded','charged_back'].includes(event.status);append(footer,tools,event.legacy?null:publish);content.append(footer);
+      if(!event.published)content.append(el('p','event-note',event.status==='unfunded'?'Vincule um pacote de horas para liberar a ativação e a transmissão.':'Ative quando a identidade e os idiomas estiverem prontos para seus participantes.'));
       append(card,cover,content);list.append(card);
     });
   }
-  const statusNames={created:'Aguardando pagamento',pending:'Aguardando pagamento',paid:'Pagamento confirmado',approved:'Pagamento confirmado',completed:'Concluído',cancelled:'Cancelado',canceled:'Cancelado',expired:'Expirado',failed:'Não concluído',processing:'Em processamento',active:'Ativo',draft:'Rascunho',published:'Publicado',pending_payment:'Aguardando pagamento',refunded:'Reembolsado',charged_back:'Pagamento contestado',rejected:'Pagamento não aprovado'};
+  const statusNames={unfunded:'Aguardando vínculo de pacote',created:'Aguardando pagamento',pending:'Aguardando pagamento',paid:'Pagamento confirmado',approved:'Pagamento confirmado',completed:'Concluído',cancelled:'Cancelado',canceled:'Cancelado',expired:'Sem saldo disponível',failed:'Não concluído',processing:'Em processamento',active:'Ativo',draft:'Rascunho',published:'Publicado',pending_payment:'Aguardando pagamento',refunded:'Reembolsado',charged_back:'Pagamento contestado',rejected:'Pagamento não aprovado'};
   function statusName(status){return statusNames[String(status).toLowerCase()]||String(status);}
   function renderOrders(){
     const list=$('ordersList');list.replaceChildren();if(!state.orders.length){list.append(empty('Seu primeiro evento está a um passo.','Seus pedidos e confirmações de pagamento aparecerão aqui.',true));return;}
@@ -183,6 +190,9 @@
   document.querySelectorAll('[data-auth-mode]').forEach(button=>button.addEventListener('click',()=>setMode(button.dataset.authMode)));
   $('authForm').addEventListener('submit',authenticate);$('forgotButton').addEventListener('click',()=>setMode('forgot'));$('backLoginButton').addEventListener('click',()=>setMode('login'));
   $('eventsTab').addEventListener('click',()=>showTab('events'));$('ordersTab').addEventListener('click',()=>showTab('orders'));$('refreshButton').addEventListener('click',refresh);
+  $('createEventButton').addEventListener('click',()=>{$('createEventForm').reset();const available=!!state.accountBalance?.active&&state.accountBalance.remainingSeconds>0;$('useAccountBalance').disabled=!available;$('useAccountBalance').checked=available;$('createBalanceHint').textContent=available?hoursLabel(state.accountBalance.remainingSeconds)+' disponíveis para os eventos da conta.':'Você pode configurar o rascunho agora e vincular um pacote quando estiver disponível.';feedback('createEventFeedback');$('createEventDialog').showModal();});
+  $('closeCreateEvent').addEventListener('click',()=>$('createEventDialog').close());
+  $('createEventForm').addEventListener('submit',async event=>{event.preventDefault();const button=$('submitCreateEvent');button.disabled=true;feedback('createEventFeedback');try{const result=await api('/events',{method:'POST',data:{name:$('createEventForm').elements.name.value.trim(),useAccountBalance:$('useAccountBalance').checked}});$('createEventDialog').close();await refresh();showTab('events');openEditor(result.event);}catch(err){feedback('createEventFeedback',err.message,'error');}finally{button.disabled=false;}});
   $('logoutButton').addEventListener('click',async()=>{const button=$('logoutButton');button.disabled=true;try{await api('/logout',{method:'POST',data:{}});localStorage.removeItem('vmt_customer_token');unauthorized();feedback('authFeedback','Você saiu da sua conta.','success');}catch(err){feedback('dashboardFeedback',err.message,'error');}finally{button.disabled=false;}});
   $('closeEditor').addEventListener('click',closeEditor);$('cancelEditor').addEventListener('click',closeEditor);$('eventDialog').addEventListener('cancel',event=>{if(state.uploads||state.saving)event.preventDefault();});$('eventForm').addEventListener('submit',saveEvent);
   ['logo','banner'].forEach(kind=>{$(kind+'Upload').addEventListener('change',event=>upload(kind,event.target));$('remove'+kind[0].toUpperCase()+kind.slice(1)).addEventListener('click',()=>{state.assets[kind+'Url']='';preview(kind,'');feedback('editorFeedback','Salve a personalização para aplicar a remoção.');});});
@@ -194,3 +204,4 @@
   }
   init();
 })();
+

@@ -108,9 +108,9 @@ app.use('/api',async(req,res,next)=>{
       const id=decodeURIComponent(eventPath[1]),action=eventPath[2];
       const event=await commerce.managedEvent(id);
       if(event){
-        const order=await commerce.store.get('order',event.orderId);const owner=admin||await commerce.isOwner(req,event);
+        const order=await commerce.funding(event);const owner=admin||await commerce.isOwner(req,event);
         if(action){if(!owner)return res.status(403).json({error:'Acesso reservado ao responsável pelo evento.'});}
-        else if(!owner&&(order?.status!=='paid'||!event.published||event.revoked))return res.status(403).json({error:'Este evento ainda não está disponível para os participantes.'});
+        else if(!owner&&(order?.status!=='paid'||await commerce.remaining(event)<=0||!event.published||event.revoked))return res.status(403).json({error:'Este evento ainda não está disponível para os participantes.'});
         if(req.method==='DELETE')return res.status(409).json({error:'Um evento contratado não pode ser excluído pelo cadastro de salas.'});
       }
       const legacyOwner=!event&&!admin&&await commerce.isLegacyOwner(req,await getRoom(id));
