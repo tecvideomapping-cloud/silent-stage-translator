@@ -76,7 +76,8 @@
       "!desktop/speech/test_*.py",
       "!**/.env",
       "!**/*.dpapi"
-    ]
+    ],
+    "publish": null
   },
   "keywords": [
     "silent-theater",
