@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld('desktopHost', {
   ping: () => 'pong',
   getHardware:()=>ipcRenderer.invoke('vmt:hardware'),
   speech: {
+    capabilities:refresh=>ipcRenderer.invoke('vmt:speech:capabilities',refresh===true),
+    hardware:()=>ipcRenderer.invoke('vmt:speech:hardware'),
+    hardwareMetrics:()=>ipcRenderer.invoke('vmt:speech:hardware-metrics'),
     status:()=>ipcRenderer.invoke('vmt:speech:status'),
     start:config=>ipcRenderer.invoke('vmt:speech:start',config),
     stop:()=>ipcRenderer.invoke('vmt:speech:stop'),

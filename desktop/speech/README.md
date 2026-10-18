@@ -4,12 +4,20 @@ O aplicativo Electron captura a fonte selecionada na mesa (microfone, saída do 
 
 ## Windows
 
+A partir do instalador 1.0.7, o assistente **Preparar motor local** verifica Python e bibliotecas e instala os componentes ausentes. Ele também fica disponível no menu Iniciar. A instalação usa internet; CUDA e Pyannote são opcionais. Os modelos são baixados na primeira ativação, e o token do Hugging Face não é incluído no instalador.
+
+Na mesa, abra **Hardware e modelos locais** na sidebar. O painel distingue o inventário do computador do dispositivo efetivamente usado após o aquecimento do modelo. Ele permite escolher CPU/CUDA, GPU, precisão e threads; Pyannote tem atribuição de dispositivo independente. Duas GPUs físicas não foram homologadas nesta máquina, e isso não divide um único modelo entre placas.
+
+As métricas de CPU/RAM pertencem ao processo Python; a utilização de GPU é global. VRAM por processo pode aparecer como indisponível no driver Windows. RTF não é a latência de ponta a ponta. Mac usa CPU neste motor; Metal/DirectML não foram integrados.
+
 Instale Python 3.11 ou superior. Na pasta do projeto, execute:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File desktop/speech/install.ps1
 npm run desktop
 ```
+
+Para adicionar as bibliotecas NVIDIA ao ambiente isolado, use o assistente ou execute o script com `-Cuda`. Isso não instala nem altera o driver NVIDIA. A instalação opcional do Pyannote não garante uma versão CUDA do PyTorch; o painel consulta o ambiente real e só apresenta as GPUs que ele disponibiliza.
 
 O ambiente isolado fica em `%USERPROFILE%/.silentstageai/speech-env`. O app o reconhece na próxima inicialização. Também é possível definir `VMT_SPEECH_PYTHON` com o caminho absoluto de outro Python que tenha as dependências instaladas. Não coloque esse caminho nas variáveis do Railway.
 

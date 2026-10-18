@@ -20,6 +20,8 @@ if (isElectron) {
   const existingProfile=legacyProfiles.map(name=>path.join(app.getPath('appData'),name)).find(dir=>require('fs').existsSync(dir));
   app.setPath('userData',existingProfile||path.join(app.getPath('appData'),'videomappingtech-silent-translator'));
   app.setName('Silent Stage');
+  const setupMode=process.argv.includes('--setup-local-engine');
+  if(setupMode)app.setPath('userData',path.join(app.getPath('userData'),'engine-setup'));
   if(process.platform==='win32')app.setAppUserModelId('com.videomappingtech.silentstage');
 
 
@@ -168,6 +170,7 @@ if (isElectron) {
   }
 
   app.whenReady().then(() => {
+    if(setupMode){mainWindow=require('./engine-setup').createSetupWindow({BrowserWindow,ipcMain,app});return;}
     createMainWindow();
 
     app.on('activate', () => {

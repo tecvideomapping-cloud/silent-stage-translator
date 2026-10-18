@@ -6,6 +6,8 @@ import json
 import os
 import sys
 import time
+import threading
+from runtime_info import Sampler, capabilities, configure_cuda_libraries
 
 
 class SpeakerTimeline:
@@ -54,9 +56,28 @@ def speaker_at(start, end, turns):
 
 
 def run(args, emit):
+    if args.probe:
+        emit({'type': 'capabilities', **capabilities()})
+        return
+    configure_cuda_libraries()
+    sampler = Sampler()
+    heartbeat_stop = threading.Event()
+    def heartbeat():
+        while not heartbeat_stop.wait(2):
+            try:
+                emit({'type': 'telemetry', **sampler.sample()})
+            except Exception:
+                pass
+    threading.Thread(target=heartbeat, daemon=True).start()
     import numpy as np
     from faster_whisper import WhisperModel
-    model = WhisperModel(args.model, device="cpu", compute_type="int8", cpu_threads=min(8, os.cpu_count() or 2))
+    import ctranslate2
+    if args.device == 'cuda' and args.gpu_index >= ctranslate2.get_cuda_device_count():
+        raise RuntimeError('CUDA_SELECTION_UNAVAILABLE')
+    if args.compute_type not in ctranslate2.get_supported_compute_types(args.device, args.gpu_index):
+        raise RuntimeError('COMPUTE_TYPE_UNAVAILABLE')
+    model = WhisperModel(args.model, device=args.device, device_index=args.gpu_index,
+                         compute_type=args.compute_type, cpu_threads=args.cpu_threads)
     diarizer = None
     if args.diarization:
         import torch
@@ -65,9 +86,16 @@ def run(args, emit):
         diarizer = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=os.environ.get("HF_TOKEN"))
         if diarizer is None:
             raise RuntimeError("Diarization model unavailable")
+        if args.diarization_device == 'cuda':
+            if not torch.cuda.is_available() or args.diarization_gpu_index >= torch.cuda.device_count():
+                raise RuntimeError('DIARIZATION_CUDA_UNAVAILABLE')
+            diarizer.to(torch.device('cuda:' + str(args.diarization_gpu_index)))
     # Force warm-up before claiming readiness.
     list(model.transcribe(np.zeros(16000, dtype=np.float32), language=args.language, vad_filter=False)[0])
-    emit({"type": "ready"})
+    emit({'type': 'ready', 'runtime': {'device': args.device, 'gpuIndex': args.gpu_index if args.device == 'cuda' else None,
+          'computeType': args.compute_type, 'cpuThreads': args.cpu_threads,
+          'diarizationDevice': args.diarization_device if args.diarization else None,
+          'diarizationGpuIndex': args.diarization_gpu_index if args.diarization and args.diarization_device == 'cuda' else None}})
     history = np.empty(0, dtype=np.float32)
     history_start, history_end = 0.0, 0.0
     timeline = SpeakerTimeline()
@@ -109,7 +137,11 @@ def run(args, emit):
                     result.append({"text": word.word, "speakerId": identity})
             if not segment.words and segment.text.strip():
                 result.append({"text": segment.text, "speakerId": None})
-        emit({"type": "result", "id": packet["id"], "segments": result, "processingMs": round((time.monotonic() - started) * 1000)})
+        processing_ms = round((time.monotonic() - started) * 1000)
+        emit({'type': 'result', 'id': packet['id'], 'segments': result, 'processingMs': processing_ms,
+              'audioSeconds': len(audio) / 16000, 'rtf': round(processing_ms / max(1, len(audio) / 16), 3),
+              'queueWaitMs': max(0, round(time.time() * 1000 - packet.get('queuedAt', time.time() * 1000) - processing_ms))})
+    heartbeat_stop.set()
 
 
 if __name__ == "__main__":
@@ -117,15 +149,32 @@ if __name__ == "__main__":
     parser.add_argument("--model", choices=["tiny", "base", "small"], default="base")
     parser.add_argument("--language", default="pt")
     parser.add_argument("--diarization", action="store_true")
+    parser.add_argument('--probe', action='store_true')
+    parser.add_argument('--device', choices=['cpu', 'cuda'], default='cpu')
+    parser.add_argument('--gpu-index', type=int, default=0)
+    parser.add_argument('--compute-type', choices=['int8', 'int8_float16', 'float16', 'float32'], default='int8')
+    parser.add_argument('--cpu-threads', type=int, default=min(8, os.cpu_count() or 2))
+    parser.add_argument('--diarization-device', choices=['cpu', 'cuda'], default='cpu')
+    parser.add_argument('--diarization-gpu-index', type=int, default=0)
     args = parser.parse_args()
     protocol = sys.stdout
+    protocol_lock = threading.Lock()
     def emit(value):
-        protocol.write(json.dumps(value, ensure_ascii=False) + "\n")
-        protocol.flush()
+        with protocol_lock:
+            protocol.write(json.dumps(value, ensure_ascii=False) + "\n")
+            protocol.flush()
     try:
         # Libraries sometimes print startup messages: keep protocol stdout clean.
         with contextlib.redirect_stdout(sys.stderr):
             run(args, emit)
-    except Exception:
-        emit({"type": "error", "code": "LOCAL_ENGINE_UNAVAILABLE"})
+    except Exception as error:
+        code = 'LOCAL_ENGINE_UNAVAILABLE'
+        detail = str(error).lower()
+        if 'diarization_cuda_unavailable' in detail:
+            code = 'DIARIZATION_CUDA_UNAVAILABLE'
+        elif 'cuda_selection_unavailable' in detail or 'compute_type_unavailable' in detail:
+            code = 'DEVICE_CONFIGURATION_UNAVAILABLE'
+        elif any(name in detail for name in ['cublas', 'cudnn', 'cuda', 'cufft']):
+            code = 'CUDA_RUNTIME_UNAVAILABLE'
+        emit({'type': 'error', 'code': code})
         sys.exit(1)

@@ -76,7 +76,7 @@ class HardwareProbe {
             temperatureC: parseInt(parts[3], 10) || 0,
             utilizationPercent: parseInt(parts[4], 10) || 0,
             hasTensorCores: /RTX|Tesla|A100|H100|A10|T4|TITAN/i.test(parts[0]),
-            backend: 'CUDA / TensorRT'
+            backend: 'NVIDIA detectada; execução depende do motor configurado'
           });
         }
       });
@@ -99,12 +99,12 @@ class HardwareProbe {
                 id: gpus.length,
                 vendor: isIntel ? 'Intel' : isAmd ? 'AMD' : 'Outro',
                 name: item.Name,
-                vramTotalMb: ramMb > 0 ? ramMb : 1024,
+                vramTotalMb: ramMb > 0 ? ramMb : null,
                 vramFreeMb: null,
                 temperatureC: null,
                 utilizationPercent: null,
                 hasTensorCores: false,
-                backend: 'DirectML / OpenVINO'
+                backend: 'Adaptador detectado; aceleração não confirmada'
               });
             }
           });
@@ -121,8 +121,8 @@ class HardwareProbe {
         vramFreeMb: Math.round(os.freemem() / (1024 * 1024)),
         temperatureC: null,
         utilizationPercent: null,
-        hasTensorCores: true, // Apple Neural Engine
-        backend: 'Apple Metal / MPS / CoreML'
+        hasTensorCores: false,
+        backend: 'Memória unificada; aceleração deste motor não confirmada'
       });
     }
 
@@ -136,7 +136,7 @@ class HardwareProbe {
         temperatureC: null,
         utilizationPercent: 0,
         hasTensorCores: false,
-        backend: 'ONNX CPU / AVX2'
+        backend: 'CPU; nenhuma GPU identificada'
       });
     }
 
@@ -244,7 +244,7 @@ class HardwareProbe {
       cores: cpus.length,
       totalRamGb,
       freeRamGb,
-      hasAvx2Support: true, // Padrão x64 moderno
+      hasAvx2Support: null,
       machineName: os.hostname(),
       uptimeSeconds: Math.floor(os.uptime())
     };
@@ -263,12 +263,7 @@ class HardwareProbe {
     const primaryGpu = gpus[0];
     const secondaryGpu = isMultiGpu ? gpus[1] : null;
 
-    let topologyRecommendation = 'Single GPU Balanced Pipeline';
-    if (isMultiGpu && primaryGpu.hasTensorCores) {
-      topologyRecommendation = 'Dual-GPU Pipeline: GPU 0 -> STT WhisperX | GPU 1 -> TTS Voice Cloning';
-    } else if (primaryGpu.hasTensorCores) {
-      topologyRecommendation = 'Dedicated CUDA TensorRT Pipeline (Prioridade Alta para STT)';
-    }
+    const topologyRecommendation = 'Inventário de hardware. Consulte o painel do motor local para verificar o dispositivo efetivamente utilizado.';
 
     return {
       fingerprint,
@@ -292,27 +287,20 @@ class HardwareProbe {
     const totalRamGb = +(os.totalmem() / (1024 ** 3)).toFixed(1);
     const ramUsagePercent = Math.round(((totalRamGb - freeRamGb) / totalRamGb) * 100);
 
-    let gpuTelemetry = null;
-    const nvsmi = this._execSafe('nvidia-smi --query-gpu=memory.total,memory.free,temperature.gpu,utilization.gpu --format=csv,noheader,nounits', 1500);
-    if (nvsmi) {
-      const parts = nvsmi.split(',').map(s => parseInt(s.trim(), 10) || 0);
-      if (parts.length >= 4) {
-        gpuTelemetry = {
-          vramTotalMb: parts[0],
-          vramFreeMb: parts[1],
-          vramUsedMb: parts[0] - parts[1],
-          temperatureC: parts[2],
-          utilizationPercent: parts[3]
-        };
-      }
-    }
+    let gpuTelemetry = null;const gpus=[],processes=[];
+    const number=value=>Number.isFinite(Number(value))?Number(value):null;
+    const inventory=this._execSafe('nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used,temperature.gpu,utilization.gpu --format=csv,noheader,nounits',1500);
+    for(const line of (inventory||'').split(/\r?\n/).filter(Boolean)){const p=line.split(',').map(s=>s.trim());if(p.length>=7)gpus.push({index:number(p[0]),uuid:p[1],name:p[2],vramTotalMb:number(p[3]),vramUsedMb:number(p[4]),temperatureC:number(p[5]),utilizationPercent:number(p[6])});}
+    const allocations=this._execSafe('nvidia-smi --query-compute-apps=pid,gpu_uuid,used_gpu_memory --format=csv,noheader,nounits',1500);
+    for(const line of (allocations||'').split(/\r?\n/).filter(Boolean)){const p=line.split(',').map(s=>s.trim());if(p.length>=3&&Number.isInteger(number(p[0])))processes.push({pid:number(p[0]),gpuUuid:p[1],usedMb:number(p[2])});}
+    if(gpus[0])gpuTelemetry={...gpus[0],vramFreeMb:gpus[0].vramTotalMb-gpus[0].vramUsedMb};
 
     return {
       timestamp: Date.now(),
       freeRamGb,
       ramUsagePercent,
       cpuCount: cpus.length,
-      gpu: gpuTelemetry
+      gpu: gpuTelemetry,gpus,processes,totalRamGb
     };
   }
 }

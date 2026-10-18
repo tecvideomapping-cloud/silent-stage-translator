@@ -39,6 +39,7 @@
           Workspace / Estúdio ao vivo
         </h1>
         <p id="hostTranslationStatus" role="status" aria-live="polite" class="text-xs text-amber-300" hidden></p>
+        <p id="hostRecognitionStatus" role="status" aria-live="polite" class="text-xs text-amber-300" hidden></p>
         <p id="eventSubtitle" class="text-xs text-slate-400">Carregando informações da sessão...</p>
       </div>
     </div>
@@ -1705,6 +1706,8 @@
       else if(previous&&isBroadcasting&&!window.localSpeech?.selected)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
     }
     window.addEventListener('vmt-local-speech-state',event=>{
+      const warning=document.getElementById('hostRecognitionStatus');warning.hidden=!!event.detail.active||!event.detail.loading&&!isBroadcasting||!!window.serverSpeechRecognition;warning.textContent=event.detail.loading?'Carregando o motor local. As legendas começam quando ele estiver pronto.':event.detail.active?'':'O motor local está parado. Ative-o para reconhecer o áudio neste computador.';
+      const badge=document.getElementById('transcriptionIntegrityBadge');if(badge&&(event.detail.active||event.detail.loading))badge.textContent=event.detail.active?'Reconhecimento local ativo':'Carregando reconhecimento local';
       if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'recognition_mode',mode:event.detail.active||event.detail.loading?'desktop-local':'current'}));
       if(event.detail.active||event.detail.loading)window.speechEngine?.stop();
       else if(isBroadcasting&&!window.serverSpeechRecognition)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
@@ -2028,13 +2031,15 @@
                   headers: { 'Content-Type': 'audio/wav' },
                   body: wavBlob
                 })
-                  .then(r => r.json())
+                  .then(async r => {const payload=await r.json();if(!r.ok)throw Error('O reconhecimento digital está indisponível. Confira a sessão e a configuração do motor.');return payload;})
                   .then(res => {
                     if (res && res.text && window.speechEngine) {
+                      document.getElementById('hostRecognitionStatus').hidden=true;
                       window.speechEngine.commitClause(res.text);
                     }
+                    else if(res?.needsAcousticLoopback||res?.error){const warning=document.getElementById('hostRecognitionStatus');warning.textContent=window.desktopHost?.speech?'Áudio recebido, mas sem reconhecimento disponível. Clique em Ativar motor local e aguarde Motor local pronto.':'Áudio recebido, mas sem texto reconhecido. Use Chrome/Edge com compartilhamento do áudio da guia ou o motor local do aplicativo.';warning.hidden=false;}
                   })
-                  .catch(() => {})
+                  .catch(error => {const warning=document.getElementById('hostRecognitionStatus');warning.textContent=error.message;warning.hidden=false;})
                   .finally(() => { isSendingDigitalStt = false; });
               }
             } else {
@@ -2603,6 +2608,7 @@
         const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRec) {
           console.warn('[STT] Reconhecimento nativo não suportado neste navegador.');
+          const warning=document.getElementById('hostRecognitionStatus');warning.hidden=false;warning.textContent=window.desktopHost?.speech?'Este aplicativo precisa do motor local para gerar as legendas. Clique em Ativar motor local.':'O reconhecimento não está disponível neste navegador. Use Chrome/Edge ou o motor local do aplicativo.';
           return;
         }
 
@@ -2644,6 +2650,7 @@
           };
 
           rec.onresult = (evt) => {
+            document.getElementById('hostRecognitionStatus').hidden=true;
             this.lastEventTime = Date.now();
             this.lastNativeResultTime = Date.now();
             this.handleResult(evt);
@@ -2652,6 +2659,7 @@
           rec.onerror = (e) => {
             this.lastEventTime = Date.now();
             console.warn('[STT] Info do motor de fala:', e.error);
+            if(!['no-speech','aborted'].includes(e.error)){const warning=document.getElementById('hostRecognitionStatus');warning.hidden=false;warning.textContent='O reconhecimento do navegador não está funcionando ('+String(e.error||'falha')+'). '+(window.desktopHost?.speech?'Ative o motor local para continuar com as legendas.':'Confira a permissão de áudio e tente novamente.');}
             if (e.error === 'not-allowed') {
               console.error('[STT] Permissão de microfone negada para SpeechRecognition.');
               this.updateBadge('inactive');
@@ -2679,7 +2687,7 @@
             try {
               rec.start(this.customAudioTrack);
             } catch (trackErr) {
-              rec.start();
+              this.isActive=false;this.updateBadge('inactive');const warning=document.getElementById('hostRecognitionStatus');warning.hidden=false;warning.textContent='O reconhecimento não aceitou o áudio da fonte escolhida. Use o motor local do desktop para transcrever essa fonte.';return;
             }
           } else {
             rec.start();

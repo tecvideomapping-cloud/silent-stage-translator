@@ -109,27 +109,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let gpusHtml = (report.gpus || []).map(g => `
       <div class="hw-card">
-        <h3>🎮 ${g.name}</h3>
-        <p><strong>Fabricante:</strong> ${g.vendor}</p>
+        <h3>🎮 ${escapeStageText(g.name)}</h3>
+        <p><strong>Fabricante:</strong> ${escapeStageText(g.vendor)}</p>
         <p><strong>VRAM:</strong> ${g.vramTotalMb} MB</p>
-        <p><strong>Backend:</strong> ${g.backend}</p>
-        <p><strong>Tensor Cores:</strong> ${g.hasTensorCores ? 'Sim (Aceleração Neural)' : 'Não'}</p>
+        <p><strong>Detecção:</strong> ${escapeStageText(g.backend)}</p>
+        <p>Consulte Hardware e modelos locais para verificar a execução.</p>
       </div>
     `).join('');
 
     let audioHtml = (report.audio?.asioDrivers || []).map(a => `
       <div class="hw-card">
-        <h3>🎙️ Driver de Palco: ${a.name}</h3>
-        <p><strong>Tipo:</strong> ${a.type}</p>
+        <h3>🎙️ Driver detectado: ${escapeStageText(a.name)}</h3>
+        <p><strong>Tipo:</strong> ${escapeStageText(a.type)}</p>
         <p><strong>Latência Estimada:</strong> ${a.latencyMsEstimated} ms</p>
-        <p><strong>Pronto para Palco:</strong> Sim</p>
+        <p>Inventário de drivers; captura ASIO exclusiva não implementada.</p>
       </div>
     `).join('');
 
     let cpuHtml = `
       <div class="hw-card">
         <h3>💻 CPU & Memória do Host</h3>
-        <p><strong>Processador:</strong> ${report.system?.cpuModel || 'CPU Host'}</p>
+        <p><strong>Processador:</strong> ${escapeStageText(report.system?.cpuModel || 'CPU Host')}</p>
         <p><strong>Núcleos:</strong> ${report.system?.cores || 4} Cores</p>
         <p><strong>Memória RAM:</strong> ${report.system?.freeRamGb || '--'} GB livres de ${report.system?.totalRamGb || '--'} GB</p>
         <p><strong>Identificador Único:</strong> <code style="font-size:10px">${report.fingerprint || 'N/A'}</code></p>
@@ -142,8 +142,8 @@ document.addEventListener('DOMContentLoaded', () => {
   async function pollRealtimeMetrics() {
     if(!hardwareLocal)return;
     try {
-      const res = await fetch('/api/desktop/hardware/metrics');
-      const data = await res.json();
+      const nativeMetrics=await window.desktopHost?.speech?.hardwareMetrics?.();
+      const data=nativeMetrics?{success:true,metrics:nativeMetrics}:await (await fetch('/api/desktop/hardware/metrics')).json();
       if (data.success && data.metrics && data.metrics.gpu) {
         const { gpu } = data.metrics;
         const el = document.getElementById('gpuMetricText');

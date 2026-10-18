@@ -1,6 +1,6 @@
 {
   "name": "videomappingtech-silent-translator",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Silent Stage — Áudio ao vivo e tradução simultânea",
   "main": "desktop/main.js",
   "scripts": {
@@ -20,7 +20,10 @@
     "appId": "com.videomappingtech.silentstage",
     "productName": "Silent Stage",
     "asarUnpack": [
-      "desktop/speech/worker.py"
+      "desktop/speech/worker.py",
+      "desktop/speech/runtime_info.py",
+      "desktop/speech/ensure-engine.ps1",
+      "desktop/speech/install.ps1"
     ],
     "directories": {
       "output": "dist"
@@ -64,7 +67,8 @@
       "shortcutName": "Silent Stage",
       "installerIcon": "public/brand/silent-stage.ico",
       "uninstallerIcon": "public/brand/silent-stage.ico",
-      "installerHeaderIcon": "public/brand/silent-stage.ico"
+      "installerHeaderIcon": "public/brand/silent-stage.ico",
+      "include": "desktop/installer.nsh"
     },
     "files": [
       "desktop/**/*",
@@ -103,5 +107,3 @@
     "electron-builder": "^26.15.3"
   }
 }
-
-

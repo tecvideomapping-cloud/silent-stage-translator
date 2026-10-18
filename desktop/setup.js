@@ -1,0 +1,5 @@
+'use strict';
+const $=id=>document.getElementById(id);let running=false;
+function show(item){$('status').textContent=item.message;if(item.report){const r=item.report;$('report').textContent='Python: '+(r.pythonInstalled?r.pythonVersion||'instalado':'ausente')+'\nTranscrição: '+(r.coreReady?'pronta':'bibliotecas ausentes')+'\nCUDA: '+(r.cudaReady?'bibliotecas instaladas':'não instalada')+'\nPyannote: '+(r.diarizationReady?'instalado':'não instalado');}}
+async function run(check){if(running)return;running=true;document.querySelectorAll('button,input').forEach(node=>node.disabled=true);try{show(await engineSetup.run({check,cuda:$('cuda').checked,diarization:$('diarization').checked}));}catch{$('status').textContent='Não foi possível concluir. Feche esta janela e tente novamente.';}finally{running=false;document.querySelectorAll('button,input').forEach(node=>node.disabled=false);}}
+engineSetup.onProgress(show);$('verify').onclick=()=>run(true);$('install').onclick=()=>run(false);$('finish').onclick=()=>window.close();run(true);
