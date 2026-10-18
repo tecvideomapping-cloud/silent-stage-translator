@@ -1706,11 +1706,11 @@
       else if(previous&&isBroadcasting&&!window.localSpeech)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
     }
     window.addEventListener('vmt-local-speech-state',event=>{
+      if(event.detail.active||event.detail.loading)window.speechEngine?.stop();
       const warning=document.getElementById('hostRecognitionStatus');warning.hidden=!!event.detail.active||!event.detail.loading&&!isBroadcasting||!!window.serverSpeechRecognition;warning.textContent=event.detail.loading?'Carregando o motor local. As legendas começam quando ele estiver pronto.':event.detail.active?'':'O motor local está parado. Ative-o para reconhecer o áudio neste computador.';
       const badge=document.getElementById('transcriptionIntegrityBadge');if(badge&&(event.detail.active||event.detail.loading))badge.textContent=event.detail.active?'Reconhecimento local ativo':'Carregando reconhecimento local';
       if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'recognition_mode',mode:event.detail.active||event.detail.loading?'desktop-local':'current'}));
-      if(event.detail.active||event.detail.loading)window.speechEngine?.stop();
-      else if(isBroadcasting&&!window.serverSpeechRecognition&&!window.localSpeech)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
+      if(!event.detail.active&&!event.detail.loading&&isBroadcasting&&!window.serverSpeechRecognition&&!window.localSpeech)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
       else if(badge&&!event.detail.active&&!event.detail.loading&&!window.serverSpeechRecognition)window.speechEngine?.updateBadge('inactive');
     });
     function connectHostWS() {
