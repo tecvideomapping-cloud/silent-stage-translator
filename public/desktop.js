@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let analyserNode = null;
   let stageDsp = null;
   let socket = null;
-  window.addEventListener('vmt-local-speech-state',event=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'recognition_mode',mode:event.detail.active||event.detail.loading?'desktop-local':'current'}));});
+  window.addEventListener('vmt-local-speech-state',event=>{if(event.detail.state==='error'){const badge=document.getElementById('liveStatusBadge');if(badge)badge.textContent=event.detail.message;}if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'recognition_mode',mode:event.detail.active||event.detail.loading?'desktop-local':'current'}));});
   let vuAnimId = null;
 
   // VoiceStudio State
@@ -701,7 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
       audioSourceNode.connect(analyserNode);
 
       // ScriptProcessorNode para empacotamento e streaming PCM 16-bit
-      scriptProcessor = audioContext.createScriptProcessor(2048, 2, 1);
+      scriptProcessor = await window.createStageAudioCapture(audioContext);
       const silentGain = audioContext.createGain();
       silentGain.gain.value = 0;
 

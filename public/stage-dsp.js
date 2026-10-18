@@ -14,6 +14,8 @@ class StageAudioDSP {
     this.mode = 'direct'; // 'direct' (puro/transparente sem cortes) | 'stage_mic' | 'noisy_hall'
     this.gateThresholdDb = -42; // Limiar de corte do portão em dB
     this.gateHysteresisDb = 4; // Histerese para evitar trepidação (chattering)
+    this.gateHoldSeconds = 0.18;
+    this.lastAboveCloseTime = 0;
     this.gateFloorGain = 0.08; // Atenuação de ~-22dB durante pausas (não silêncio digital artificial)
     this.isGateOpen = true;
     this.gateGain = 1.0;
@@ -75,6 +77,7 @@ class StageAudioDSP {
     const now = this.ctx.currentTime;
 
     if (mode === 'direct') {
+      this.isGateOpen = true;
       // Modo Mesa de Som / Flat: bypass transparente
       this.rumbleFilter.frequency.setTargetAtTime(15, now, 0.05); // Highpass inaudível
       this.noiseGateGainNode.gain.setTargetAtTime(1.0, now, 0.05);
@@ -113,7 +116,8 @@ class StageAudioDSP {
     const now = this.ctx.currentTime;
 
     let shouldOpen = this.isGateOpen;
-    if (this.isGateOpen && currentDb < closeThreshold) {
+    if (currentDb >= closeThreshold) this.lastAboveCloseTime = now;
+    if (this.isGateOpen && currentDb < closeThreshold && now-this.lastAboveCloseTime >= this.gateHoldSeconds) {
       shouldOpen = false;
     } else if (!this.isGateOpen && currentDb > openThreshold) {
       shouldOpen = true;

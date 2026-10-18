@@ -16,8 +16,8 @@
   schedule(now,arrivalMs,duration,mode='auto'){
    if(this.lastArrival!==null){const variation=Math.abs(arrivalMs-this.lastArrival-this.lastDuration*1000);this.jitterMs=.9*this.jitterMs+.1*Math.min(1000,variation);}
    this.lastArrival=arrivalMs;this.lastDuration=duration;
-   const minimum=mode==='saver'?.28:.065,maximum=mode==='high'?.12:.35;
-   this.target=Math.max(minimum,Math.min(Math.max(minimum,maximum),.04+duration+this.jitterMs*.003));
+   const minimum=mode==='saver'?.28:Math.max(.09,duration+.04),maximum=mode==='high'?Math.max(.25,duration+.12):.5;
+   this.target=Math.max(minimum,Math.min(Math.max(minimum,maximum),.06+duration+this.jitterMs*.004));
    let reset=false,underrun=false;
    if(this.next>now+1.2){reset=true;this.resyncs++;this.next=now+this.target;}
    else if(!this.next||this.next<now+.003){underrun=!!this.next;if(underrun)this.underruns++;this.next=now+this.target;}

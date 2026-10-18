@@ -29,7 +29,7 @@ class LocalSpeech extends EventEmitter {
   start(config={}) {
     if(this.child)throw Error('Interrompa o motor antes de alterar a configuração.');
     this.config=require('./speech-config').normalize(config);Object.assign(this,this.config);this.runtime=null;this.metrics={};
-    this.session=crypto.randomUUID();this.generation++;this.parts=[];this.samples=0;this.silence=0;this.speaking=false;this.preroll=[];this.prerollSamples=0;this.pending=0;this.sequence=0;this.inputSeconds=0;
+    this.session=crypto.randomUUID();this.generation++;this.parts=[];this.samples=0;this.silence=0;this.speaking=false;this.preroll=[];this.prerollSamples=0;this.pending=0;this.jobs=new Map();this.sequence=0;this.inputSeconds=0;
     const generation=this.generation;
     this.report('loading','Carregando os modelos locais…');
     const token=this.diarization?require('./speech-credentials').loadToken():'';
@@ -49,6 +49,8 @@ class LocalSpeech extends EventEmitter {
       if(event.type==='ready'){clearTimeout(this.timer);this.runtime=event.runtime||null;this.report('ready','Motor local pronto.');}
       else if(event.type==='telemetry'){this.metrics={...this.metrics,cpuPercent:Number.isFinite(event.cpuPercent)?event.cpuPercent:null,memoryMb:Number.isFinite(event.memoryMb)?event.memoryMb:null,memoryKind:event.memoryKind,pending:this.pending};this.emit('metrics',this.metrics);}
       else if(event.type==='result'){
+        if(!this.jobs.has(event.id))return;
+        this.jobs.delete(event.id);
         this.pending=Math.max(0,this.pending-1);clearTimeout(this.jobTimer);this.jobTimer=null;
         if(this.pending)this.jobTimer=setTimeout(()=>fail('O processamento local excedeu 45 segundos. Selecione um modelo menor.'),45000);
         const segments=Array.isArray(event.segments)?event.segments:[];
@@ -79,12 +81,14 @@ class LocalSpeech extends EventEmitter {
   }
   flush(){
     if(!this.samples||!this.child||this.state!=='ready')return;
-    if(this.pending>=2){this.stop('O computador não acompanha o áudio ao vivo. Use um modelo menor ou desative a identificação de locutores.');return;}
+    const queuedSeconds=[...this.jobs.values()].reduce((sum,seconds)=>sum+seconds,0)+this.samples/16000;
+    if(this.pending>=6||queuedSeconds>18){this.stop('A fila de reconhecimento excedeu o limite de segurança. Selecione GPU ou um modelo menor e reinicie o motor.');return;}
     const audio=Buffer.concat(this.parts);const start=this.inputSeconds-this.samples/16000;
     this.parts=[];this.samples=0;this.speaking=false;this.silence=0;
     this.pending++;
     if(!this.jobTimer)this.jobTimer=setTimeout(()=>this.stop('O processamento local excedeu 45 segundos. Use um modelo menor.'),45000);
-    this.child.stdin.write(JSON.stringify({id:++this.sequence,start,queuedAt:Date.now(),pcm:audio.toString('base64')})+'\n');
+    const id=++this.sequence;this.jobs.set(id,audio.length/32000);
+    this.child.stdin.write(JSON.stringify({id,start,queuedAt:Date.now(),pcm:audio.toString('base64')})+'\n');
   }
   reset(){
     // Resetting also terminates pending inference: no result from the old event
@@ -93,7 +97,7 @@ class LocalSpeech extends EventEmitter {
   }
   stop(message=''){
     this.generation++;clearTimeout(this.timer);clearTimeout(this.jobTimer);this.jobTimer=null;
-    const child=this.child;this.child=null;child?.kill();this.runtime=null;this.metrics={};this.parts=[];this.preroll=[];this.samples=0;this.pending=0;
+    const child=this.child;this.child=null;child?.kill();this.runtime=null;this.metrics={};this.parts=[];this.preroll=[];this.samples=0;this.pending=0;this.jobs=new Map();
     this.report(message?'error':'stopped',message);return this.status();
   }
 }

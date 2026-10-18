@@ -16,6 +16,7 @@
   <script src="/live-captions.js"></script>
   <script src="/speech-ledger.js"></script>
   <script src="/audio-clock.js"></script>
+  <script src="/audio-capture.js"></script>
   <link rel="stylesheet" href="/local-speech.css">
   <script src="/local-speech.js"></script>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
@@ -1707,7 +1708,7 @@
     }
     window.addEventListener('vmt-local-speech-state',event=>{
       if(event.detail.active||event.detail.loading)window.speechEngine?.stop();
-      const warning=document.getElementById('hostRecognitionStatus');warning.hidden=!!event.detail.active||!event.detail.loading&&!isBroadcasting||!!window.serverSpeechRecognition;warning.textContent=event.detail.loading?'Carregando o motor local. As legendas começam quando ele estiver pronto.':event.detail.active?'':'O motor local está parado. Ative-o para reconhecer o áudio neste computador.';
+      const warning=document.getElementById('hostRecognitionStatus');warning.hidden=!!event.detail.active||!event.detail.loading&&!isBroadcasting||!!window.serverSpeechRecognition;warning.textContent=event.detail.state==='error'?event.detail.message:event.detail.loading?'Carregando o motor local. As legendas começam quando ele estiver pronto.':event.detail.active?'':'O motor local está parado. Ative-o para reconhecer o áudio neste computador.';
       const badge=document.getElementById('transcriptionIntegrityBadge');if(badge&&(event.detail.active||event.detail.loading))badge.textContent=event.detail.active?'Reconhecimento local ativo':'Carregando reconhecimento local';
       if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'recognition_mode',mode:event.detail.active||event.detail.loading?'desktop-local':'current'}));
       if(!event.detail.active&&!event.detail.loading&&isBroadcasting&&!window.serverSpeechRecognition&&!window.localSpeech)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
@@ -1738,6 +1739,7 @@
           else if (data.type === 'room_online_stats' && data.stats) {
             updateHostOnlineStats(data.stats);
           } else if (data.type === 'subtitle_translated') {
+            if(['en','es'].includes(data.lang)){document.getElementById('testDiagnosticBox').classList.remove('hidden');document.getElementById('diagnosticStatusText').textContent='Tradução ao vivo';}
             if (data.lang === 'en') {
               const el = document.getElementById('diagnosticEnText');
               if (el) el.innerText = data.text;
@@ -1884,7 +1886,8 @@
         if (typeof StageAudioDSP !== 'undefined') {
           window.stageDsp = new StageAudioDSP(audioContext);
           dspProcessedSource = window.stageDsp.init(source);
-          const initialDspMode = document.getElementById('dspAcousticModeSelect')?.value || 'stage_mic';
+          const initialDspMode = ['system','file'].includes(sourceMode)?'direct':document.getElementById('dspAcousticModeSelect')?.value||'stage_mic';
+          document.getElementById('dspAcousticModeSelect').value=initialDspMode;
           window.stageDsp.setMode(initialDspMode);
 
           window.stageDsp.onGateStateChange = (isOpen) => {
@@ -1923,7 +1926,6 @@
           }
           const rms = Math.sqrt(sum / floatTimeData.length);
           currentRmsLevel = rms;
-          if (window.stageDsp) window.stageDsp.processRms(rms);
           const pct = Math.min(100, Math.round(rms * 400));
           const vuBar = document.getElementById('vuBar');
           const vuText = document.getElementById('vuLevelText');
@@ -1960,7 +1962,7 @@
         requestAnimationFrame(updateVU);
 
         // Buffer de 2048 amostras (~42ms em 48kHz) com nó de ganho zero para eliminar vazamento acústico e micro-cortes de CPU
-        scriptProcessor = audioContext.createScriptProcessor(2048, 2, 1);
+        scriptProcessor = await window.createStageAudioCapture(audioContext);
         const silentSinkGain = audioContext.createGain();
         silentSinkGain.gain.value = 0;
         dspProcessedSource.connect(scriptProcessor);
