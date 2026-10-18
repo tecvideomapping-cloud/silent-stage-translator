@@ -1109,9 +1109,9 @@ async function handleConnection(ws,req){
       const room=await getRoom(roomId),key=parsedUrl.searchParams.get('hostKey');
       if(!admin&&(!room||!key||key!==room.host_key))throw Object.assign(new Error('Acesso de operador obrigatório.'),{status:403});
     }
-    if(!managed){const room=await getRoom(roomId);if(!room)throw new Error('Evento não encontrado.');if(role!=='host'&&room.status!=='active')throw new Error('Evento indisponível.');if(role!=='host'&&!channelAllowed(room,channel))throw new Error('Canal indisponível.');if(role==='host'&&Array.from(roomsClients.get(roomId)||[]).some(c=>c.role==='host'&&c.readyState===WebSocket.OPEN))throw new Error('Já existe um transmissor conectado.');}
+    if(!managed){const room=await getRoom(roomId);if(!room)throw new Error('Evento não encontrado.');if(role!=='host'&&room.status!=='active')throw new Error('Evento indisponível.');if(role!=='host'&&!channelAllowed(room,channel))throw new Error('Canal indisponível.');if(role==='host'&&Array.from(roomsClients.get(roomId)||[]).some(c=>c.role==='host'&&c.readyState===WebSocket.OPEN))throw Object.assign(new Error('Já existe um transmissor conectado. Aguarde a reconexão.'),{status:409});}
     if(ws.readyState!==WebSocket.OPEN){await commerce.releaseSocket(managed);return;}
-  }catch(e){ws.close(1008,String(e.message||'Acesso indisponível').slice(0,115));return;}
+  }catch(e){ws.close(e.status===409?1013:1008,String(e.message||'Acesso indisponível').slice(0,115));return;}
   ws.commerce=managed;
   const operatorToken=role==='host'?adminTokenFrom(req):'';
   const entitlementTimer=setInterval(async()=>{
@@ -1271,21 +1271,11 @@ async function handleConnection(ws,req){
         }
       } else if (msg.type === 'speaker_voice_profile') {
         // Calibração de timbre do palestrante transmitida pelo host
-        roomSpeakerProfile.set(roomId, {
-          voice: msg.voice || 'male_deep',
-          pitch: msg.pitch || 0,
-          speed: msg.speed || 1.05
-        });
-        for (const client of roomClients) {
-          if (client !== ws && client.readyState === WebSocket.OPEN && client.roomId === roomId) {
-            client.send(JSON.stringify({
-              type: 'speaker_voice_profile',
-              voice: msg.voice,
-              pitch: msg.pitch,
-              speed: msg.speed
-            }));
-          }
-        }
+          const previous=roomSpeakerProfile.get(roomId);
+          const requested=['male_deep','male_natural','female_warm','female_clear','alloy','echo','fable','onyx','nova','shimmer'].includes(msg.voice)?msg.voice:'male_deep';
+          const profile={voice:previous&&msg.manual!==true?previous.voice:requested,pitch:Math.max(-8,Math.min(8,Number(msg.pitch)||0)),speed:Math.max(.75,Math.min(1.45,Number(msg.speed)||1.05))};
+          roomSpeakerProfile.set(roomId,profile);
+          for (const client of roomClients)if(client!==ws&&client.readyState===WebSocket.OPEN&&client.roomId===roomId)client.send(JSON.stringify({type:'speaker_voice_profile',...profile}));
       } else if (msg.type === 'p2p_find_peers') {
         // Retorna candidatos a pares na mesma sala e canal para mesh P2P
         const peers = [];
@@ -1397,6 +1387,14 @@ function startServer(port = PORT) {
 }
 
 if (require.main === module) {
+  let shuttingDown=false;
+  process.once('SIGTERM',async()=>{
+    if(shuttingDown)return;shuttingDown=true;commerce.stopWorkers();
+    const deadline=setTimeout(()=>process.exit(0),8000);deadline.unref();
+    for(const client of wss.clients)client.close(1012,'Serviço reiniciando. Reconectando.');
+    await roomBus.close().catch(()=>{});
+    server.close(()=>process.exit(0));
+  });
   startServer(PORT).catch(err => {
     console.error('Falha ao iniciar servidor:', err);
     process.exit(1);

@@ -1319,7 +1319,7 @@
       const timbreSelect = document.getElementById('speakerTimbreSelect');
       const selectedMode = timbreSelect ? timbreSelect.value : 'auto_match';
       const voice = (selectedMode === 'auto_match')
-        ? (window.autoDetectedSpeakerVoice || 'male_deep')
+        ? (window.lockedAutoSpeakerVoice || window.autoDetectedSpeakerVoice || 'male_deep')
         : selectedMode;
       const pitch = parseFloat(document.getElementById('speakerPitchRange')?.value || 0);
       const speed = parseFloat(document.getElementById('speakerSpeedRange')?.value || 1.05);
@@ -1388,22 +1388,24 @@
     }
 
     function onSpeakerVoiceControlChanged(shouldAutoPreview = false) {
+      window.lockedAutoSpeakerVoice=window.autoDetectedSpeakerVoice||'male_deep';
       updateVoiceCalibrationBadgeUI();
       saveSpeakerVoiceToStorage();
-      broadcastSpeakerVoiceProfile();
+      broadcastSpeakerVoiceProfile(true);
       // Se já estava tocando uma demonstração de voz quando o operador mexeu no controle, atualiza a prévia na hora
       if (shouldAutoPreview && previewAudioEl && !previewAudioEl.paused) {
         testSpeakerVoicePreview();
       }
     }
 
-    function broadcastSpeakerVoiceProfile() {
+    function broadcastSpeakerVoiceProfile(manual=false) {
       const { voice, pitch, speed } = getResolvedSpeakerVoiceProfile();
       updateVoiceCalibrationBadgeUI();
 
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
           type: 'speaker_voice_profile',
+          manual,
           voice,
           pitch,
           speed
@@ -1496,7 +1498,7 @@
         }
 
         saveSpeakerVoiceToStorage();
-        broadcastSpeakerVoiceProfile();
+        broadcastSpeakerVoiceProfile(true);
 
         // Toca demonstração imediata com a voz calibrada
         await testSpeakerVoicePreview();
@@ -1932,9 +1934,8 @@
               const sel = document.getElementById('speakerTimbreSelect')?.value;
               if (sel === 'auto_match') {
                 updateVoiceCalibrationBadgeUI();
-                if (prevVoice !== classified.voice) {
-                  broadcastSpeakerVoiceProfile();
-                }
+                // Pitch tracking is diagnostic; the calibrated voice stays fixed.
+
               }
             }
           }
@@ -2089,6 +2090,7 @@
           socket.send(packetBuffer.buffer);
         };
 
+        window.lockedAutoSpeakerVoice=window.autoDetectedSpeakerVoice||'male_deep';
         isBroadcasting = true;
         document.getElementById('broadcastBtn').className = 'bg-rose-600 hover:bg-rose-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-2';
         document.getElementById('btnIcon').innerText = '⏹️';

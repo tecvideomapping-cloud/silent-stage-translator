@@ -25,7 +25,7 @@ test('servidor integrado: pagamento, publicação e permissão do transmissor',a
  const published=await fetch(base+'/api/customer/events/'+event.id+'/publish',{method:'POST',headers:{Cookie:cookie,'X-CSRF-Token':session.csrfToken,'Content-Type':'application/json'},body:JSON.stringify({published:true})});assert.equal(published.status,200);
  assert.equal((await fetch(base+'/api/rooms/'+event.id)).status,200);
  const host=await connect('host',{Cookie:cookie});
- await assert.rejects(()=>connect('host',{Cookie:cookie}),e=>e.code===1008);
+ await assert.rejects(()=>connect('host',{Cookie:cookie}),e=>e.code===1013);
  const listener=await connect('listener');const screen=await connect('screen');
  let forbiddenForwarded=false;screen.on('message',(data,binary)=>{if(!binary&&JSON.parse(data).text==='tentativa indevida')forbiddenForwarded=true;});
  listener.send(JSON.stringify({type:'speech_transcript',text:'tentativa indevida',isFinal:true}));
