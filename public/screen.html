@@ -285,19 +285,19 @@
           if (data.type === 'subtitle') {
             // Legenda original (transcrição do palco)
             if (currentScreenLang === 'all' || allowedLangs.includes('original') || allowedLangs.includes('all')) {
-              displaySubtitle(data.text, data.isFinal, 'original');
+              displaySubtitle(data.text, data.isFinal, 'original',data);
             }
           } else if (data.type === 'subtitle_translated') {
             // Legenda traduzida (simultânea em tempo real e confirmada)
             const isFinalSub = data.isFinal !== false;
             if (currentScreenLang === 'all' || allowedLangs.includes(data.lang) || allowedLangs.includes('all')) {
-              displaySubtitle(data.text, isFinalSub, data.lang);
+              displaySubtitle(data.text, isFinalSub, data.lang,data);
             }
           } else if (data.type === 'subtitle_catchup') {
             if (Array.isArray(data.items) && data.items.length > 0) {
               const lastItem = data.items[data.items.length - 1];
               if (lastItem && lastItem.text) {
-                displaySubtitle(lastItem.text, true, lastItem.lang || 'original');
+                displaySubtitle(lastItem.text, true, lastItem.lang || 'original',lastItem);
               }
             }
           }
@@ -321,7 +321,8 @@
       'es': { label: 'ES 🇪🇸', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' }
     };
 
-    function displaySubtitle(rawText, isFinal, lang = 'original') {
+    function displaySubtitle(rawText, isFinal, lang = 'original',metadata={}) {
+      rawText=(Number.isInteger(metadata.speakerId)?'Locutor '+(metadata.speakerId+1)+': ':'')+String(rawText||'');
       const container = document.getElementById('subtitlesContainer');
       const text = String(rawText || '').replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
       if (!container || !text) return;

@@ -569,10 +569,10 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (msg.type === 'room_online_stats') {
       const elListeners = document.getElementById('metricListeners');
       if (elListeners) elListeners.innerText = msg.stats?.listeners || 0;
-    } else if(msg.type==='subtitle_translated'){const secondary=document.getElementById('subSecondaryText');if(secondary)secondary.textContent=msg.text||'';addTranscriptTableRow(msg.sourceText||'',msg.text||'');
+    } else if(msg.type==='subtitle_translated'){const secondary=document.getElementById('subSecondaryText');if(secondary)secondary.textContent=(Number.isInteger(msg.speakerId)?'Locutor '+(msg.speakerId+1)+': ':'')+(msg.text||'');addTranscriptTableRow(msg.sourceText||'',msg.text||'');
     } else if(msg.type==='service_warning'){const status=document.getElementById('liveStatusBadge');if(status)status.textContent=msg.message;
     } else if (msg.type === 'subtitle' || msg.type === 'transcript') {
-      const primaryText = msg.text || msg.sourceText || '';
+      const primaryText = (Number.isInteger(msg.speakerId)?'Locutor '+(msg.speakerId+1)+': ':'')+(msg.text || msg.sourceText || '');
       const subPrim = document.getElementById('subPrimaryText');
       const subSec = document.getElementById('subSecondaryText');
       const simSub = document.getElementById('simSubText');

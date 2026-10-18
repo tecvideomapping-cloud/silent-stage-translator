@@ -13,6 +13,7 @@
   <script src="/stage-dsp.js" defer></script>
   <script src="/stage-studios.js" defer></script>
   <script src="/design-system.js" defer></script>
+  <script src="/live-captions.js"></script>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
 </head>
 <body class="vmt-app vmt-host">
@@ -1694,6 +1695,11 @@
       return window.fetch(url.pathname + url.search, { ...options, credentials: 'same-origin', headers });
     }
 
+    function applyRecognitionStatus(status){
+      const previous=window.serverSpeechRecognition;window.serverSpeechRecognition=status?.provider==='deepgram';
+      if(window.serverSpeechRecognition){if(window.speechEngine?.isActive)window.speechEngine.stop();const badge=document.getElementById('transcriptionIntegrityBadge');if(badge)badge.textContent='Reconhecimento com locutores ativo';}
+      else if(previous&&isBroadcasting)window.speechEngine?.start(audioStream?.getAudioTracks?.()[0]||null);
+    }
     function connectHostWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=host`;
@@ -1711,7 +1717,8 @@
         try {
           const data = JSON.parse(event.data);
           if(data.type==='service_warning'){const status=document.getElementById('connStatus');if(status)status.textContent=data.message;return;}
-          if (data.type === 'connected') { broadcastAudioMeta(); broadcastSpeakerVoiceProfile(); fetchRoomStats(); }
+          if (data.type === 'speech_recognition') { applyRecognitionStatus(data); }
+          else if (data.type === 'connected') { applyRecognitionStatus(data.speechRecognition); broadcastAudioMeta(); broadcastSpeakerVoiceProfile(); fetchRoomStats(); }
           else if (data.type === 'room_online_stats' && data.stats) {
             updateHostOnlineStats(data.stats);
           } else if (data.type === 'subtitle_translated') {
@@ -1723,14 +1730,8 @@
               if (el) el.innerText = data.text;
             }
           } else if (data.type === 'subtitle') {
-            if (!window.speechEngine || !window.speechEngine.isActive) {
-              const box = document.getElementById('hostTranscriptBox');
-              const p = document.createElement('p');
-              p.className = data.isFinal ? 'text-slate-200 mb-1' : 'text-cyan-400 italic mb-1';
-              p.innerText = data.text;
-              box.appendChild(p);
-              box.scrollTop = box.scrollHeight;
-            }
+            if(window.serverSpeechRecognition&&window.speechEngine){if(data.isFinal)window.speechEngine.appendConfirmed(data.text,data);else window.speechEngine.updateInterim(data.text);}
+
           }
         } catch (e) {}
       };
@@ -2017,7 +2018,7 @@
 
           // Se estiver capturando Saída de Áudio do PC ou Arquivo e o WebSpeech local não captou pelo mic nos últimos 3.2s,
           // envia fatias WAV de 3s para transcrição digital no servidor (/api/stt-chunk)
-          if ((sourceMode === 'system' || sourceMode === 'file') && currentRmsLevel > 0.012) {
+          if (!window.serverSpeechRecognition && (sourceMode === 'system' || sourceMode === 'file') && currentRmsLevel > 0.012) {
             const nativeIdleMs = Date.now() - (window.speechEngine?.lastNativeResultTime || 0);
             if (nativeIdleMs > 3200) {
               digitalPcmChunks.push(new Int16Array(pcm16));
@@ -2031,7 +2032,7 @@
                 isSendingDigitalStt = true;
                 const lang = document.getElementById('sourceLang')?.value || 'pt-BR';
                 const wavBlob = encodeWavFromInt16Chunks(chunksToSend, totalToSend, targetRate);
-                operatorFetch(`/api/stt-chunk?lang=${encodeURIComponent(lang)}`, {
+                operatorFetch(`/api/stt-chunk?room=${encodeURIComponent(roomId)}&lang=${encodeURIComponent(lang)}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'audio/wav' },
                   body: wavBlob
@@ -2097,7 +2098,7 @@
 
         // Passa a trilha de áudio capturada para o reconhecedor (suporte nativo MediaStreamTrack no Chrome + microfone)
         const trackForStt = (sourceMode === 'system' || sourceMode === 'file') ? audioTracks[0] : null;
-        window.speechEngine.start(trackForStt);
+        if(!window.serverSpeechRecognition)window.speechEngine.start(trackForStt);
       } catch (err) {
         alert('Erro ao capturar o dispositivo de áudio: ' + err.message);
       }
@@ -2725,7 +2726,7 @@
         }, 4000);
       },
 
-      appendConfirmed(chunkText) {
+      appendConfirmed(chunkText,metadata={}) {
         const box = document.getElementById('hostTranscriptBox');
         if (!box || !chunkText) return;
 
@@ -2746,10 +2747,7 @@
             confirmedStream.removeChild(confirmedStream.firstChild);
           }
 
-          const span = document.createElement('span');
-          span.className = 'text-slate-100 font-medium transition-colors duration-150';
-          span.innerText = chunkText.trim() + ' ';
-          confirmedStream.appendChild(span);
+          window.VmtCaptions.append(confirmedStream,chunkText,metadata);
           box.scrollTop = box.scrollHeight;
         }
       },

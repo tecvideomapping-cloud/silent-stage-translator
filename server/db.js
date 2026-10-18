@@ -207,6 +207,10 @@ async function initDb() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
 
+      ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS speaker_id INTEGER;
+      ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS turn_id TEXT;
+      ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS segment_id TEXT;
+
       CREATE TABLE IF NOT EXISTS leads (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -475,14 +479,14 @@ async function deleteRoom(roomId) {
   return false;
 }
 
-async function saveTranscript(roomId, sourceText, translations = {}) {
-  const item = { roomId, sourceText, translations, createdAt: new Date() };
+async function saveTranscript(roomId, sourceText, translations = {}, metadata = {}) {
+  const item = { roomId, sourceText, translations, speaker_id:Number.isInteger(metadata.speakerId)?metadata.speakerId:null,turn_id:metadata.turnId||null,segment_id:metadata.segmentId||null,createdAt: new Date() };
   if(!pool){memoryStore.transcripts.push(item);if(memoryStore.transcripts.length>10000)memoryStore.transcripts.splice(0,memoryStore.transcripts.length-10000);}
   if (pool) {
     try {
       await pool.query(
-        'INSERT INTO transcripts (room_id, source_text, translations) VALUES ($1, $2, $3)',
-        [roomId, sourceText, JSON.stringify(translations)]
+        'INSERT INTO transcripts (room_id, source_text, translations, speaker_id, turn_id, segment_id) VALUES ($1, $2, $3, $4, $5, $6)',
+        [roomId, sourceText, JSON.stringify(translations),item.speaker_id,item.turn_id,item.segment_id]
       );
     } catch (e) {
     if(process.env.NODE_ENV==='production'){e.status=503;throw e;}

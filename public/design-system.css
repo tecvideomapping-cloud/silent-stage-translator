@@ -85,3 +85,5 @@ body.vmt-app:not(.vmt-screen) { background:radial-gradient(ellipse at 90% 3%,var
 @media(max-width:600px) { .vmt-app input:not([type="range"]),.vmt-app select,.vmt-app textarea { font-size:16px; } .vmt-app .vmt-brand { font-size:12px; } .vmt-app .vmt-brand small { font-size:7px; letter-spacing:1.2px; } .vmt-app .vmt-btn { min-height:44px; } }
 @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .vmt-app *, .vmt-app *::before,.vmt-app *::after { animation:none!important; transition:none!important; } }
 
+
+.vmt-caption-turn{display:block;margin:0 0 .65em;padding:0 0 .5em;border-bottom:1px solid var(--vmt-line);line-height:1.65}.vmt-caption-speaker{display:block;color:var(--vmt-accent);font-size:.72em;font-weight:600;margin-bottom:.15em}.vmt-caption-content{white-space:pre-wrap;overflow-wrap:anywhere}

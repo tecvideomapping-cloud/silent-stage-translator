@@ -550,7 +550,8 @@ app.get('/api/rooms/:id/export', async (req, res) => {
     if (format === 'srt') {
       let srtContent = '';
       transcripts.forEach((t, i) => {
-        const text = (lang && t.translations?.[lang]) ? t.translations[lang] : t.source_text;
+        const rawText = (lang && t.translations?.[lang]) ? t.translations[lang] : t.source_text;
+      const text=(Number.isInteger(t.speaker_id)?'Locutor '+(t.speaker_id+1)+': ':'')+rawText;
         const origin=Date.parse(transcripts[0]?.created_at)||0;
         const startSec=Math.max(0,((Date.parse(t.created_at)||origin)-origin)/1000);
         const next=transcripts[i+1];const endSec=next?Math.max(startSec+0.5,((Date.parse(next.created_at)||origin)-origin)/1000):startSec+3;
@@ -569,7 +570,8 @@ app.get('/api/rooms/:id/export', async (req, res) => {
 
     let txtContent = `TRANSCRIÇÃO DO EVENTO: ${req.params.id}\nData: ${new Date().toLocaleString()}\n\n`;
     transcripts.forEach(t => {
-      const text = (lang && t.translations?.[lang]) ? t.translations[lang] : t.source_text;
+      const rawText = (lang && t.translations?.[lang]) ? t.translations[lang] : t.source_text;
+      const text=(Number.isInteger(t.speaker_id)?'Locutor '+(t.speaker_id+1)+': ':'')+rawText;
       txtContent += `[${new Date(t.created_at).toLocaleTimeString()}] ${text}\n`;
     });
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -843,21 +845,11 @@ async function getOrGenerateTts(targetLang, cleanText, voice, speed, pitch) {
       const edgeBuf = await synthesizeWithEdgeNeural(targetLang, sanitizedText, normVoice, speed, pitch);
       return { buffer: edgeBuf, provider: 'edge-neural' };
     } catch (edgeErr) {
-      console.warn('[TTS Edge Neural] Contingência para Google TTS:', edgeErr.message);
+      console.warn('[TTS Edge Neural] Voz temporariamente indisponível:', edgeErr.message);
     }
 
-    // 4. Contingência de Emergência (Google TTS)
-    const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${encodeURIComponent(targetLang)}&client=tw-ob&q=${encodeURIComponent(sanitizedText)}`;
-    const response = await fetch(googleTtsUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-      },
-      signal: AbortSignal.timeout(4000)
-    });
-    if (response.ok) {
-      return { buffer: Buffer.from(await response.arrayBuffer()), provider: 'google-fallback' };
-    }
-    throw new Error('TTS Provider Error');
+    // Keep speaker timbre stable: a failed voice is retried, never replaced by Google default voices.
+    throw Object.assign(new Error('Voice synthesis temporarily unavailable'),{status:503});
   })();
 
   ttsInFlightRequests.set(cacheKey, generatePromise);
@@ -966,6 +958,7 @@ app.post('/api/stt-chunk', express.raw({ type: 'audio/wav', limit: '5mb' }), asy
 // ----------------------------------------------------
 const roomTranslationQueues = new Map();
 function enqueueRoomTranslation(roomId,task){const previous=roomTranslationQueues.get(roomId)||Promise.resolve();const current=previous.catch(()=>{}).then(task);roomTranslationQueues.set(roomId,current);current.finally(()=>{if(roomTranslationQueues.get(roomId)===current)roomTranslationQueues.delete(roomId)}).catch(()=>{});return current;}
+const orderedTranslations=new (require('./speech-turns').OrderedTranslations)();
 const roomAudioMeta = new Map(); // roomId -> { type: 'audio_meta', format, sampleRate, kbps, profileName }
 const roomSpeakerProfile = new Map(); // roomId -> { voice, pitch, speed }
 const roomLastFinalTranscript = new Map(); // roomId -> { text, time }
@@ -991,6 +984,44 @@ function appendToCatchupHistory(roomId, entry) {
   }
   roomBus.setRoomState(roomId,'history',list);
 }
+
+// Keep final text, translation, speaker identity and timing on the same segment.
+async function processRecognizedSpeech(roomId,ws,event){
+ const text=String(event.text||'').trim().slice(0,4000);if(!text)return;
+ const clients=getRoomClients(roomId),now=Date.now();
+ const meta={speakerId:Number.isInteger(event.speakerId)?event.speakerId:null,turnId:event.turnId||require('crypto').randomUUID(),segmentId:event.segmentId||require('crypto').randomUUID(),recognizedAt:now};
+ const final=event.isFinal===true;
+ const originalSeqId=final?globalCatchupSeqId:undefined;
+ if(final){const last=roomLastInterimTranslate.get(roomId);roomLastInterimTranslate.set(roomId,{text:'',time:now,seq:(last?.seq||0)+1});}
+ if(final){const previous=roomLastFinalTranscript.get(roomId);if(!event.segmentId&&previous?.text===text&&now-previous.time<400)return;roomLastFinalTranscript.set(roomId,{text,time:now});appendToCatchupHistory(roomId,{...meta,lang:'original',text});}
+ const payload=JSON.stringify({type:'subtitle',text,isFinal:final,seqId:originalSeqId,sourceLang:event.sourceLang||ws.speechRoom?.source_language||'pt-BR',...meta,timestamp:now});
+ for(const client of clients)if(client.readyState===WebSocket.OPEN)client.send(payload);
+ if(final){
+  // Serialize only room lookup/registration, not provider response time.
+  await enqueueRoomTranslation(roomId,async()=>{
+   const room=await getRoom(roomId);if(!room)return;
+   const task=orderedTranslations.translate(roomId,text,room.target_languages||['en','es'],room.glossary||{},aiPipeline,(lang,translatedText)=>{
+    const readyAt=Date.now(),seqId=globalCatchupSeqId;
+    appendToCatchupHistory(roomId,{...meta,lang,text:translatedText,sourceText:text});
+    const profile=roomSpeakerProfile.get(roomId)||{};
+    getOrGenerateTts(lang,translatedText,profile.voice||'male_deep',profile.speed||1.05,profile.pitch||0).catch(()=>{});
+    const translated=JSON.stringify({type:'subtitle_translated',text:translatedText,sourceText:text,lang,isFinal:true,seqId,...meta,translationReadyAt:readyAt,translationMs:readyAt-now,timestamp:readyAt});
+    for(const client of clients)if(client.readyState===WebSocket.OPEN)client.send(translated);
+   });
+   task.then(translations=>saveTranscript(roomId,text,translations,meta)).catch(()=>{});
+  });
+ }else{
+  const last=roomLastInterimTranslate.get(roomId);if(text.split(/\s+/).length<4||last&&now-last.time<900)return;
+  const seq=(last?.seq||0)+1;roomLastInterimTranslate.set(roomId,{text,time:now,seq});
+  getRoom(roomId).then(room=>room&&aiPipeline.translateText(text,room.target_languages||['en','es'],room.glossary||{},(lang,translatedText)=>{
+   if(roomLastInterimTranslate.get(roomId)?.seq!==seq)return;
+   const partial=JSON.stringify({type:'subtitle_translated',text:translatedText,sourceText:text,lang,isFinal:false,...meta,timestamp:Date.now()});
+   for(const client of clients)if(client.readyState===WebSocket.OPEN)client.send(partial);
+  },roomId)).catch(()=>{});
+ }
+}
+
+aiPipeline.onRecognitionStatus=(roomId,status)=>{for(const client of roomsClients.get(roomId)||[])if(client.role==='host'&&client.readyState===WebSocket.OPEN)client.send(JSON.stringify({type:'speech_recognition',...status}));};
 
 // Codificador G.711 μ-law stateless para Degrade Quality individual por ouvinte no servidor
 function encodeMuLawServerSample(sample) {
@@ -1095,6 +1126,7 @@ async function handleConnection(ws,req){
   ws.roomId = roomId;
   ws.role = role;
   ws.channel = channel;
+  ws.speechRoom=await getRoom(roomId);
   ws.isAlive=true;ws.on('pong',()=>{ws.isAlive=true});
   ws.on('error',()=>{});
   ws.abrMode = 'auto'; // 'auto' | 'high' | 'saver'
@@ -1111,6 +1143,7 @@ async function handleConnection(ws,req){
     roomId,
     role,
     channel,
+    speechRecognition:{provider:aiPipeline.useStreaming(roomId)?'deepgram':'browser',diarization:aiPipeline.useStreaming(roomId)},
     timestamp: Date.now()
   }));
 
@@ -1169,63 +1202,13 @@ async function handleConnection(ws,req){
       }
 
       // Se o Host já estiver transcrevendo nativamente pelo navegador, ignora STT secundário
-      if (ws.hasHostSpeechSTT) {
+      if (ws.hasHostSpeechSTT&&!aiPipeline.useStreaming(roomId)) {
         return;
       }
 
-      // Processamento de IA (Deepgram / Fallback)
-      getRoom(roomId).then(room => {
-        const sourceLang = room?.source_language || 'pt-BR';
-        const targetLangs = room?.target_languages || ['en', 'es'];
-        const glossary = room?.glossary || {};
-
-        let pcm;try{ws.sttDecoder??={};pcm=require('./audio-codec').decodeForStt(data,ws.sttDecoder)}catch{return;}
-        aiPipeline.feedAudio(roomId, pcm, sourceLang, async (sttEvent) => {
-          const subtitlePayload = {
-            type: 'subtitle',
-            text: sttEvent.text,
-            isFinal: sttEvent.isFinal,
-            sourceLang,
-            timestamp: sttEvent.timestamp
-          };
-
-          for (const client of roomClients) {
-            if (client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.channel === 'original' || client.channel === 'text')) {
-              client.send(JSON.stringify(subtitlePayload));
-            }
-          }
-
-          if (sttEvent.isFinal) {
-            await enqueueRoomTranslation(roomId,async()=>{
-            const translations = await aiPipeline.translateText(sttEvent.text, targetLangs, glossary, null, roomId);
-            await saveTranscript(roomId, sttEvent.text, translations);
-
-            for (const [lang, translatedText] of Object.entries(translations)) {
-              const transPayload = JSON.stringify({
-                type: 'subtitle_translated',
-                lang,
-                text: translatedText,
-                sourceText: sttEvent.text,
-                timestamp: Date.now()
-              });
-
-              for (const client of roomClients) {
-                if (client.readyState === WebSocket.OPEN && (client.channel === lang || client.role === 'screen')) {
-                  client.send(transPayload);
-                }
-              }
-
-              const profile = roomSpeakerProfile.get(roomId);
-              const voice = profile?.voice || 'male_deep';
-              const speed = profile?.speed || 1.05;
-              const pitch = profile?.pitch || 0;
-
-              getOrGenerateTts(lang, translatedText, voice, speed, pitch).catch(() => {});
-            }
-            });
-          }
-        });
-      }).catch(()=>{});
+      // Feed frames synchronously in arrival order; translation reads room settings separately.
+      let pcm;try{ws.sttDecoder??={};pcm=require('./audio-codec').decodeForStt(data,ws.sttDecoder)}catch{return;}
+      aiPipeline.feedAudio(roomId,pcm,ws.speechRoom?.source_language||'pt-BR',event=>processRecognizedSpeech(roomId,ws,event));
 
       return;
     }
@@ -1256,127 +1239,9 @@ async function handleConnection(ws,req){
           }
         }
       } else if (msg.type === 'speech_transcript') {
-        ws.hasHostSpeechSTT = true;
-        const { text, isFinal, sourceLang } = msg;
-        const currentSeqId = isFinal ? globalCatchupSeqId : undefined;
-        const subPayload = JSON.stringify({
-          type: 'subtitle',
-          seqId: currentSeqId,
-          text,
-          isFinal,
-          sourceLang: sourceLang || 'pt-BR',
-          timestamp: Date.now()
-        });
-
-        for (const client of roomClients) {
-          if (client !== ws && client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener' || client.role === 'host' || client.channel === 'original' || client.channel === 'text')) {
-            client.send(subPayload);
-          }
-        }
-
-        if (isFinal) {
-          const cleanText = (text || '').trim();
-          if (!cleanText) return;
-
-          // Registra fala original no buffer de recuperação de quedas de rede
-          appendToCatchupHistory(roomId, {
-            lang: 'original',
-            text: cleanText
-          });
-
-          // Invalida qualquer tradução parcial (interim) anterior que ainda esteja em trânsito
-          const prevInterim = roomLastInterimTranslate.get(roomId);
-          roomLastInterimTranslate.set(roomId, { text: '', time: Date.now(), seq: (prevInterim?.seq || 0) + 1 });
-
-          const lastObj = roomLastFinalTranscript.get(roomId);
-          if (lastObj && lastObj.text.toLowerCase() === cleanText.toLowerCase() && (Date.now() - lastObj.time) < 400) {
-            // Ignora apenas disparo duplicado instantâneo de rede (< 400ms)
-            return;
-          }
-          roomLastFinalTranscript.set(roomId, { text: cleanText, time: Date.now() });
-
-          enqueueRoomTranslation(roomId,()=>getRoom(roomId).then(async (room) => {
-            const targetLangs = room?.target_languages || ['en', 'es'];
-            const glossary = room?.glossary || {};
-
-            // Callback disparado instantaneamente no momento em que a tradução de cada idioma fica pronta (<100ms)
-            const onLangReady = (lang, translatedText) => {
-              const transSeqId = globalCatchupSeqId;
-              appendToCatchupHistory(roomId, {
-                lang,
-                text: translatedText,
-                sourceText: text
-              });
-
-              const transPayload = JSON.stringify({
-                type: 'subtitle_translated',
-                seqId: transSeqId,
-                lang,
-                text: translatedText,
-                isFinal: true,
-                sourceText: text,
-                timestamp: Date.now()
-              });
-
-              for (const client of roomClients) {
-                if (client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener' || client.role === 'host')) {
-                  client.send(transPayload);
-                }
-              }
-
-              const profile = roomSpeakerProfile.get(roomId);
-              const voice = profile?.voice || 'male_deep';
-              const speed = profile?.speed || 1.05;
-              const pitch = profile?.pitch || 0;
-
-              getOrGenerateTts(lang, translatedText, voice, speed, pitch).catch(() => {});
-            };
-
-            const translations = await aiPipeline.translateText(text, targetLangs, glossary, onLangReady, roomId);
-
-            // Persistência assíncrona não-bloqueante no banco de dados (não atrasa transmissão ao vivo)
-            saveTranscript(roomId, text, translations).catch(err => {
-              console.error('[DB] Erro não-bloqueante ao salvar transcrição:', err.message);
-            });
-          })).catch(()=>{});
-        } else {
-          // Tradução simultânea em tempo real da fala em andamento (isFinal: false) para exibição imediata nas legendas
-          const cleanInterim = (text || '').trim();
-          const interimWords = cleanInterim.split(/\s+/).filter(Boolean);
-          if (interimWords.length >= 2) {
-            const lastInterim = roomLastInterimTranslate.get(roomId);
-            const now = Date.now();
-            if (!lastInterim || (cleanInterim.toLowerCase() !== lastInterim.text.toLowerCase() && (now - lastInterim.time) >= 420)) {
-              const currentSeq = (lastInterim?.seq || 0) + 1;
-              roomLastInterimTranslate.set(roomId, { text: cleanInterim, time: now, seq: currentSeq });
-
-              getRoom(roomId).then(room => {
-                const targetLangs = room?.target_languages || ['en', 'es'];
-                const glossary = room?.glossary || {};
-
-                aiPipeline.translateText(cleanInterim, targetLangs, glossary, (lang, translatedText) => {
-                  // Só envia se esta prévia ainda for a mais recente (não atropela frase finalizada)
-                  if (roomLastInterimTranslate.get(roomId)?.seq !== currentSeq) return;
-
-                  const interimPayload = JSON.stringify({
-                    type: 'subtitle_translated',
-                    lang,
-                    text: translatedText,
-                    isFinal: false,
-                    sourceText: cleanInterim,
-                    timestamp: Date.now()
-                  });
-
-                  for (const client of roomClients) {
-                    if (client !== ws && client.readyState === WebSocket.OPEN && (client.role === 'screen' || client.role === 'listener' || client.role === 'host')) {
-                      client.send(interimPayload);
-                    }
-                  }
-                }).catch(() => {});
-              }).catch(() => {});
-            }
-          }
-        }
+        if(aiPipeline.useStreaming(roomId))return;
+        ws.hasHostSpeechSTT=true;
+        processRecognizedSpeech(roomId,ws,{text:msg.text,isFinal:msg.isFinal===true,sourceLang:msg.sourceLang,source:'browser'}).catch(()=>{});
       } else if (msg.type === 'set_screen_lang') {
         // Administrador/Host define remotamente o idioma, fundo chroma/preto e logo de todos os telões da sala
         for (const client of roomClients) {

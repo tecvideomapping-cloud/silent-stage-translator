@@ -2,7 +2,8 @@ const crypto=require('crypto');
 const { WebSocket } = require('ws');
 
 class AIPipeline {
-  constructor() {
+  constructor({WebSocketClient=WebSocket}={}) {
+    this.WebSocketClient=WebSocketClient;
     this.deepgramKey = process.env.DEEPGRAM_API_KEY;
     this.openaiKey = process.env.OPENAI_API_KEY;
     this.groqKey = process.env.GROQ_API_KEY;
@@ -13,6 +14,7 @@ class AIPipeline {
     
     // Conexões ativas do Deepgram por sala
     this.sttSockets = new Map();
+    this.streamingUnavailable=new Set();
     // Cache LRU em memória para traduções instantâneas (evita chamadas repetidas e rate-limit)
     this.translationCache = new Map();
     // Memória contextual de sentenças anteriores por sala (mantém coerência gramatical e pronominal)
@@ -36,47 +38,51 @@ class AIPipeline {
   /**
    * Inicializa ou obtém conexão Deepgram para a sala
    */
+  useStreaming(roomId){return !!this.deepgramKey&&!this.mockMode&&!this.streamingUnavailable.has(roomId);}
+
   getOrCreateDeepgramSession(roomId, sourceLang, onTranscript) {
-    if (this.mockMode||!this.deepgramKey) return null;
+    if (!this.useStreaming(roomId)) return null;
     if (this.sttSockets.has(roomId)) return this.sttSockets.get(roomId);
 
     const langCode = sourceLang || 'pt-BR';
-    const dgUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&language=${langCode}&smart_format=true&interim_results=true&encoding=linear16&sample_rate=16000`;
+    const dgUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&language=${langCode}&smart_format=true&interim_results=true&encoding=linear16&sample_rate=16000&diarize_model=latest&punctuate=true&endpointing=300&utterance_end_ms=1000`;
 
     try {
-      const dgSocket = new WebSocket(dgUrl, {
+      const dgSocket = new this.WebSocketClient(dgUrl, {
         headers: {
           Authorization: `Token ${this.deepgramKey}`
         }
       });
 
+      const turns=new (require('./speech-turns').SpeechTurns)();
+      dgSocket.lastAudioAt=Date.now();
+      dgSocket.keepAliveTimer=setInterval(()=>{if(dgSocket.readyState===WebSocket.OPEN&&Date.now()-dgSocket.lastAudioAt>3000)dgSocket.send(JSON.stringify({type:'KeepAlive'}));},4000);dgSocket.keepAliveTimer.unref();
+      dgSocket.pendingAudio=[];dgSocket.pendingBytes=0;
       dgSocket.on('open', () => {
+        this.streamingUnavailable.delete(roomId);
+        for(const audio of dgSocket.pendingAudio)dgSocket.send(audio);dgSocket.pendingAudio=[];dgSocket.pendingBytes=0;
+        if(this.onRecognitionStatus)this.onRecognitionStatus(roomId,{provider:'deepgram',diarization:true});
         console.log(`[AI-STT] Conectado ao Deepgram para a sala ${roomId}`);
       });
 
       dgSocket.on('message', (data) => {
         try {
           const response = JSON.parse(data.toString());
-          const transcript = response?.channel?.alternatives?.[0]?.transcript;
-          const isFinal = response?.is_final || response?.speech_final;
-
-          if (transcript && transcript.trim().length > 0) {
-            Promise.resolve(onTranscript({
-              text: transcript,
-              isFinal: !!isFinal,
-              timestamp: Date.now()
-            })).catch(()=>{});
-          }
+          for(const event of turns.accept(response))Promise.resolve(onTranscript(event)).catch(()=>{});
         } catch (err) {
           console.error('[AI-STT] Erro ao parsear resposta Deepgram:', err.message);
         }
       });
 
+      const fail=()=>{if(dgSocket.intentionalClose)return;this.streamingUnavailable.add(roomId);if(this.onRecognitionStatus)this.onRecognitionStatus(roomId,{provider:'browser',diarization:false,message:'Reconhecimento com locutores indisponível; usando reconhecimento do navegador.'});};
       dgSocket.on('error', (err) => {
+        fail();
         console.error(`[AI-STT] Erro no socket Deepgram (${roomId}):`, err.message);
       });
 
       dgSocket.on('close', () => {
+        clearInterval(dgSocket.keepAliveTimer);
+        fail();
         console.log(`[AI-STT] Socket Deepgram fechado para sala ${roomId}`);
         this.sttSockets.delete(roomId);
       });
@@ -93,7 +99,7 @@ class AIPipeline {
    * Envia chunks de áudio PCM para o STT
    */
   feedAudio(roomId, audioBuffer, sourceLang, onTranscript) {
-    if (this.mockMode||!this.deepgramKey) {
+    if (!this.useStreaming(roomId)) {
       // No modo sem chave externa de API STT, o áudio original é transmitido diretamente
       // e o reconhecimento real de voz é feito com precisão pelo navegador do host via SpeechRecognition.
       return;
@@ -101,8 +107,8 @@ class AIPipeline {
 
     const dg = this.getOrCreateDeepgramSession(roomId, sourceLang, onTranscript);
     if (dg && dg.readyState === WebSocket.OPEN) {
-      dg.send(audioBuffer);
-    }
+      dg.lastAudioAt=Date.now();dg.send(audioBuffer);
+    } else if(dg&&dg.readyState===WebSocket.CONNECTING){dg.pendingAudio.push(Buffer.from(audioBuffer));dg.pendingBytes+=audioBuffer.length;while(dg.pendingBytes>96000&&dg.pendingAudio.length){dg.pendingBytes-=dg.pendingAudio.shift().length;}}
   }
 
   /**
@@ -395,5 +401,5 @@ class AIPipeline {
 const aiPipeline = new AIPipeline();
 
 module.exports = {
-  aiPipeline
+  aiPipeline,AIPipeline
 };
