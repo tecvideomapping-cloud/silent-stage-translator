@@ -10,8 +10,12 @@ const {
   createUser,
   updateUserPassword,
   saveClient,
+  getClient,
   listClients,
   deleteClient,
+  saveClientPayment,
+  listClientPayments,
+  deleteClientPayment,
   saveRoom,
   getRoom,
   listRooms,
@@ -26,7 +30,7 @@ const {
   deleteSavedGlossary
 } = require('./db');
 const { verifyPassword, createSession, removeSession, requireAuth, getSession, setSessionStore, tokenFrom: adminTokenFrom, revokeUserSessions } = require('./auth');
-const { Commerce } = require('./commerce');
+const { Commerce, passwordHash } = require('./commerce');
 
 const { aiPipeline } = require('./ai-pipeline');
 const QRCode = require('qrcode');
@@ -279,10 +283,177 @@ app.get('/api/clients', ...requireAdmin, async (req, res) => {
   }
 });
 
+app.get('/api/clients/:id', ...requireAdmin, async (req, res) => {
+  try {
+    const client = await getClient(req.params.id);
+    if (!client) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const allRooms = await listRooms();
+    const rooms = allRooms.filter(r => r.client_id === client.id);
+    res.json({ client, rooms });
+  } catch (err) {
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
+  }
+});
+
 app.post('/api/clients', ...requireAdmin, async (req, res) => {
   try {
     const client = await saveClient(req.body);
+    if (req.body.password && client.email && commerce?.store) {
+      try {
+        const emailAddr = String(client.email).trim().toLowerCase();
+        const hash = await passwordHash(req.body.password.trim());
+        await commerce.store.transaction(async tx => {
+          const mapping = await tx.get('email', emailAddr);
+          if (mapping) {
+            const cust = await tx.get('customer', mapping.customerId);
+            if (cust) {
+              cust.passwordHash = hash;
+              cust.passwordVersion = (cust.passwordVersion || 1) + 1;
+              if (client.name) cust.name = client.name;
+              if (client.company) cust.company = client.company;
+              if (client.phone) cust.phone = client.phone;
+              await tx.put('customer', cust.id, cust);
+            }
+          } else {
+            const custId = require('crypto').randomUUID();
+            const cust = {
+              id: custId,
+              name: client.name || emailAddr.split('@')[0],
+              email: emailAddr,
+              company: client.company || '',
+              phone: client.phone || '',
+              passwordHash: hash,
+              passwordVersion: 1,
+              createdAt: new Date().toISOString()
+            };
+            await tx.put('customer', custId, cust);
+            await tx.put('email', emailAddr, { customerId: custId });
+          }
+        });
+      } catch (syncErr) {
+        console.warn('[Sync] Aviso ao sincronizar senha com portal do cliente:', syncErr.message);
+      }
+    }
     res.json({ success: true, client });
+  } catch (err) {
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
+  }
+});
+
+app.put('/api/clients/:id', ...requireAdmin, async (req, res) => {
+  try {
+    const client = await saveClient({ ...req.body, id: req.params.id });
+    if (req.body.password && client.email && commerce?.store) {
+      try {
+        const emailAddr = String(client.email).trim().toLowerCase();
+        const hash = await passwordHash(req.body.password.trim());
+        await commerce.store.transaction(async tx => {
+          const mapping = await tx.get('email', emailAddr);
+          if (mapping) {
+            const cust = await tx.get('customer', mapping.customerId);
+            if (cust) {
+              cust.passwordHash = hash;
+              cust.passwordVersion = (cust.passwordVersion || 1) + 1;
+              if (client.name) cust.name = client.name;
+              if (client.company) cust.company = client.company;
+              if (client.phone) cust.phone = client.phone;
+              await tx.put('customer', cust.id, cust);
+            }
+          }
+        });
+      } catch (syncErr) {
+        console.warn('[Sync] Aviso ao sincronizar senha:', syncErr.message);
+      }
+    }
+    res.json({ success: true, client });
+  } catch (err) {
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
+  }
+});
+
+app.put('/api/clients/:id/license', ...requireAdmin, async (req, res) => {
+  try {
+    const current = await getClient(req.params.id);
+    if (!current) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const { plan, license_status, license_expires_at, max_rooms, max_listeners, total_hours, used_hours, notes } = req.body;
+    const updated = await saveClient({
+      ...current,
+      id: req.params.id,
+      plan: plan ?? current.plan,
+      license_status: license_status ?? current.license_status,
+      license_expires_at: license_expires_at !== undefined ? license_expires_at : current.license_expires_at,
+      max_rooms: max_rooms !== undefined ? max_rooms : current.max_rooms,
+      max_listeners: max_listeners !== undefined ? max_listeners : current.max_listeners,
+      total_hours: total_hours !== undefined ? total_hours : current.total_hours,
+      used_hours: used_hours !== undefined ? used_hours : current.used_hours,
+      notes: notes !== undefined ? notes : current.notes
+    });
+    res.json({ success: true, client: updated });
+  } catch (err) {
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
+  }
+});
+
+app.get('/api/clients/:id/payments', ...requireAdmin, async (req, res) => {
+  try {
+    const client = await getClient(req.params.id);
+    if (!client) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const dbPayments = await listClientPayments(req.params.id);
+    let commerceOrders = [];
+    if (commerce?.store && client.email) {
+      try {
+        const emailAddr = String(client.email).trim().toLowerCase();
+        const mapping = await commerce.store.get('email', emailAddr);
+        if (mapping?.customerId) {
+          const orders = await commerce.store.list('order', { customerId: mapping.customerId });
+          commerceOrders = orders.map(o => ({
+            id: 'order-' + o.id,
+            client_id: client.id,
+            amount_cents: o.amountCents,
+            currency: o.currency || 'BRL',
+            status: o.status,
+            method: 'mercadopago',
+            description: 'Pedido Online #' + o.id.slice(0, 8) + ' (' + (o.eventName || o.plan?.name || 'Evento') + ')',
+            reference_id: o.paymentId || o.id,
+            paid_at: o.paidAt || o.createdAt,
+            created_at: o.createdAt,
+            is_commerce_order: true
+          }));
+        }
+      } catch {}
+    }
+    const allPayments = [...dbPayments, ...commerceOrders].sort((a, b) => new Date(b.paid_at || b.created_at) - new Date(a.paid_at || a.created_at));
+    res.json({ payments: allPayments });
+  } catch (err) {
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
+  }
+});
+
+app.post('/api/clients/:id/payments', ...requireAdmin, async (req, res) => {
+  try {
+    const client = await getClient(req.params.id);
+    if (!client) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const payment = await saveClientPayment({
+      ...req.body,
+      client_id: req.params.id
+    });
+    if (req.body.add_hours && Number(req.body.add_hours) > 0) {
+      await saveClient({
+        ...client,
+        id: client.id,
+        total_hours: (Number(client.total_hours) || 0) + Number(req.body.add_hours)
+      });
+    }
+    res.json({ success: true, payment });
+  } catch (err) {
+    res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
+  }
+});
+
+app.delete('/api/clients/:id/payments/:paymentId', ...requireAdmin, async (req, res) => {
+  try {
+    await deleteClientPayment(req.params.paymentId, req.params.id);
+    res.json({ success: true });
   } catch (err) {
     res.status(err.status||500).json({error:err.status===503?'Serviço temporariamente indisponível.':'Não foi possível concluir a operação.'});
   }

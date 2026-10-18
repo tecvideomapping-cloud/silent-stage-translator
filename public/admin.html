@@ -70,9 +70,10 @@
           <table class="w-full text-left text-xs text-slate-300">
             <thead class="bg-slate-950 text-slate-400 uppercase border-b border-slate-800">
               <tr>
-                <th class="p-3.5">Empresa / Razão Social</th>
-                <th class="p-3.5">Contato</th>
+                <th class="p-3.5">Empresa / Responsável</th>
+                <th class="p-3.5">Contato &amp; Acesso</th>
                 <th class="p-3.5">CNPJ / CPF</th>
+                <th class="p-3.5">Licença &amp; Plano</th>
                 <th class="p-3.5">Horas Contratadas</th>
                 <th class="p-3.5">Horas Usadas</th>
                 <th class="p-3.5">Saldo</th>
@@ -80,7 +81,7 @@
               </tr>
             </thead>
             <tbody id="clientsTableBody" class="divide-y divide-slate-800/60">
-              <tr><td colspan="7" class="p-4 text-center text-slate-500">Nenhum cliente cadastrado.</td></tr>
+              <tr><td colspan="8" class="p-4 text-center text-slate-500">Nenhum cliente cadastrado.</td></tr>
             </tbody>
           </table>
         </div>
@@ -329,62 +330,287 @@
     </div>
   </div>
 
-  <!-- MODAL: CADASTRAR CLIENTE -->
+  <!-- MODAL: GESTÃO DE CLIENTE / CADASTRO / EDIÇÃO / LICENÇA / PAGAMENTOS -->
   <div id="clientModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-slate-900 border border-slate-800 max-w-lg w-full rounded-2xl p-6 shadow-2xl flex flex-col gap-4">
+    <div class="bg-slate-900 border border-slate-800 max-w-2xl w-full rounded-2xl p-6 shadow-2xl flex flex-col gap-4 max-h-[92vh] overflow-hidden">
       <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-        <h3 class="text-base font-bold text-white">Cadastrar Novo Cliente</h3>
+        <div>
+          <h3 id="clientModalTitle" class="text-base font-bold text-white">Cadastrar Novo Cliente</h3>
+          <p id="clientModalSubtitle" class="text-xs text-slate-400">Configure dados cadastrais, credenciais de acesso, plano de licença e histórico financeiro</p>
+        </div>
         <button onclick="closeModal('clientModal')" class="text-slate-400 hover:text-white text-xl font-bold">×</button>
       </div>
 
-      <form onsubmit="handleSaveClient(event)" class="flex flex-col gap-3 text-xs">
-        <div>
-          <label class="block font-semibold text-slate-300 mb-1">Razão Social / Empresa:</label>
-          <input type="text" id="clientCompany" required placeholder="ex: Banco Inter S.A."
-            class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
-        </div>
+      <!-- Abas internas do modal -->
+      <div class="flex border-b border-slate-800 gap-2 text-xs">
+        <button type="button" id="tabBtnClientData" onclick="switchClientTab('data')"
+          class="px-3.5 py-2 font-semibold text-cyan-400 border-b-2 border-cyan-400 flex items-center gap-1.5 transition">
+          <span data-icon="building-2"></span> <span>1. Dados &amp; Acesso</span>
+        </button>
+        <button type="button" id="tabBtnClientLicense" onclick="switchClientTab('license')"
+          class="px-3.5 py-2 font-semibold text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center gap-1.5 transition">
+          <span data-icon="shield-check"></span> <span>2. Revisão de Licença</span>
+        </button>
+        <button type="button" id="tabBtnClientPayments" onclick="switchClientTab('payments')"
+          class="px-3.5 py-2 font-semibold text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center gap-1.5 transition">
+          <span data-icon="credit-card"></span> <span>3. Histórico de Pagamentos</span>
+          <span id="clientPaymentsBadge" class="admin-count">0</span>
+        </button>
+      </div>
 
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block font-semibold text-slate-300 mb-1">Nome do Responsável:</label>
-            <input type="text" id="clientName" required placeholder="ex: Rodrigo Costa"
-              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
-          </div>
-          <div>
-            <label class="block font-semibold text-slate-300 mb-1">CNPJ / CPF:</label>
-            <input type="text" id="clientCnpj" placeholder="00.000.000/0001-00"
-              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
-          </div>
-        </div>
+      <div class="overflow-y-auto pr-1 flex-1">
+        <!-- FORMULÁRIO PRINCIPAL (DADOS & LICENÇA) -->
+        <form id="clientForm" onsubmit="handleSaveClient(event)" class="flex flex-col gap-3 text-xs">
+          <input type="hidden" id="clientId">
 
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block font-semibold text-slate-300 mb-1">E-mail:</label>
-            <input type="email" id="clientEmail" placeholder="contato@empresa.com"
-              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
-          </div>
-          <div>
-            <label class="block font-semibold text-slate-300 mb-1">Telefone / WhatsApp:</label>
-            <input type="text" id="clientPhone" placeholder="(11) 99999-9999"
-              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
-          </div>
-        </div>
+          <!-- ABA 1: DADOS & ACESSO -->
+          <div id="clientTabContentData" class="flex flex-col gap-3">
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">Razão Social / Empresa:</label>
+              <input type="text" id="clientCompany" required placeholder="ex: Banco Inter S.A."
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+            </div>
 
-        <div>
-          <label class="block font-semibold text-slate-300 mb-1">Pacote de Horas Contratadas:</label>
-          <input type="number" id="clientHours" value="10" min="1" max="1000"
-            class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
-        </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold text-slate-300 mb-1">Nome do Responsável:</label>
+                <input type="text" id="clientName" required placeholder="ex: Rodrigo Costa"
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-300 mb-1">CNPJ / CPF:</label>
+                <input type="text" id="clientCnpj" placeholder="00.000.000/0001-00"
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+              </div>
+            </div>
 
-        <div class="flex items-center justify-end gap-3 border-t border-slate-800 pt-3 mt-2">
-          <button type="button" onclick="closeModal('clientModal')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">
-            Cancelar
-          </button>
-          <button type="submit" class="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg">
-            Salvar Cliente
-          </button>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold text-slate-300 mb-1">E-mail de Contato / Login:</label>
+                <input type="email" id="clientEmail" placeholder="contato@empresa.com"
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-300 mb-1">Telefone / WhatsApp:</label>
+                <input type="text" id="clientPhone" placeholder="(11) 99999-9999"
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+              </div>
+            </div>
+
+            <!-- CONFIGURAR SENHA DE ACESSO -->
+            <div class="p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2 mt-1">
+              <div class="flex items-center justify-between">
+                <label class="font-semibold text-slate-200 flex items-center gap-1.5">
+                  <span data-icon="key"></span> Senha de Acesso do Cliente
+                </label>
+                <span id="clientHasPasswordBadge" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">Sem senha configurada</span>
+              </div>
+              <div class="relative flex items-center">
+                <input type="password" id="clientPassword" autocomplete="new-password" placeholder="Definir senha de acesso (mínimo 6 caracteres)"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 pr-28 text-slate-200 focus:border-cyan-500 focus:outline-none font-mono">
+                <div class="absolute right-2 flex items-center gap-1.5">
+                  <button type="button" onclick="togglePasswordVisibility('clientPassword')" class="text-xs text-slate-400 hover:text-white px-1.5 py-1" title="Ver / Ocultar">👁️</button>
+                  <button type="button" onclick="generateSecurePassword('clientPassword')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-cyan-400 font-semibold px-2 py-1 rounded transition" title="Gerar senha segura">Gerar</button>
+                </div>
+              </div>
+              <p class="text-[11px] text-slate-400 leading-relaxed">
+                Essa senha permite ao cliente autenticar-se na Área do Cliente (<a href="/customer.html" target="_blank" class="text-cyan-400 hover:underline">/customer.html</a>). Na edição, deixe em branco para manter a senha já existente.
+              </p>
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">Notas / Observações Internas:</label>
+              <textarea id="clientNotes" rows="2" placeholder="Observações de faturamento, canais de atendimento, necessidades especiais..."
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none"></textarea>
+            </div>
+          </div>
+
+          <!-- ABA 2: REVISÃO DE LICENÇA -->
+          <div id="clientTabContentLicense" class="hidden flex flex-col gap-3.5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold text-slate-300 mb-1">Plano da Licença:</label>
+                <select id="clientPlan"
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+                  <option value="Starter">Starter (Eventos Pontuais)</option>
+                  <option value="Pro" selected>Pro (Profissional / Frequente)</option>
+                  <option value="Enterprise">Enterprise (Corporativo Avançado)</option>
+                  <option value="Custom">Custom (Sob Medida / Especial)</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block font-semibold text-slate-300 mb-1">Status da Licença:</label>
+                <select id="clientLicenseStatus"
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+                  <option value="active">Ativa (Acesso Liberado)</option>
+                  <option value="trial">Degustação / Demonstração (Trial)</option>
+                  <option value="suspended">Suspensa (Bloqueio Temporário)</option>
+                  <option value="expired">Expirada / Vencida</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">Data de Expiração da Licença:</label>
+              <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                <input type="date" id="clientLicenseExpires"
+                  class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-cyan-500 focus:outline-none flex-1">
+                <label class="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                  <input type="checkbox" id="clientNoExpiry" onchange="toggleLicenseNoExpiry(this.checked)" class="rounded text-cyan-500">
+                  <span>Sem expiração (Vitalício / Contínuo)</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+              <h4 class="font-bold text-slate-200">Saldo e Utilização de Horas de Tradução</h4>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-semibold text-slate-300 mb-1">Total de Horas Contratadas:</label>
+                  <input type="number" id="clientHours" value="10" min="0" step="0.5"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+                </div>
+                <div>
+                  <label class="block font-semibold text-slate-300 mb-1">Horas Já Utilizadas:</label>
+                  <input type="number" id="clientUsedHours" value="0" min="0" step="0.1"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+                </div>
+              </div>
+            </div>
+
+            <div class="p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+              <h4 class="font-bold text-slate-200">Limites Técnicos Simultâneos</h4>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-semibold text-slate-300 mb-1">Salas / Eventos Simultâneos:</label>
+                  <input type="number" id="clientMaxRooms" value="2" min="1" max="100"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+                </div>
+                <div>
+                  <label class="block font-semibold text-slate-300 mb-1">Ouvintes Simultâneos por Sala:</label>
+                  <input type="number" id="clientMaxListeners" value="250" min="1" max="10000"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="clientFormActions" class="flex items-center justify-end gap-3 border-t border-slate-800 pt-3 mt-2">
+            <button type="button" onclick="closeModal('clientModal')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">
+              Cancelar
+            </button>
+            <button type="submit" id="clientSubmitBtn" class="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg transition active:scale-95">
+              Salvar Cliente
+            </button>
+          </div>
+        </form>
+
+        <!-- ABA 3: HISTÓRICO DE PAGAMENTOS -->
+        <div id="clientTabContentPayments" class="hidden flex flex-col gap-4 text-xs">
+          <div id="clientPaymentsUnsavedAlert" class="hidden p-4 bg-amber-950/40 border border-amber-800/60 rounded-xl text-center text-amber-300">
+            Salve o cadastro do cliente primeiro para gerenciar pagamentos e faturas.
+          </div>
+
+          <div id="clientPaymentsContent" class="flex flex-col gap-4">
+            <!-- Métricas financeiras -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div class="bg-slate-950/80 border border-slate-800 p-3 rounded-xl">
+                <span class="text-slate-400 text-[11px] block">Total Pago Acumulado</span>
+                <span id="clientTotalPaidText" class="text-base font-bold text-emerald-400">R$ 0,00</span>
+              </div>
+              <div class="bg-slate-950/80 border border-slate-800 p-3 rounded-xl">
+                <span class="text-slate-400 text-[11px] block">Lançamentos / Faturas</span>
+                <span id="clientPaymentsCountText" class="text-base font-bold text-white">0</span>
+              </div>
+              <div class="bg-slate-950/80 border border-slate-800 p-3 rounded-xl">
+                <span class="text-slate-400 text-[11px] block">Saldo Atual de Horas</span>
+                <span id="clientHoursBalanceText" class="text-base font-bold text-cyan-400">0h</span>
+              </div>
+            </div>
+
+            <!-- Formulário para adicionar pagamento -->
+            <div class="p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl space-y-3">
+              <div class="flex items-center justify-between">
+                <h4 class="font-bold text-white flex items-center gap-1.5">
+                  <span data-icon="plus-circle"></span> Registrar Novo Pagamento / Fatura
+                </h4>
+              </div>
+              <form id="newPaymentForm" onsubmit="handleSavePayment(event)" class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div>
+                  <label class="block font-semibold text-slate-300 mb-1">Valor (R$):</label>
+                  <input type="number" id="payAmount" step="0.01" min="0" required placeholder="ex: 1500.00"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-cyan-500 focus:outline-none">
+                </div>
+                <div>
+                  <label class="block font-semibold text-slate-300 mb-1">Forma de Pagamento:</label>
+                  <select id="payMethod"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-cyan-500 focus:outline-none">
+                    <option value="pix">PIX</option>
+                    <option value="credit_card">Cartão de Crédito</option>
+                    <option value="boleto">Boleto Bancário</option>
+                    <option value="invoice">Faturado / TED / DOC</option>
+                    <option value="mercadopago">Mercado Pago</option>
+                    <option value="other">Outro</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block font-semibold text-slate-300 mb-1">Status:</label>
+                  <select id="payStatus"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-cyan-500 focus:outline-none">
+                    <option value="paid">Pago / Aprovado</option>
+                    <option value="pending">Pendente / Em Aberto</option>
+                    <option value="cancelled">Cancelado</option>
+                    <option value="refunded">Reembolsado</option>
+                  </select>
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="block font-semibold text-slate-300 mb-1">Descrição / Referência:</label>
+                  <input type="text" id="payDescription" placeholder="ex: Pacote 20h para Evento Anual"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-cyan-500 focus:outline-none">
+                </div>
+                <div>
+                  <label class="block font-semibold text-slate-300 mb-1">Data do Pagamento:</label>
+                  <input type="date" id="payDate"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-cyan-500 focus:outline-none">
+                </div>
+                <div class="sm:col-span-2 flex items-center gap-2 pt-1">
+                  <label class="inline-flex items-center gap-2 text-slate-300 cursor-pointer">
+                    <input type="checkbox" id="payAddHoursCheck" onchange="togglePayAddHours(this.checked)" class="rounded text-cyan-500">
+                    <span>Adicionar horas contratadas ao cliente com este pagamento?</span>
+                  </label>
+                  <input type="number" id="payAddHoursVal" min="1" step="0.5" placeholder="Horas" disabled
+                    class="w-20 bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-slate-200 text-center opacity-50">
+                </div>
+                <div class="flex items-end justify-end">
+                  <button type="submit" id="savePaymentBtn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-3 rounded-lg shadow transition">
+                    + Adicionar
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Tabela de pagamentos -->
+            <div class="border border-slate-800 rounded-xl overflow-hidden">
+              <table class="w-full text-left text-xs text-slate-300">
+                <thead class="bg-slate-950 text-slate-400 uppercase border-b border-slate-800 text-[10px]">
+                  <tr>
+                    <th class="p-2.5">Data</th>
+                    <th class="p-2.5">Descrição</th>
+                    <th class="p-2.5">Forma</th>
+                    <th class="p-2.5">Valor</th>
+                    <th class="p-2.5">Status</th>
+                    <th class="p-2.5 text-right">Ação</th>
+                  </tr>
+                </thead>
+                <tbody id="clientPaymentsTableBody" class="divide-y divide-slate-800/60">
+                  <tr><td colspan="6" class="p-4 text-center text-slate-500">Nenhum pagamento registrado.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </form>
+      </div>
     </div>
   </div>
 
@@ -701,21 +927,51 @@
     function renderClients() {
       const tbody = document.getElementById('clientsTableBody');
       if (clientsList.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">Nenhum cliente cadastrado. Clique em "+ Cadastrar Cliente".</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-slate-500">Nenhum cliente cadastrado. Clique em "+ Cadastrar Cliente".</td></tr>';
         return;
       }
       tbody.innerHTML = clientsList.map(c => {
-        const balance = (c.total_hours || 0) - (c.used_hours || 0);
+        const balance = (Number(c.total_hours) || 0) - (Number(c.used_hours) || 0);
+        const planName = c.plan || 'Pro';
+        const statusMap = {
+          active: { label: 'Ativa', class: 'bg-emerald-950/80 text-emerald-400 border-emerald-800' },
+          trial: { label: 'Degustação', class: 'bg-amber-950/80 text-amber-300 border-amber-800' },
+          suspended: { label: 'Suspensa', class: 'bg-rose-950/80 text-rose-400 border-rose-800' },
+          expired: { label: 'Expirada', class: 'bg-slate-800 text-slate-400 border-slate-700' }
+        };
+        const st = statusMap[c.license_status] || statusMap.active;
+        const expiryLabel = c.license_expires_at ? new Date(c.license_expires_at).toLocaleDateString('pt-BR') : 'Vitalício';
+        const passwordBadge = c.has_password
+          ? '<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 font-semibold" title="Senha de acesso configurada">🔑 Ativa</span>'
+          : '<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-normal" title="Sem senha cadastrada">Sem senha</span>';
+
         return `
           <tr class="hover:bg-slate-850">
-            <td class="p-3.5 font-bold text-white">${escapeMarkup(c.company)}<br><span class="font-normal text-slate-400">${escapeMarkup(c.name)}</span></td>
-            <td class="p-3.5">${escapeMarkup(c.email || '-')}<br><span class="text-slate-400">${escapeMarkup(c.phone || '')}</span></td>
+            <td class="p-3.5 font-bold text-white">
+              ${escapeMarkup(c.company)}
+              <br><span class="font-normal text-slate-400">${escapeMarkup(c.name)}</span>
+            </td>
+            <td class="p-3.5">
+              <div class="flex items-center gap-1.5 mb-1">
+                <span>${escapeMarkup(c.email || '-')}</span>
+                ${passwordBadge}
+              </div>
+              <span class="text-slate-400 text-[11px]">${escapeMarkup(c.phone || '')}</span>
+            </td>
             <td class="p-3.5 font-mono">${escapeMarkup(c.cnpj_cpf || '-')}</td>
+            <td class="p-3.5">
+              <div class="flex items-center gap-1.5 mb-0.5">
+                <span class="font-semibold text-slate-200">${escapeMarkup(planName)}</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded border ${st.class}">${st.label}</span>
+              </div>
+              <span class="text-slate-400 text-[10px]">Validade: ${expiryLabel}</span>
+            </td>
             <td class="p-3.5 font-semibold text-slate-200">${escapeMarkup(c.total_hours)}h</td>
             <td class="p-3.5 text-slate-400">${escapeMarkup(c.used_hours)}h</td>
             <td class="p-3.5 font-bold ${balance > 0 ? 'text-emerald-400' : 'text-rose-400'}">${balance.toFixed(1)}h</td>
-            <td class="p-3.5 text-right">
-              <button onclick="deleteClient(${escapeMarkup(c.id)})" class="text-rose-400 hover:text-rose-300">Excluir</button>
+            <td class="p-3.5 text-right whitespace-nowrap">
+              <button onclick="openEditClientModal(${escapeMarkup(c.id)})" class="text-cyan-400 hover:text-cyan-300 font-semibold mr-3 transition">Gerenciar</button>
+              <button onclick="deleteClient(${escapeMarkup(c.id)})" class="text-rose-400 hover:text-rose-300 transition">Excluir</button>
             </td>
           </tr>
         `;
@@ -728,7 +984,7 @@
       clientsList.forEach(c => {
         const opt = document.createElement('option');
         opt.value = c.id;
-        opt.innerText = `${escapeMarkup(c.company)} (${escapeMarkup(c.name)})`;
+        opt.innerText = `${c.company} (${c.name})`;
         select.appendChild(opt);
       });
     }
@@ -812,7 +1068,330 @@
     }
 
     function openNewClientModal() {
+      const form = document.getElementById('clientForm');
+      if (form) form.reset();
+      document.getElementById('clientId').value = '';
+      document.getElementById('clientModalTitle').innerText = 'Cadastrar Novo Cliente';
+      document.getElementById('clientModalSubtitle').innerText = 'Cadastre a empresa, defina a senha de acesso e configure os parâmetros de licença';
+      document.getElementById('clientHasPasswordBadge').innerText = 'Sem senha configurada';
+      document.getElementById('clientHasPasswordBadge').className = 'text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400';
+      document.getElementById('clientPassword').value = '';
+      document.getElementById('clientPassword').placeholder = 'Definir senha de acesso (mínimo 6 caracteres)';
+      document.getElementById('clientPlan').value = 'Pro';
+      document.getElementById('clientLicenseStatus').value = 'active';
+      document.getElementById('clientNoExpiry').checked = true;
+      toggleLicenseNoExpiry(true);
+      document.getElementById('clientHours').value = '10';
+      document.getElementById('clientUsedHours').value = '0';
+      document.getElementById('clientMaxRooms').value = '2';
+      document.getElementById('clientMaxListeners').value = '250';
+      document.getElementById('clientNotes').value = '';
+
+      // Pagamentos
+      document.getElementById('clientPaymentsBadge').innerText = '0';
+      document.getElementById('clientPaymentsUnsavedAlert').classList.remove('hidden');
+      document.getElementById('clientPaymentsContent').classList.add('hidden');
+
+      switchClientTab('data');
       showModal('clientModal');
+    }
+
+    async function openEditClientModal(id) {
+      let client = clientsList.find(c => String(c.id) === String(id));
+      if (!client) {
+        try {
+          const res = await fetch('/api/clients/' + id, { headers: getAuthHeaders() });
+          if (res.ok) {
+            const data = await res.json();
+            client = data.client;
+          }
+        } catch {}
+      }
+      if (!client) {
+        alert('Cliente não encontrado.');
+        return;
+      }
+
+      document.getElementById('clientId').value = client.id;
+      document.getElementById('clientModalTitle').innerText = 'Gestão de Cliente · ' + (client.company || client.name);
+      document.getElementById('clientModalSubtitle').innerText = 'Edite dados cadastrais, altere a senha de acesso, revise licença e veja o histórico de pagamentos';
+      document.getElementById('clientCompany').value = client.company || '';
+      document.getElementById('clientName').value = client.name || '';
+      document.getElementById('clientCnpj').value = client.cnpj_cpf || '';
+      document.getElementById('clientEmail').value = client.email || '';
+      document.getElementById('clientPhone').value = client.phone || '';
+      document.getElementById('clientNotes').value = client.notes || '';
+
+      // Senha
+      document.getElementById('clientPassword').value = '';
+      const hasPassBadge = document.getElementById('clientHasPasswordBadge');
+      if (client.has_password) {
+        hasPassBadge.innerText = '🔑 Senha ativa';
+        hasPassBadge.className = 'text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-semibold';
+        document.getElementById('clientPassword').placeholder = 'Deixar em branco para manter a senha atual';
+      } else {
+        hasPassBadge.innerText = 'Sem senha configurada';
+        hasPassBadge.className = 'text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400';
+        document.getElementById('clientPassword').placeholder = 'Definir senha de acesso (mínimo 6 caracteres)';
+      }
+
+      // Licença
+      document.getElementById('clientPlan').value = client.plan || 'Pro';
+      document.getElementById('clientLicenseStatus').value = client.license_status || 'active';
+      const noExpiry = !client.license_expires_at;
+      document.getElementById('clientNoExpiry').checked = noExpiry;
+      if (!noExpiry) {
+        document.getElementById('clientLicenseExpires').value = client.license_expires_at.slice(0, 10);
+      } else {
+        document.getElementById('clientLicenseExpires').value = '';
+      }
+      toggleLicenseNoExpiry(noExpiry);
+      document.getElementById('clientHours').value = client.total_hours != null ? client.total_hours : 10;
+      document.getElementById('clientUsedHours').value = client.used_hours != null ? client.used_hours : 0;
+      document.getElementById('clientMaxRooms').value = client.max_rooms != null ? client.max_rooms : 2;
+      document.getElementById('clientMaxListeners').value = client.max_listeners != null ? client.max_listeners : 250;
+
+      // Pagamentos
+      document.getElementById('clientPaymentsUnsavedAlert').classList.add('hidden');
+      document.getElementById('clientPaymentsContent').classList.remove('hidden');
+      const balance = (Number(client.total_hours) || 0) - (Number(client.used_hours) || 0);
+      document.getElementById('clientHoursBalanceText').innerText = balance.toFixed(1) + 'h';
+
+      // Reset payment sub-form
+      const payForm = document.getElementById('newPaymentForm');
+      if (payForm) payForm.reset();
+      document.getElementById('payDate').value = new Date().toISOString().slice(0, 10);
+      togglePayAddHours(false);
+
+      await loadClientPayments(client.id);
+      switchClientTab('data');
+      showModal('clientModal');
+    }
+
+    function switchClientTab(tab) {
+      const tabs = ['data', 'license', 'payments'];
+      tabs.forEach(t => {
+        const btn = document.getElementById('tabBtnClient' + t.charAt(0).toUpperCase() + t.slice(1));
+        const content = document.getElementById('clientTabContent' + t.charAt(0).toUpperCase() + t.slice(1));
+        if (t === tab) {
+          if (btn) {
+            btn.className = 'px-3.5 py-2 font-semibold text-cyan-400 border-b-2 border-cyan-400 flex items-center gap-1.5 transition';
+          }
+          if (content) content.classList.remove('hidden');
+        } else {
+          if (btn) {
+            btn.className = 'px-3.5 py-2 font-semibold text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center gap-1.5 transition';
+          }
+          if (content) content.classList.add('hidden');
+        }
+      });
+
+      const actions = document.getElementById('clientFormActions');
+      if (actions) {
+        if (tab === 'payments') {
+          actions.classList.add('hidden');
+        } else {
+          actions.classList.remove('hidden');
+        }
+      }
+    }
+
+    function toggleLicenseNoExpiry(isChecked) {
+      const dateInput = document.getElementById('clientLicenseExpires');
+      if (dateInput) {
+        dateInput.disabled = isChecked;
+        dateInput.style.opacity = isChecked ? '0.4' : '1';
+        if (isChecked) dateInput.value = '';
+      }
+    }
+
+    function togglePayAddHours(isChecked) {
+      const valInput = document.getElementById('payAddHoursVal');
+      if (valInput) {
+        valInput.disabled = !isChecked;
+        valInput.style.opacity = isChecked ? '1' : '0.5';
+        if (!isChecked) valInput.value = '';
+      }
+    }
+
+    function togglePasswordVisibility(inputId) {
+      const input = document.getElementById(inputId);
+      if (input) {
+        input.type = input.type === 'password' ? 'text' : 'password';
+      }
+    }
+
+    function generateSecurePassword(inputId) {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+      let pwd = '';
+      const array = new Uint32Array(12);
+      window.crypto.getRandomValues(array);
+      for (let i = 0; i < 12; i++) {
+        pwd += chars[array[i] % chars.length];
+      }
+      const input = document.getElementById(inputId);
+      if (input) {
+        input.type = 'text';
+        input.value = pwd;
+        navigator.clipboard?.writeText(pwd).then(() => {
+          alert('Senha gerada e copiada para a área de transferência: ' + pwd);
+        }).catch(() => {
+          alert('Senha gerada: ' + pwd);
+        });
+      }
+    }
+
+    let currentClientPayments = [];
+
+    async function loadClientPayments(clientId) {
+      const tbody = document.getElementById('clientPaymentsTableBody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-center text-slate-500">Carregando pagamentos...</td></tr>';
+      try {
+        const res = await fetch('/api/clients/' + clientId + '/payments', { headers: getAuthHeaders() });
+        if (res.ok) {
+          const data = await res.json();
+          currentClientPayments = data.payments || [];
+          document.getElementById('clientPaymentsBadge').innerText = currentClientPayments.length;
+          document.getElementById('clientPaymentsCountText').innerText = currentClientPayments.length;
+
+          const totalPaid = currentClientPayments
+            .filter(p => p.status === 'paid' || p.status === 'approved')
+            .reduce((sum, p) => sum + (Number(p.amount_cents) || 0), 0);
+          document.getElementById('clientTotalPaidText').innerText = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalPaid / 100);
+
+          if (currentClientPayments.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">Nenhum pagamento registrado para este cliente.</td></tr>';
+            return;
+          }
+
+          const methodLabels = {
+            pix: 'PIX',
+            credit_card: 'Cartão de Crédito',
+            boleto: 'Boleto',
+            invoice: 'Faturado / TED',
+            mercadopago: 'Mercado Pago',
+            other: 'Outro'
+          };
+
+          const statusStyles = {
+            paid: 'bg-emerald-950/80 text-emerald-400 border-emerald-800',
+            approved: 'bg-emerald-950/80 text-emerald-400 border-emerald-800',
+            pending: 'bg-amber-950/80 text-amber-300 border-amber-800',
+            cancelled: 'bg-slate-800 text-slate-400 border-slate-700',
+            refunded: 'bg-rose-950/80 text-rose-400 border-rose-800'
+          };
+
+          const statusNames = {
+            paid: 'Pago',
+            approved: 'Aprovado',
+            pending: 'Pendente',
+            cancelled: 'Cancelado',
+            refunded: 'Reembolsado'
+          };
+
+          tbody.innerHTML = currentClientPayments.map(p => {
+            const dateStr = p.paid_at || p.created_at ? new Date(p.paid_at || p.created_at).toLocaleDateString('pt-BR') : '-';
+            const valStr = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format((p.amount_cents || 0) / 100);
+            const mLabel = methodLabels[p.method] || p.method || 'PIX';
+            const sStyle = statusStyles[p.status] || 'bg-slate-800 text-slate-400';
+            const sName = statusNames[p.status] || p.status || 'Pago';
+            const deleteAction = p.is_commerce_order
+              ? '<span class="text-slate-500 text-[10px]" title="Pedido registrado via portal online">Online</span>'
+              : `<button type="button" onclick="handleDeletePayment('${escapeMarkup(p.id)}')" class="text-rose-400 hover:text-rose-300">Excluir</button>`;
+
+            return `
+              <tr class="hover:bg-slate-900/60">
+                <td class="p-2.5 font-mono text-slate-300">${dateStr}</td>
+                <td class="p-2.5 font-medium text-white">${escapeMarkup(p.description || 'Pagamento')}</td>
+                <td class="p-2.5 text-slate-400">${escapeMarkup(mLabel)}</td>
+                <td class="p-2.5 font-bold text-slate-200">${valStr}</td>
+                <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] border ${sStyle}">${sName}</span></td>
+                <td class="p-2.5 text-right">${deleteAction}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-center text-rose-400">Erro ao carregar histórico financeiro.</td></tr>';
+      }
+    }
+
+    async function handleSavePayment(e) {
+      e.preventDefault();
+      const clientId = document.getElementById('clientId').value.trim();
+      if (!clientId) {
+        alert('Salve o cliente antes de adicionar pagamentos.');
+        return;
+      }
+      const amountVal = parseFloat(document.getElementById('payAmount').value);
+      if (isNaN(amountVal) || amountVal < 0) {
+        alert('Informe um valor de pagamento válido.');
+        return;
+      }
+
+      const btn = document.getElementById('savePaymentBtn');
+      if (btn) { btn.disabled = true; btn.innerText = 'Salvando...'; }
+
+      const addHoursChecked = document.getElementById('payAddHoursCheck').checked;
+      const addHours = addHoursChecked ? parseFloat(document.getElementById('payAddHoursVal').value) : 0;
+
+      const payload = {
+        amount_cents: Math.round(amountVal * 100),
+        method: document.getElementById('payMethod').value,
+        status: document.getElementById('payStatus').value,
+        description: document.getElementById('payDescription').value.trim(),
+        paid_at: document.getElementById('payDate').value || new Date().toISOString(),
+        add_hours: addHours > 0 ? addHours : undefined
+      };
+
+      try {
+        const res = await fetch('/api/clients/' + clientId + '/payments', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          document.getElementById('payAmount').value = '';
+          document.getElementById('payDescription').value = '';
+          document.getElementById('payAddHoursCheck').checked = false;
+          togglePayAddHours(false);
+          await loadClientPayments(clientId);
+          await loadClients();
+          const updatedClient = clientsList.find(c => String(c.id) === String(clientId));
+          if (updatedClient) {
+            const balance = (Number(updatedClient.total_hours) || 0) - (Number(updatedClient.used_hours) || 0);
+            document.getElementById('clientHoursBalanceText').innerText = balance.toFixed(1) + 'h';
+            document.getElementById('clientHours').value = updatedClient.total_hours;
+          }
+        } else {
+          const data = await res.json().catch(() => ({}));
+          alert('Erro ao registrar pagamento: ' + (data.error || res.status));
+        }
+      } catch (err) {
+        alert('Falha na conexão: ' + err.message);
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerText = '+ Adicionar'; }
+      }
+    }
+
+    async function handleDeletePayment(paymentId) {
+      const clientId = document.getElementById('clientId').value.trim();
+      if (!confirm('Deseja excluir este lançamento de pagamento?')) return;
+      try {
+        const res = await fetch('/api/clients/' + clientId + '/payments/' + paymentId, {
+          method: 'DELETE',
+          headers: getAuthHeaders()
+        });
+        if (res.ok) {
+          await loadClientPayments(clientId);
+          await loadClients();
+        } else {
+          alert('Não foi possível excluir o pagamento.');
+        }
+      } catch (err) {
+        alert('Falha na conexão: ' + err.message);
+      }
     }
 
     function openChangePasswordModal() {
@@ -1121,33 +1700,41 @@
 
     async function handleSaveClient(e) {
       e.preventDefault();
+      const id = document.getElementById('clientId').value.trim();
       const payload = {
         company: document.getElementById('clientCompany').value.trim(),
         name: document.getElementById('clientName').value.trim(),
         cnpj_cpf: document.getElementById('clientCnpj').value.trim(),
         email: document.getElementById('clientEmail').value.trim(),
         phone: document.getElementById('clientPhone').value.trim(),
-        total_hours: parseInt(document.getElementById('clientHours').value) || 10
+        notes: document.getElementById('clientNotes').value.trim(),
+        plan: document.getElementById('clientPlan').value,
+        license_status: document.getElementById('clientLicenseStatus').value,
+        license_expires_at: document.getElementById('clientNoExpiry').checked ? null : (document.getElementById('clientLicenseExpires').value || null),
+        total_hours: parseFloat(document.getElementById('clientHours').value) || 0,
+        used_hours: parseFloat(document.getElementById('clientUsedHours').value) || 0,
+        max_rooms: parseInt(document.getElementById('clientMaxRooms').value) || 2,
+        max_listeners: parseInt(document.getElementById('clientMaxListeners').value) || 250
       };
 
-      const btn = e.target.querySelector('button[type="submit"]');
-      const origText = btn ? btn.innerText : 'Cadastrar Cliente';
+      const pwd = document.getElementById('clientPassword').value.trim();
+      if (pwd) payload.password = pwd;
+
+      const btn = document.getElementById('clientSubmitBtn') || e.target.querySelector('button[type="submit"]');
+      const origText = btn ? btn.innerText : 'Salvar Cliente';
       if (btn) { btn.disabled = true; btn.innerText = 'Salvando Cliente...'; }
 
       try {
-        const res = await fetch('/api/clients', {
-          method: 'POST',
+        const url = id ? ('/api/clients/' + id) : '/api/clients';
+        const method = id ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+          method,
           headers: getAuthHeaders(),
           body: JSON.stringify(payload)
         });
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
           closeModal('clientModal');
-          document.getElementById('clientCompany').value = '';
-          document.getElementById('clientName').value = '';
-          document.getElementById('clientCnpj').value = '';
-          document.getElementById('clientEmail').value = '';
-          document.getElementById('clientPhone').value = '';
           await loadClients();
         } else {
           alert('Erro ao salvar cliente: ' + (data.error || ('Código HTTP ' + res.status)));
