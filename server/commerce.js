@@ -46,7 +46,12 @@ class Commerce {
  readiness(){return {paymentConfigured:this.provider.configured,emailConfigured:this.mailer.configured,databaseConfigured:this.store.persistent&&!!this.healthy,publicUrlConfigured:!!this.baseUrl()};}
  checkoutAvailable(){return Object.values(this.readiness()).every(Boolean);}
   async readyOrFail(){await this.ready;if(!this.healthy)throw fail(503,'Serviço temporariamente indisponível. Nenhuma alteração foi confirmada.');}
- async session(req){const token=tokenFrom(req);if(!/^[a-f0-9]{64}$/.test(token))return null;const session=await this.store.get('session',sha(token));if(!session||session.expiresAt<Date.now())return null;const customer=await this.store.get('customer',session.customerId);if(!customer||customer.passwordVersion!==session.passwordVersion)return null;if(!await this.clientAccessAllowed(customer))return null;return {session,customer};}
+ async session(req){const token=tokenFrom(req);if(!/^[a-f0-9]{64}$/.test(token))return null;const session=await this.store.get('session',sha(token));if(!session||session.expiresAt<Date.now())return null;let customer=await this.store.get('customer',session.customerId);if(!customer||customer.passwordVersion!==session.passwordVersion)return null;customer=await this.linkLegacyCustomer(customer);if(!customer||customer.passwordVersion!==session.passwordVersion||!await this.clientAccessAllowed(customer))return null;return {session,customer};}
+ async linkLegacyCustomer(customer){
+  if(customer.legacyClientId)return customer;
+  const legacy=await require('./db').getClientByEmail(customer.email);if(!legacy)return customer;
+  return this.store.transaction(async tx=>{const current=await tx.get('customer',customer.id);if(!current||current.passwordHash!==customer.passwordHash||current.email!==customer.email)return null;if(!current.legacyClientId){current.legacyClientId=legacy.id;await tx.put('customer',current.id,current);}return current;});
+ }
  async clientAccessAllowed(customer){if(!customer.legacyClientId)return true;const client=await require('./db').getClient(customer.legacyClientId);return !!client&&client.status==='active'&&['active','trial'].includes(client.license_status)&&(!client.license_expires_at||Date.parse(client.license_expires_at)>Date.now());}
  async requireSession(req,res,next){try{await this.readyOrFail();const auth=await this.session(req);if(!auth)throw fail(401,'Entre na sua área para continuar.');req.customer=auth.customer;req.customerSession=auth.session;next();}catch(e){next(e);}}
  async issueSession(tx,customer){const token=crypto.randomBytes(32).toString('hex');const session={id:sha(token),customerId:customer.id,csrfToken:crypto.randomBytes(24).toString('hex'),passwordVersion:customer.passwordVersion,expiresAt:Date.now()+7*86400000};await tx.put('session',session.id,session);return {token,session};}
@@ -220,6 +225,7 @@ class Commerce {
     }
    }
    if (!valid) throw fail(401, 'E-mail ou senha inválidos.');
+   customer=await this.linkLegacyCustomer(customer);if(!customer)throw fail(401,'Entre novamente para continuar.');
    if(!await this.clientAccessAllowed(customer))throw fail(403,'O acesso deste cliente está suspenso ou a licença expirou. Entre em contato com o suporte.');
    const result = await this.store.transaction(tx => this.issueSession(tx, customer));
    this.setCookie(res, result.token, req);

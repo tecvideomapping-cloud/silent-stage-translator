@@ -40,4 +40,8 @@ test('administrative edits preserve credentials, portal identity, balances and p
  const recovered=await request('/api/customer/login','POST',{email:'legacy@example.test',password:'Legacy-password-2026!'});assert.equal(recovered.status,200,'existing client hashes migrate only after a valid login');
  assert.equal((await commerce.store.get('customer',recovered.customer.id)).legacyClientId,legacy.id);
  assert.equal((await db.getClientByEmail('legacy@example.test')).password,undefined,'plaintext passwords must never remain in memory');
+ const prior=await db.saveClient({name:'Previous portal',email:'previous-portal@example.test',status:'active'});
+ const {passwordHash}=require('../server/commerce');const priorHash=await passwordHash('Previous-portal-2026!');
+ await commerce.store.transaction(async tx=>{await tx.put('customer','previous-customer',{id:'previous-customer',name:'Previous portal',email:'previous-portal@example.test',passwordHash:priorHash,passwordVersion:1});await tx.put('email','previous-portal@example.test',{customerId:'previous-customer'});});
+ const previous=await request('/api/customer/login','POST',{email:'previous-portal@example.test',password:'Previous-portal-2026!'});assert.equal(previous.status,200);assert.equal((await commerce.store.get('customer','previous-customer')).legacyClientId,prior.id,'previously synchronized portal accounts also gain their administrative link');
 });
