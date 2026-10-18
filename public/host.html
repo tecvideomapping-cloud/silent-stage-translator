@@ -14,6 +14,7 @@
   <script src="/stage-studios.js" defer></script>
   <script src="/design-system.js" defer></script>
   <script src="/live-captions.js"></script>
+  <script src="/speech-ledger.js"></script>
   <link rel="stylesheet" href="/local-speech.css">
   <script src="/local-speech.js"></script>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('vmt-theme')||'dark'}catch{}</script>
@@ -2365,7 +2366,7 @@
       bgAudioEl: null,
       currentInterimEl: null,
       sessionFinalizedIndices: new Set(),
-      sessionCommittedWords: {},
+      ledger: new window.VmtSpeechLedger(),
       lastPendingWords: [],
       pauseDebounceTimer: null,
       fallbackFlushTimer: null,
@@ -2530,7 +2531,10 @@
         this.startWatchdog();
       },
 
+      flushPending(){for(const text of this.ledger.drain())this.commitClause(text);this.lastPendingWords=[];},
+
       stop() {
+        this.flushPending();
         this.isActive = false;
         this.customAudioTrack = null;
         this.updateBadge('inactive');
@@ -2623,11 +2627,7 @@
           return;
         }
 
-        // Se havia palavras pendentes não finalizadas da sessão anterior, despacha antes de limpar
-        if (this.lastPendingWords && this.lastPendingWords.length > 0) {
-          this.commitClause(this.lastPendingWords.join(' '));
-          this.lastPendingWords = [];
-        }
+        this.flushPending();
 
         if (this.recognizer) {
           try {
@@ -2641,7 +2641,7 @@
 
         // CRUCIAL: Reinicia os conjuntos de índices da sessão para coincidir com evt.results do Chrome (iniciando em 0)
         this.sessionFinalizedIndices = new Set();
-        this.sessionCommittedWords = {};
+        this.ledger = new window.VmtSpeechLedger();
         if (this.pauseDebounceTimer) {
           clearTimeout(this.pauseDebounceTimer);
           this.pauseDebounceTimer = null;
@@ -2682,10 +2682,7 @@
 
           rec.onend = () => {
             this.lastEventTime = Date.now();
-            if (this.lastPendingWords && this.lastPendingWords.length > 0) {
-              this.commitClause(this.lastPendingWords.join(' '));
-              this.lastPendingWords = [];
-            }
+            this.flushPending();
             console.log('[STT] Sessão do navegador expirou (comportamento nativo). Reiniciando de forma transparente...');
             if (this.isActive) {
               this.updateBadge('renewing');
@@ -2732,8 +2729,8 @@
           }
 
           const idleMs = Date.now() - this.lastEventTime;
-          if (idleMs > 15000) {
-            console.log('[STT-Watchdog] Reconhecedor inativo há mais de 15s. Renovando sessão para prevenir congelamento...');
+          if (idleMs > 60000) {
+            console.log('[STT-Watchdog] Reconhecedor inativo há mais de 60s. Renovando sessão para prevenir congelamento...');
             this.initSession();
           }
         }, 4000);
@@ -2793,13 +2790,6 @@
         const trimmed = (clauseText || '').trim();
         if (!trimmed) return;
 
-        // Proteção contra duplicação de pacotes em janela de 400ms
-        if (trimmed.toLowerCase() === this.lastCommittedClause.toLowerCase() && (Date.now() - this.lastCommittedTime) < 400) {
-          return;
-        }
-        this.lastCommittedClause = trimmed;
-        this.lastCommittedTime = Date.now();
-
         this.appendConfirmed(trimmed);
 
         if (socket && socket.readyState === WebSocket.OPEN) {
@@ -2807,6 +2797,7 @@
             type: 'speech_transcript',
             text: trimmed,
             isFinal: true,
+            segmentId: typeof crypto.randomUUID==='function'?crypto.randomUUID():Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join(''),
             sourceLang: this.recognizer?.lang || document.getElementById('sourceLang')?.value || 'pt-BR'
           }));
         }
@@ -2822,8 +2813,7 @@
           if (!fullTranscript) continue;
 
           const allWords = fullTranscript.split(/\s+/).filter(Boolean);
-          const startIndex = this.sessionCommittedWords[i] || 0;
-          const pendingWords = allWords.slice(startIndex);
+          const pendingWords = this.ledger.pending(i,fullTranscript);
           this.lastPendingWords = pendingWords;
 
           if (isSpeechFinal) {
@@ -2833,7 +2823,7 @@
               this.commitClause(pendingWords.join(' '));
             }
             this.sessionFinalizedIndices.add(i);
-            delete this.sessionCommittedWords[i];
+            this.ledger.finish(i);
             this.lastPendingWords = [];
             this.updateInterim('');
             continue;
@@ -2861,10 +2851,10 @@
             if (this.fallbackFlushTimer) clearTimeout(this.fallbackFlushTimer);
 
             const chunkWords = pendingWords.slice(0, splitCount);
-            this.sessionCommittedWords[i] = startIndex + splitCount;
+            this.ledger.commit(i,splitCount);
             this.commitClause(chunkWords.join(' '));
 
-            const remainingWords = allWords.slice(this.sessionCommittedWords[i]);
+            const remainingWords = this.ledger.pending(i);
             this.lastPendingWords = remainingWords;
             this.updateInterim(remainingWords.join(' '));
             continue;
@@ -2878,39 +2868,29 @@
           const targetIdx = i;
           this.pauseDebounceTimer = setTimeout(() => {
             if (this.sessionFinalizedIndices.has(targetIdx)) return;
-            const curItem = evt.results[targetIdx];
-            if (!curItem || !curItem[0]) return;
-            const curFull = curItem[0].transcript.trim();
-            const curWords = curFull.split(/\s+/).filter(Boolean);
-            const curStart = this.sessionCommittedWords[targetIdx] || 0;
-            const curPending = curWords.slice(curStart);
+            const curPending = this.ledger.pending(targetIdx);
 
             if (curPending.length >= 3 && this.isCompleteWord(curPending[curPending.length - 1])) {
-              this.sessionCommittedWords[targetIdx] = curWords.length;
+              this.ledger.commit(targetIdx,curPending.length);
               this.lastPendingWords = [];
               this.commitClause(curPending.join(' '));
               this.updateInterim('');
             }
           }, 350);
 
-          // 3. Fallback de segurança (1350ms de silêncio real):
+          // 3. Fallback de segurança (700ms de silêncio real):
           // Se o orador realmente parou de falar mesmo após uma palavra curta/pendente, despacha para nunca reter palavras
           this.fallbackFlushTimer = setTimeout(() => {
             if (this.sessionFinalizedIndices.has(targetIdx)) return;
-            const curItem = evt.results[targetIdx];
-            if (!curItem || !curItem[0]) return;
-            const curFull = curItem[0].transcript.trim();
-            const curWords = curFull.split(/\s+/).filter(Boolean);
-            const curStart = this.sessionCommittedWords[targetIdx] || 0;
-            const curPending = curWords.slice(curStart);
+            const curPending = this.ledger.pending(targetIdx);
 
             if (curPending.length >= 1) {
-              this.sessionCommittedWords[targetIdx] = curWords.length;
+              this.ledger.commit(targetIdx,curPending.length);
               this.lastPendingWords = [];
               this.commitClause(curPending.join(' '));
               this.updateInterim('');
             }
-          }, 1350);
+          }, 700);
         }
       }
     };

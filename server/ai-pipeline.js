@@ -17,6 +17,7 @@ class AIPipeline {
     this.streamingUnavailable=new Set();
     // Cache LRU em memória para traduções instantâneas (evita chamadas repetidas e rate-limit)
     this.translationCache = new Map();
+    this.freeTranslator=new (require('./free-translator').FreeTranslator)();
     // Memória contextual de sentenças anteriores por sala (mantém coerência gramatical e pronominal)
     this.roomContextMemory = new Map();
   }
@@ -115,7 +116,7 @@ class AIPipeline {
    * Traduz o texto para os idiomas alvo respeitando o glossário cadastrado com altíssima velocidade (<150ms).
    * Executa em paralelo (Promise.all) e dispara o callback onLanguageTranslated assim que cada idioma conclui.
    */
-  async translateText(text, targetLangs, glossary = {}, onLanguageTranslated = null, roomId = null) {
+  async translateText(text, targetLangs, glossary = {}, onLanguageTranslated = null, roomId = null, sourceLang = 'pt') {
     const translations = {};
     const cleanInput = this.stripLanguagePrefixTag(text);
     if (!cleanInput) return translations;
@@ -175,7 +176,7 @@ class AIPipeline {
 
     const translateSingleLanguage = async (targetLang) => {
       const normalizedLang = (targetLang || 'en').split('-')[0].toLowerCase();
-      const cacheKey=crypto.createHash('sha256').update(JSON.stringify({roomId,normalizedLang,text:cleanInput,glossary,context:contextPrompt,model:this.groqKey?'groq':this.openaiKey?'openai':'fallback'})).digest('hex');
+      const cacheKey=crypto.createHash('sha256').update(JSON.stringify({roomId,normalizedLang,text:cleanInput,glossary,sourceLang,context:(this.groqKey||this.openaiKey)?contextPrompt:'',model:this.groqKey?'groq':this.openaiKey?'openai':'fallback'})).digest('hex');
       if(this.mockMode){const mock=mockTranslationDict[normalizedLang]?.[cleanInput]||`[DEMONSTRAÇÃO ${normalizedLang}] ${cleanInput}`;translations[targetLang]=mock;if(onLanguageTranslated)onLanguageTranslated(targetLang,mock);return mock;}
 
       // 0. Cache em memória instantâneo (0ms)
@@ -249,86 +250,14 @@ class AIPipeline {
         }
       }
 
-      // 3. Motor Primário Gratuito de Altíssima Velocidade (<50ms): Google GTX Engine
-      try {
-        const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(normalizedLang)}&dt=t&q=${encodeURIComponent(cleanInput)}`;
-        const gtxRes = await fetch(gtxUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-          signal: AbortSignal.timeout(3000)
-        });
-        if (gtxRes.ok) {
-          const gtxData = await gtxRes.json();
-          if (Array.isArray(gtxData?.[0])) {
-            let translated = gtxData[0].map(chunk => chunk[0] || '').join('').trim();
-            translated = finalizeOutput(translated);
-            if (translated) {
-              cacheResult(cacheKey, translated);
-              translations[targetLang] = translated;
-              if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, translated);
-              return translated;
-            }
-          }
-        }
-      } catch (gtxErr) {
-        console.warn(`[AI-Translate] Google GTX primário falhou para ${targetLang}:`, gtxErr.message);
+      const result=await this.freeTranslator.translate(cleanInput,normalizedLang,sourceLang);
+      if(result){
+        const translated=finalizeOutput(result.text);
+        cacheResult(cacheKey,translated);translations[targetLang]=translated;
+        this.onTranslationTiming?.(roomId,{provider:result.provider,providerMs:result.providerMs,totalMs:result.totalMs});
+        if(typeof onLanguageTranslated==='function')onLanguageTranslated(targetLang,translated);
+        return translated;
       }
-
-      // 4. Mirror Secundário Independente (<60ms): Google Clients5 Dict API
-      try {
-        const c5Url = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=${encodeURIComponent(normalizedLang)}&q=${encodeURIComponent(cleanInput)}`;
-        const c5Res = await fetch(c5Url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-          signal: AbortSignal.timeout(3000)
-        });
-        if (c5Res.ok) {
-          const c5Data = await c5Res.json();
-          let rawCandidate = '';
-          if (Array.isArray(c5Data)) {
-            if (typeof c5Data[0] === 'string') {
-              rawCandidate = c5Data[0];
-            } else if (Array.isArray(c5Data[0]) && typeof c5Data[0][0] === 'string') {
-              rawCandidate = c5Data.map(item => item[0] || '').join(' ');
-            }
-          } else if (c5Data && Array.isArray(c5Data.sentences)) {
-            rawCandidate = c5Data.sentences.map(s => s.trans || '').join(' ');
-          }
-          const translated = finalizeOutput(rawCandidate);
-          if (translated) {
-            cacheResult(cacheKey, translated);
-            translations[targetLang] = translated;
-            if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, translated);
-            return translated;
-          }
-        }
-      } catch (c5Err) {
-        console.warn(`[AI-Translate] Google Clients5 mirror falhou para ${targetLang}:`, c5Err.message);
-      }
-
-      // 5. Fallback Terciário (MyMemory com filtro contra avisos de cota)
-      try {
-        const langPair = `pt|${normalizedLang}`;
-        const freeRes = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(cleanInput)}&langpair=${langPair}`, {
-          signal: AbortSignal.timeout(2500)
-        });
-        if (freeRes.ok) {
-          const freeData = await freeRes.json();
-          const translatedText = freeData?.responseData?.translatedText;
-          if (
-            translatedText &&
-            !translatedText.includes('QUERY LENGTH LIMIT') &&
-            !translatedText.includes('MYMEMORY WARNING') &&
-            !translatedText.includes('PLEASE SELECT TWO DISTINCT')
-          ) {
-            const clean = finalizeOutput(translatedText);
-            if (clean) {
-              cacheResult(cacheKey, clean);
-              translations[targetLang] = clean;
-              if (typeof onLanguageTranslated === 'function') onLanguageTranslated(targetLang, clean);
-              return clean;
-            }
-          }
-        }
-      } catch (freeErr) {}
 
       this.onTranslationFailure?.(roomId,targetLang);
       return null;

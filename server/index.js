@@ -64,6 +64,7 @@ const requireAdmin = [requireAuth,(req,res,next)=>['admin','superadmin'].include
 app.use('/api/desktop',(req,res,next)=>{if(process.env.VMT_DESKTOP_MODE!=='1'||!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress))return res.status(404).json({error:'Recurso disponível apenas no aplicativo local.'});next();},require('../desktop/desktop-api'));
 app.get('/api/health',(req,res)=>res.json({status:'alive'}));
 app.get('/api/ready',async(req,res)=>{await commerce.ready;const ok=commerce.healthy&&await commerce.store.health()&&roomBus.healthy;res.status(ok?200:503).json({status:ok?'ready':'unavailable'});});
+app.get('/api/latency',...requireAdmin,(req,res)=>res.json({translationProviders:aiPipeline.freeTranslator.stats()}));
 app.use('/api',async(req,res,next)=>{try{await commerce.readyOrFail();next()}catch{res.status(503).json({error:'Serviço temporariamente indisponível.'})}});
 app.use('/api',commerce.router(requireAdmin));
 
@@ -877,11 +878,13 @@ app.get('/api/tts', async (req, res) => {
     const cleanText = String(text).replace(/^\s*\[[A-Za-z-]{2,8}\]\s*/g, '').trim();
     if (!cleanText) return res.status(400).send('Empty text');
 
+    const started=Date.now();
     const result = await getOrGenerateTts(targetLang, cleanText, voice, speed, pitch);
     const buffer = result.buffer || result;
     const provider = result.provider || 'edge-neural';
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('X-TTS-Provider', provider);
+    res.setHeader('Server-Timing',`tts;dur=${Date.now()-started}`);
     res.setHeader('Cache-Control', 'no-cache');
     return res.send(buffer);
   } catch (err) {
@@ -963,6 +966,7 @@ const roomAudioMeta = new Map(); // roomId -> { type: 'audio_meta', format, samp
 const roomSpeakerProfile = new Map(); // roomId -> { voice, pitch, speed }
 const roomLastFinalTranscript = new Map(); // roomId -> { text, time }
 const roomLastInterimTranslate = new Map(); // roomId -> { text, time, seq }
+const roomInterimInFlight=new Set();
 const roomCatchupHistory = new Map(); // roomId -> Array<{ seqId, type, lang, text, timestamp }>
 let globalCatchupSeqId=Date.now()*1000;
 aiPipeline.onTranslationFailure=(roomId,lang)=>{for(const c of roomsClients.get(roomId)||[])if(c.readyState===WebSocket.OPEN)c.send(JSON.stringify({type:'service_warning',message:'Tradução temporariamente indisponível para '+lang+'.'}));};
@@ -1000,24 +1004,26 @@ async function processRecognizedSpeech(roomId,ws,event){
   // Serialize only room lookup/registration, not provider response time.
   await enqueueRoomTranslation(roomId,async()=>{
    const room=await getRoom(roomId);if(!room)return;
-   const task=orderedTranslations.translate(roomId,text,room.target_languages||['en','es'],room.glossary||{},aiPipeline,(lang,translatedText)=>{
+   const lookupMs=Date.now()-now;
+   const task=orderedTranslations.translate(roomId,text,room.target_languages||['en','es'],room.glossary||{},aiPipeline,(lang,translatedText,timing)=>{
     const readyAt=Date.now(),seqId=globalCatchupSeqId;
     appendToCatchupHistory(roomId,{...meta,lang,text:translatedText,sourceText:text});
     const profile=roomSpeakerProfile.get(roomId)||{};
-    getOrGenerateTts(lang,translatedText,profile.voice||'male_deep',profile.speed||1.05,profile.pitch||0).catch(()=>{});
-    const translated=JSON.stringify({type:'subtitle_translated',text:translatedText,sourceText:text,lang,isFinal:true,seqId,...meta,translationReadyAt:readyAt,translationMs:readyAt-now,timestamp:readyAt});
+    if([...clients].some(client=>client.role==='listener'&&client.channel===lang&&client.readyState===WebSocket.OPEN))getOrGenerateTts(lang,translatedText,profile.voice||'male_deep',profile.speed||1.05,profile.pitch||0).catch(()=>{});
+    const translated=JSON.stringify({type:'subtitle_translated',text:translatedText,sourceText:text,lang,isFinal:true,seqId,...meta,translationReadyAt:readyAt,translationMs:readyAt-now,translationLookupMs:lookupMs,translationProviderMs:timing.providerMs,translationOrderingMs:timing.orderingWaitMs,timestamp:readyAt});
     for(const client of clients)if(client.readyState===WebSocket.OPEN)client.send(translated);
-   });
+   },event.sourceLang||room.source_language||'pt');
    task.then(translations=>saveTranscript(roomId,text,translations,meta)).catch(()=>{});
   });
  }else{
-  const last=roomLastInterimTranslate.get(roomId);if(text.split(/\s+/).length<4||last&&now-last.time<900)return;
+  const last=roomLastInterimTranslate.get(roomId);if(roomInterimInFlight.has(roomId)||text.split(/\s+/).length<4||last&&now-last.time<900)return;
+  roomInterimInFlight.add(roomId);
   const seq=(last?.seq||0)+1;roomLastInterimTranslate.set(roomId,{text,time:now,seq});
   getRoom(roomId).then(room=>room&&aiPipeline.translateText(text,room.target_languages||['en','es'],room.glossary||{},(lang,translatedText)=>{
    if(roomLastInterimTranslate.get(roomId)?.seq!==seq)return;
    const partial=JSON.stringify({type:'subtitle_translated',text:translatedText,sourceText:text,lang,isFinal:false,...meta,timestamp:Date.now()});
    for(const client of clients)if(client.readyState===WebSocket.OPEN)client.send(partial);
-  },roomId)).catch(()=>{});
+  },roomId,event.sourceLang||room.source_language||'pt')).catch(()=>{}).finally(()=>roomInterimInFlight.delete(roomId));
  }
 }
 
@@ -1246,7 +1252,7 @@ async function handleConnection(ws,req){
         ws.hasHostSpeechSTT=true;
         const local=msg.source==='desktop-local';
         const safeId=value=>typeof value==='string'&&/^[a-zA-Z0-9:_-]{1,160}$/.test(value)?value:null;
-        processRecognizedSpeech(roomId,ws,{text:msg.text,isFinal:msg.isFinal===true,sourceLang:msg.sourceLang,source:local?'desktop-local':'browser',speakerId:local&&Number.isInteger(msg.speakerId)&&msg.speakerId>=0&&msg.speakerId<10000?msg.speakerId:null,turnId:local?safeId(msg.turnId):null,segmentId:local?safeId(msg.segmentId):null}).catch(()=>{});
+        processRecognizedSpeech(roomId,ws,{text:msg.text,isFinal:msg.isFinal===true,sourceLang:msg.sourceLang,source:local?'desktop-local':'browser',speakerId:local&&Number.isInteger(msg.speakerId)&&msg.speakerId>=0&&msg.speakerId<10000?msg.speakerId:null,turnId:safeId(msg.turnId),segmentId:safeId(msg.segmentId)}).catch(()=>{});
       } else if (msg.type === 'set_screen_lang') {
         // Administrador/Host define remotamente o idioma, fundo chroma/preto e logo de todos os telões da sala
         for (const client of roomClients) {

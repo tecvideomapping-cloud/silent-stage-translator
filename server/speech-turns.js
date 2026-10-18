@@ -30,16 +30,17 @@ class SpeechTurns {
 // Work starts concurrently; each language publishes in source order independently.
 class OrderedTranslations {
  constructor(){this.tails=new Map();}
- async translate(roomId,text,languages,glossary,pipeline,onReady){
+ async translate(roomId,text,languages,glossary,pipeline,onReady,sourceLang='pt'){
+  const started=Date.now();
   const tickets=new Map();
   for(const language of [...new Set(languages)]){
    const key=roomId+':'+language,previous=this.tails.get(key)||Promise.resolve();let resolve;
    const result=new Promise(r=>{resolve=r});
-   const published=previous.catch(()=>{}).then(()=>result).then(value=>{if(value!==null)onReady(language,value)});
+   const published=previous.catch(()=>{}).then(()=>result).then(value=>{if(value!==null)onReady(language,value.text,{providerMs:value.readyAt-started,orderingWaitMs:Date.now()-value.readyAt})});
    this.tails.set(key,published);published.finally(()=>{if(this.tails.get(key)===published)this.tails.delete(key)}).catch(()=>{});
-   tickets.set(language,{resolve,published});
+   tickets.set(language,{resolve:value=>resolve(value===null?null:{text:value,readyAt:Date.now()}),published});
   }
-  try{return await pipeline.translateText(text,[...tickets.keys()],glossary,(language,value)=>tickets.get(language)?.resolve(value),roomId);}
+  try{return await pipeline.translateText(text,[...tickets.keys()],glossary,(language,value)=>tickets.get(language)?.resolve(value),roomId,sourceLang);}
   finally{for(const ticket of tickets.values())ticket.resolve(null);await Promise.all([...tickets.values()].map(t=>t.published));}
  }
 }

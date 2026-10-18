@@ -935,8 +935,14 @@
       const player = ensureSharedTtsPlayer();
       setupTtsAudioGraph();
       if (player && !isTtsPlaying) {
-        // Tenta destrave imediato de áudio no iOS Safari através do gesto do usuário
-        player.play().then(() => player.pause()).catch(() => {});
+        // An empty play() can resolve only when the first real translation
+        // arrives. Its old .then(pause) must never pause that new sentence.
+        const unlockSource='data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+        const generation=ttsPlaybackGeneration;
+        player.src=unlockSource;
+        player.play().then(()=>{if(!isTtsPlaying&&generation===ttsPlaybackGeneration&&player.src===unlockSource)player.pause();}).catch(()=>{});
+      }else if(player&&isPlaying&&player.paused){
+        player.play().catch(()=>{});
       }
       const banner = document.getElementById('audioUnlockBanner');
       if (banner) banner.classList.add('hidden');
