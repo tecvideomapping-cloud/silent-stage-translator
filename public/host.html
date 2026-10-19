@@ -9,6 +9,8 @@
   <link rel="stylesheet" href="/design-system.css">
   <link rel="stylesheet" href="/host-v2.css">
   <link rel="stylesheet" href="/host-upsells.css">
+  <link rel="stylesheet" href="/mobile-host.css">
+  <script src="/mobile-host.js" defer></script>
   <script src="/host-upsells.js" defer></script>
   <script src="/stage-dsp.js" defer></script>
   <script src="/stage-studios.js" defer></script>
@@ -69,7 +71,7 @@
     </div>
 
     <!-- SELETOR DE ESTÚDIOS / WORKSPACES (Estilo VoiceStudio) -->
-    <div class="flex items-center gap-2 border-b border-slate-800 pb-3 mb-6 overflow-x-auto select-none">
+    <div id="studioTabNavigation" class="flex items-center gap-2 border-b border-slate-800 pb-3 mb-6 overflow-x-auto select-none">
       <button type="button" onclick="switchStudioTab('view-live')" data-target-tab="view-live"
         class="studio-tab-btn is-active flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition border border-cyan-500 bg-cyan-950/40 text-cyan-300">
         <span>🎙️</span> Palco Ao Vivo
@@ -88,6 +90,14 @@
       </button>
     </div>
 
+    <section id="mobileHostPanel" hidden aria-labelledby="mobileHostTitle">
+      <span class="host-eyebrow">ESTÚDIO MÓVEL</span>
+      <h2 id="mobileHostTitle">Transmita de onde estiver.</h2>
+      <p>Use o microfone do celular ou uma lapela conectada para entrevistas e entradas ao vivo.</p>
+      <strong id="mobileCaptureState" role="status" aria-live="polite">Pronto para transmitir</strong>
+      <p id="mobileAudioMessage" role="status">Mantenha esta página aberta durante a transmissão. Use fones para evitar retorno do áudio.</p>
+      <div class="mobile-host-tools"><span id="mobileWakeState">A tela será mantida acesa quando possível.</span><button id="mobileResumeAudio" type="button" hidden>Retomar microfone</button><button id="mobileAdvancedToggle" type="button" aria-expanded="false">Mostrar controles avançados</button></div>
+    </section>
     <!-- ABA 1: PALCO AO VIVO -->
     <div id="view-live" class="studio-tab-view flex flex-col gap-6"><div class="host-live-grid"><section class="host-studio vmt-glass bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
         <div class="flex items-center justify-between">
@@ -124,7 +134,7 @@
               <option value="fr-FR">🇫🇷 Francês</option>
             </select>
           </div>
-          <div>
+          <div data-mobile-advanced-only>
             <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">ID da Sala do Evento:</label>
             <input type="text" id="roomIdInput" value="palco1"
               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
@@ -150,7 +160,7 @@
                 <option value="">Carregando interfaces e dispositivos de áudio...</option>
               </select>
             </div>
-            <div>
+            <div data-mobile-advanced-only>
               <label class="block text-[10px] text-slate-400 mb-1">Canais da Interface:</label>
               <select id="audioChannelSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
                 <option value="mix" selected>Mix L+R (Canais 1+2)</option>
@@ -159,12 +169,12 @@
               </select>
             </div>
           </div>
-          <span class="text-[11px] text-slate-400">
+          <span data-mobile-advanced-only class="text-[11px] text-slate-400">
             Suporte a <strong>Interfaces USB (Focusrite Scarlett, Behringer UMC, Yamaha, Mackie, PreSonus)</strong>, Mesas Digitais via USB e Linha P2/P10.
           </span>
 
           <!-- CAPTURA DE SAÍDA DE ÁUDIO DO COMPUTADOR & PLAYER DE PALESTRA COMPLETA -->
-          <div class="mt-2 pt-3 border-t border-slate-800/80 flex flex-col gap-2.5">
+          <div data-mobile-desktop-only class="mt-2 pt-3 border-t border-slate-800/80 flex flex-col gap-2.5">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
               <span class="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
                 <span>🖥️</span> Testar com Áudio do Computador (Saída do Sistema / Palestra Inteira)
@@ -175,7 +185,7 @@
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button type="button" id="captureSystemAudioBtn" onclick="startSystemAudioBroadcast()"
+              <button type="button" data-mobile-desktop-only id="captureSystemAudioBtn" onclick="startSystemAudioBroadcast()"
                 class="bg-cyan-950/60 hover:bg-cyan-900/70 text-cyan-200 border border-cyan-500/40 font-semibold px-3 py-2 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow">
                 <span>🔊</span> Capturar Saída do PC / Guia (YouTube/Player)
               </button>
@@ -972,6 +982,7 @@
     let isBroadcasting = false;
     let audioStream = null;
     let audioContext = null;
+    let isStartingBroadcast = false;
     let scriptProcessor = null;
     let socket = null;
     let glossaryMap = { 'Silent Stage': 'Marca' };
@@ -1148,8 +1159,10 @@
 
     async function requestAudioPermissionsAndRefresh() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(t => t.stop());
+        if (!isBroadcasting) {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach(t => t.stop());
+        }
         await refreshAudioDevices();
       } catch (e) {
         alert('Permissão de áudio necessária no navegador: ' + e.message);
@@ -1161,22 +1174,17 @@
       const select = document.getElementById('audioDeviceSelect');
       if (!select) return;
       try {
-        // Solicita permissão rápida para expor labels de hardware se ainda não liberado
-        try {
-          const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-          s.getTracks().forEach(t => t.stop());
-        } catch (e) {}
-
         const devices = await navigator.mediaDevices.enumerateDevices();
         const audioInputs = devices.filter(d => d.kind === 'audioinput');
 
+        const previousDeviceId = select.value;
         select.innerHTML = '';
         if (audioInputs.length === 0) {
           select.innerHTML = '<option value="">Nenhum dispositivo encontrado</option>';
           return;
         }
 
-        const savedDeviceId = localStorage.getItem('vmp_host_audio_device');
+        const savedDeviceId = previousDeviceId || localStorage.getItem('vmp_host_audio_device');
 
         audioInputs.forEach((device, index) => {
           const opt = document.createElement('option');
@@ -1723,6 +1731,7 @@
         if(window.localSpeech?.selected)socket.send(JSON.stringify({type:'recognition_mode',mode:'desktop-local'}));
         document.getElementById('connStatus').className = 'text-xs bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 px-3 py-1 rounded-full font-medium';
         document.getElementById('connStatus').innerText = '● Online (Sala ' + roomId + ')';
+        window.mobileHost?.onConnection(true);
         broadcastAudioMeta();
         broadcastSpeakerVoiceProfile();
         fetchRoomStats();
@@ -1755,6 +1764,7 @@
       };
 
       socket.onclose = (event) => {
+        window.mobileHost?.onConnection(false, event.reason);
         if (event.code === 1008) { if(isBroadcasting)stopActiveBroadcastCleanly(); document.getElementById('connStatus').innerText = event.reason || 'Acesso de operador obrigatório'; document.getElementById('broadcastBtn').disabled = true; window.dispatchEvent(new CustomEvent('vmt-host-policy-stop', { detail: { reason: event.reason || '' } })); return; }
         document.getElementById('connStatus').className = 'text-xs bg-red-950/80 text-red-400 border border-red-800/80 px-3 py-1 rounded-full font-medium';
         document.getElementById('connStatus').innerText = '● Desconectado';
@@ -1765,6 +1775,7 @@
     function stopActiveBroadcastCleanly() {
       window.localSpeech?.end();
       isBroadcasting = false;
+      window.mobileHost?.onCaptureStop();
       if (window.speechEngine) {
         window.speechEngine.stop();
       }
@@ -1828,16 +1839,21 @@
     }
 
     async function startBroadcastWithStream(customStream = null, sourceMode = 'mic') {
+      if (isStartingBroadcast) return;
+      isStartingBroadcast = true;
       if (isBroadcasting) {
         stopActiveBroadcastCleanly();
       }
 
       try {
+        if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('Aguarde a conexão com o evento antes de iniciar.');
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error('Abra o estúdio em uma conexão HTTPS no navegador do celular.');
+        window.mobileHost?.onPreparing();
         if (customStream) {
           audioStream = customStream;
         } else {
           const selectedDeviceId = document.getElementById('audioDeviceSelect')?.value;
-          const audioConstraints = {
+          const audioConstraints = window.mobileHost?.enabled ? window.mobileHost.constraints() : {
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false
@@ -1846,6 +1862,7 @@
             audioConstraints.deviceId = { ideal: selectedDeviceId };
           }
           audioStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+          refreshAudioDevices();
         }
 
         const badge = document.getElementById('pcAudioSourceBadge');
@@ -1886,7 +1903,7 @@
         if (typeof StageAudioDSP !== 'undefined') {
           window.stageDsp = new StageAudioDSP(audioContext);
           dspProcessedSource = window.stageDsp.init(source);
-          const initialDspMode = ['system','file'].includes(sourceMode)?'direct':document.getElementById('dspAcousticModeSelect')?.value||'stage_mic';
+          const initialDspMode = (['system','file'].includes(sourceMode)||window.mobileHost?.enabled)?'direct':document.getElementById('dspAcousticModeSelect')?.value||'stage_mic';
           document.getElementById('dspAcousticModeSelect').value=initialDspMode;
           window.stageDsp.setMode(initialDspMode);
 
@@ -2090,6 +2107,7 @@
 
         window.lockedAutoSpeakerVoice=window.autoDetectedSpeakerVoice||'male_deep';
         isBroadcasting = true;
+        window.mobileHost?.onCaptureStart(audioContext, audioStream, socket?.readyState === WebSocket.OPEN);
         requestAnimationFrame(updateVU);
         document.getElementById('broadcastBtn').className = 'bg-rose-600 hover:bg-rose-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-2';
         document.getElementById('btnIcon').innerText = '⏹️';
@@ -2102,7 +2120,10 @@
         if(!window.serverSpeechRecognition)await window.localSpeech?.begin(event=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'speech_transcript',...event}));},document.getElementById('sourceLang')?.value||'pt-BR');
         if(!window.localSpeech&&!window.serverSpeechRecognition)window.speechEngine.start(trackForStt);
       } catch (err) {
-        alert('Erro ao capturar o dispositivo de áudio: ' + err.message);
+        stopActiveBroadcastCleanly();
+        if (!window.mobileHost?.onError(err)) alert('Erro ao capturar o dispositivo de áudio: ' + err.message);
+      } finally {
+        isStartingBroadcast = false;
       }
     }
 
@@ -2591,6 +2612,7 @@
       },
 
       async acquireWakeLock() {
+        if (window.mobileHost?.enabled) return;
         try {
           if ('wakeLock' in navigator && !this.wakeLock) {
             this.wakeLock = await navigator.wakeLock.request('screen');
