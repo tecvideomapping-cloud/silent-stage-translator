@@ -58,7 +58,7 @@
   </header>
 
   <!-- Banner de Destrave de Áudio Mobile (Autoplay Guard) -->
-  <div id="audioUnlockBanner" onclick="unlockAudioForMobile()" class="bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 text-white text-xs font-semibold px-4 py-2.5 text-center flex items-center justify-center gap-2 cursor-pointer shadow-lg animate-pulse transition hover:brightness-110">
+  <div id="audioUnlockBanner" role="button" tabindex="0" onclick="activateParticipantAudio()" class="bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 text-white text-xs font-semibold px-4 py-2.5 text-center flex items-center justify-center gap-2 cursor-pointer shadow-lg animate-pulse transition hover:brightness-110">
     <span data-icon="headphones"></span>
     <span>Toque aqui para liberar o áudio e a tradução ao vivo no seu dispositivo</span>
     <span class="bg-white/20 px-2 py-0.5 rounded-full text-[10px] uppercase font-bold tracking-wider">Ativar</span>
@@ -645,6 +645,12 @@
         audioContext = new AudioCtx({
           latencyHint: 'interactive'
         });
+        audioContext.onstatechange = () => {
+          if (isPlaying && audioContext.state !== 'running') {
+            document.getElementById('audioUnlockBanner')?.classList.remove('hidden');
+            document.getElementById('playerStatus').innerText = 'Áudio interrompido. Toque em Ativar para retomar.';
+          }
+        };
         gainNode = audioContext.createGain();
         gainNode.connect(audioContext.destination);
         nextAudioTime = audioContext.currentTime;
@@ -652,8 +658,17 @@
         // Inicia medição periódica de latência e telemetria ABR com o servidor (a cada 2.5s)
         setInterval(measureLatency, 2500);
       }
-      if (audioContext.state === 'suspended') {
-        audioContext.resume();
+      if (audioContext.state !== 'running' && audioContext.state !== 'closed') {
+        audioContext.resume().then(() => {
+          if (isPlaying && audioContext.state === 'running') {
+            document.getElementById('audioUnlockBanner')?.classList.add('hidden');
+            document.getElementById('playerStatus').innerText = 'Ouvindo ao vivo (' + currentChannel + ')';
+          }
+        }).catch(() => {
+          if (!isPlaying) return;
+          document.getElementById('audioUnlockBanner')?.classList.remove('hidden');
+          document.getElementById('playerStatus').innerText = 'Toque em Ativar para permitir a reprodução de áudio.';
+        });
       }
     }
 
@@ -946,9 +961,25 @@
       }
     }
 
+    function activateParticipantAudio() {
+      if (!isPlaying && currentChannel !== 'text') toggleAudio();
+      unlockAudioForMobile();
+    }
+
+    document.getElementById('audioUnlockBanner').addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        activateParticipantAudio();
+      }
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && isPlaying) ensureAudioContext();
+    });
+
     function unlockAudioForMobile() {
       ensureAudioContext();
-      armBackgroundAudioKeepAlive();
+      if (isPlaying) armBackgroundAudioKeepAlive();
       const player = ensureSharedTtsPlayer();
       setupTtsAudioGraph();
       if (player && !isTtsPlaying) {
@@ -962,7 +993,7 @@
         player.play().catch(()=>{});
       }
       const banner = document.getElementById('audioUnlockBanner');
-      if (banner) banner.classList.add('hidden');
+      if (banner && isPlaying && audioContext.state === 'running') banner.classList.add('hidden');
 
       // Se há áudio na fila retido antes do toque do usuário, inicia reprodução imediatamente
       if (currentChannel && currentChannel !== 'original' && currentChannel !== 'text') {
