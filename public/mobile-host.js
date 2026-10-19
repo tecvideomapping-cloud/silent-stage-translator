@@ -52,10 +52,10 @@
     constraints() { const supported = navigator.mediaDevices.getSupportedConstraints?.() || {}; const options = {}; for (const k of ['echoCancellation', 'noiseSuppression', 'autoGainControl']) if (supported[k]) options[k] = true; if (supported.channelCount) options.channelCount = 1; return options; },
     onConnection(value, reason = '') {
       connected = value;
-      if (!active && !value && reason.includes('Já existe um transmissor')) {
+      if (!active && !value && reason.includes('limite de transmissores')) {
         waitingForHost = true;
-        state.textContent = 'Outra mesa está conectada';
-        message.textContent = 'Feche a mesa aberta no computador ou em outro celular. Este aparelho tentará conectar novamente automaticamente.';
+        state.textContent = 'Limite de dispositivos atingido';
+        message.textContent = 'Desconecte um dos transmissores do evento. Este aparelho tentará conectar novamente automaticamente.';
       } else if (!active && value && waitingForHost) {
         waitingForHost = false; state.textContent = 'Pronto para transmitir'; message.textContent = 'Mesa conectada. Toque em Iniciar Transmissão para usar o microfone deste celular.';
       }

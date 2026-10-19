@@ -526,7 +526,7 @@
 
     function connectWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=listener&channel=${currentChannel}&lastSeq=${lastReceivedSeqId}`;
+      const wsUrl = `${protocol}//${window.location.host}?roomId=${encodeURIComponent(roomId)}&role=listener&multiAudio=1&channel=${currentChannel}&lastSeq=${lastReceivedSeqId}`;
       
       socket = new WebSocket(wsUrl);
       socket.binaryType = 'arraybuffer';
@@ -557,6 +557,7 @@
 
         try {
           const data = JSON.parse(event.data);
+          if(data.type==='audio_source_end'||data.type==='audio_source_state'&&(data.muted||data.active===false)){stopRawAudio(data.sourceId);return;}
           if(data.type==='service_warning'){if(data.lang===currentChannel||data.lang===selectedSubtitleLang){const status=document.getElementById('translationServiceStatus');status.textContent=data.message;status.hidden=false;}return;}
           if (data.type === 'connected') {
             myClientId = data.clientId;
@@ -628,6 +629,7 @@
       };
 
       socket.onclose = (event) => {
+        stopRawAudio();
         if (event.code === 1008) { if(isPlaying)toggleAudio(); document.getElementById('playerStatus').innerText = event.reason || 'Evento indisponível'; document.getElementById('togglePlayBtn').disabled = true; return; }
         document.getElementById('statusIndicator').className = 'w-2.5 h-2.5 rounded-full bg-red-500';
         document.getElementById('playerStatus').innerText = 'Reconectando...';
@@ -652,7 +654,8 @@
           }
         };
         gainNode = audioContext.createGain();
-        gainNode.connect(audioContext.destination);
+        const limiter=audioContext.createDynamicsCompressor();limiter.threshold.value=-1;limiter.knee.value=0;limiter.ratio.value=20;limiter.attack.value=.003;limiter.release.value=.1;
+        gainNode.connect(limiter);limiter.connect(audioContext.destination);
         nextAudioTime = audioContext.currentTime;
 
         // Inicia medição periódica de latência e telemetria ABR com o servidor (a cada 2.5s)
@@ -751,37 +754,40 @@
       3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487,
       12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767
     ];
-    let rxAdpcmPredictor = 0;
-    let rxAdpcmStepIndex = 0;
-
-    function decodeAdpcmNibble(nibble) {
-      let step = IMA_STEP_TABLE[rxAdpcmStepIndex];
+    function decodeAdpcmNibble(nibble,state) {
+      let step = IMA_STEP_TABLE[state.index];
       let delta = step >> 3;
       if (nibble & 4) delta += step;
       if (nibble & 2) delta += step >> 1;
       if (nibble & 1) delta += step >> 2;
 
-      if (nibble & 8) rxAdpcmPredictor -= delta;
-      else rxAdpcmPredictor += delta;
+      if (nibble & 8) state.predictor -= delta;
+      else state.predictor += delta;
 
-      if (rxAdpcmPredictor > 32767) rxAdpcmPredictor = 32767;
-      else if (rxAdpcmPredictor < -32768) rxAdpcmPredictor = -32768;
+      if (state.predictor > 32767) state.predictor = 32767;
+      else if (state.predictor < -32768) state.predictor = -32768;
 
-      rxAdpcmStepIndex += IMA_INDEX_TABLE[nibble & 0x0F];
-      if (rxAdpcmStepIndex < 0) rxAdpcmStepIndex = 0;
-      else if (rxAdpcmStepIndex > 88) rxAdpcmStepIndex = 88;
+      state.index += IMA_INDEX_TABLE[nibble & 0x0F];
+      if (state.index < 0) state.index = 0;
+      else if (state.index > 88) state.index = 88;
 
-      return rxAdpcmPredictor / 32768;
+      return state.predictor / 32768;
     }
 
     const rawPlayout=new window.VmtAudioClock.RawPlayout();
-    const rawAudioSources=new Set();
-    function stopRawAudio(){for(const source of rawAudioSources){try{source.stop()}catch{}}rawAudioSources.clear();nextAudioTime=0;rawPlayout.reset();lastPacketArrivalPerfMs=0;}
+    const rawAudioSources=new Set(),rawStreams=new Map();
+    function stopRawAudio(sourceId){
+      if(sourceId){const stream=rawStreams.get(sourceId);if(stream)for(const node of stream.nodes){try{node.stop()}catch{}rawAudioSources.delete(node);}rawStreams.delete(sourceId);return;}
+      for(const node of rawAudioSources){try{node.stop()}catch{}}rawAudioSources.clear();rawStreams.clear();nextAudioTime=0;rawPlayout.reset();lastPacketArrivalPerfMs=0;
+    }
     function playRawPCM(arrayBuffer) {
       if (!audioContext) return;
-      const u8 = new Uint8Array(arrayBuffer);
+      let u8 = new Uint8Array(arrayBuffer),sourceId='legacy';
+      if(u8[0]===0xab){const length=u8[1];if(!length||length>64||u8.length<length+8)return;sourceId=String.fromCharCode(...u8.subarray(2,length+2));arrayBuffer=arrayBuffer.slice(length+2);u8=new Uint8Array(arrayBuffer);}
+
       // Original audio is always framed. Never decode MP3/unknown bytes as PCM.
       if(u8.length<6||u8[0]!==0xAA||![0,1,2].includes(u8[1]))return;
+      let stream=rawStreams.get(sourceId);if(!stream){if(rawStreams.size>=16)return;stream={clock:sourceId==='legacy'?rawPlayout:new window.VmtAudioClock.RawPlayout(),predictor:0,index:0,nodes:new Set()};rawStreams.set(sourceId,stream);}
       let float32Data = null;
       let targetSampleRate = window.hostSampleRate || 16000;
 
@@ -806,8 +812,8 @@
           float32Data = new Float32Array(numBytes * 2);
           for (let i = 0; i < numBytes; i++) {
             const byte = u8[4 + i];
-            float32Data[i * 2] = decodeAdpcmNibble(byte & 0x0F);
-            float32Data[i * 2 + 1] = decodeAdpcmNibble((byte >> 4) & 0x0F);
+            float32Data[i * 2] = decodeAdpcmNibble(byte & 0x0F,stream);
+            float32Data[i * 2 + 1] = decodeAdpcmNibble((byte >> 4) & 0x0F,stream);
           }
         } else {
           // PCM16 Linear Puro Sem Compressão (Fidelidade Máxima)
@@ -835,17 +841,17 @@
 
       const source = audioContext.createBufferSource();
       source.buffer = audioBuffer;
-      rawAudioSources.add(source);source.onended=()=>rawAudioSources.delete(source);
+      rawAudioSources.add(source);stream.nodes.add(source);source.onended=()=>{rawAudioSources.delete(source);stream.nodes.delete(source);};
       source.connect(gainNode);
 
       const now = audioContext.currentTime;
 
-      const slot=rawPlayout.schedule(now,performance.now(),audioBuffer.duration,currentAbrMode);
-      if(slot.reset){for(const pending of rawAudioSources){if(pending!==source){try{pending.stop()}catch{}}}rawAudioSources.clear();rawAudioSources.add(source);}
+      const slot=stream.clock.schedule(now,performance.now(),audioBuffer.duration,currentAbrMode);
+      if(slot.reset){for(const pending of stream.nodes){if(pending!==source){try{pending.stop()}catch{}rawAudioSources.delete(pending);}}stream.nodes.clear();stream.nodes.add(source);}
       if(slot.underrun)windowUnderrunCount++;
       targetJitterBufferSec=slot.target;packetJitterEwmaMs=slot.jitterMs;
       nextAudioTime=slot.startAt;
-      if(rawPlayout.packets%20===0)updateQualityAndBufferBadges();
+      if(stream.clock.packets%20===0)updateQualityAndBufferBadges();
 
       source.playbackRate.value = 1.0; // Afinação 100% natural, sem alteração de velocidade
       source.start(nextAudioTime);
@@ -1111,7 +1117,7 @@
 
       if(!isPlaying)return;
 
-      const item={text:clean,lang,metadata,enqueuedAt:performance.now(),voice:currentSpeakerProfile?.voice||'male_deep',speed:currentSpeakerProfile?.speed||1.05,pitch:currentSpeakerProfile?.pitch||0,controller:new AbortController()};
+      const item={text:clean,lang,metadata,enqueuedAt:performance.now(),voice:metadata.sourceVoice?.voice||currentSpeakerProfile?.voice||'male_deep',speed:metadata.sourceVoice?.speed||currentSpeakerProfile?.speed||1.05,pitch:metadata.sourceVoice?.pitch??currentSpeakerProfile?.pitch??0,controller:new AbortController()};
       const url=`/api/tts?room=${encodeURIComponent(roomId)}&lang=${encodeURIComponent(lang)}&text=${encodeURIComponent(clean)}&voice=${encodeURIComponent(item.voice)}&speed=${item.speed}&pitch=${item.pitch}`;
       // Prefetch while the preceding sentence plays; playback still follows queue order.
       item.url=url;

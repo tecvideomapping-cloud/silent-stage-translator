@@ -25,11 +25,12 @@ test('servidor integrado: pagamento, publicação e permissão do transmissor',a
  const published=await fetch(base+'/api/customer/events/'+event.id+'/publish',{method:'POST',headers:{Cookie:cookie,'X-CSRF-Token':session.csrfToken,'Content-Type':'application/json'},body:JSON.stringify({published:true})});assert.equal(published.status,200);
  assert.equal((await fetch(base+'/api/rooms/'+event.id)).status,200);
  const host=await connect('host',{Cookie:cookie});
- await assert.rejects(()=>connect('host',{Cookie:cookie}),e=>e.code===1013);
+ const secondHost=await connect('host',{Cookie:cookie});assert.equal(secondHost.readyState,WebSocket.OPEN);
  const listener=await connect('listener');const screen=await connect('screen');
  let forbiddenForwarded=false;screen.on('message',(data,binary)=>{if(!binary&&JSON.parse(data).text==='tentativa indevida')forbiddenForwarded=true;});
  listener.send(JSON.stringify({type:'speech_transcript',text:'tentativa indevida',isFinal:true}));
- const payload=Buffer.alloc(128,1);const delivered=new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('Áudio não chegou ao participante')),3000);listener.on('message',(data,binary)=>{if(binary){clearTimeout(timeout);resolve(data);}});});
+ host.send(Buffer.alloc(128,1));await new Promise(r=>setTimeout(r,40));assert.equal((await commerce.store.get('event',event.id)).usedSeconds,0,'invalid frames cannot charge hours');
+ const payload=Buffer.alloc(128,1);payload[0]=170;payload[1]=0;payload.writeUInt16LE(16000,2);const delivered=new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('Áudio não chegou ao participante')),3000);listener.on('message',(data,binary)=>{if(binary){clearTimeout(timeout);resolve(data);}});});
  host.send(payload);assert.deepEqual(await delivered,payload);
  assert.equal((await commerce.store.get('event',event.id)).usedSeconds,5);
  await new Promise(r=>setTimeout(r,150));assert.equal(forbiddenForwarded,false);

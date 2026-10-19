@@ -10,6 +10,6 @@ test('authenticated desktop transcripts retain speaker and turn through listener
  aiPipeline.useStreaming=()=>true; // Desktop must override an available cloud recognizer.
  host.send(JSON.stringify({type:'recognition_mode',mode:'desktop-local'}));host.send(JSON.stringify({type:'speech_transcript',source:'desktop-local',text:'Pergunta',isFinal:true,speakerId:1,turnId:'session:turn:1',segmentId:'segment-1'}));
  const started=Date.now();while(!events.some(event=>event.type==='subtitle_translated')){assert.ok(Date.now()-started<5000);await new Promise(r=>setTimeout(r,10));}
- for(const type of ['subtitle','subtitle_translated']){const event=events.find(item=>item.type===type);assert.equal(event.speakerId,1);assert.equal(event.turnId,'session:turn:1');assert.equal(event.segmentId,'segment-1');}
+ for(const type of ['subtitle','subtitle_translated']){const event=events.find(item=>item.type===type);assert.equal(event.speakerId,1);assert.ok(event.sourceId.startsWith('c_'));assert.equal(event.turnId,event.sourceId+':session:turn:1');assert.equal(event.segmentId,event.sourceId+':segment-1');}
  listener.send(JSON.stringify({type:'recognition_mode',mode:'desktop-local'}));assert.equal([...wss.clients].find(client=>client.role==='listener').localRecognition,undefined);
 });

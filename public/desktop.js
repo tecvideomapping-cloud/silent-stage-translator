@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let analyserNode = null;
   let stageDsp = null;
   let socket = null;
+  window.getStageSourceSocket=()=>socket;
   window.addEventListener('vmt-local-speech-state',event=>{if(event.detail.state==='error'){const badge=document.getElementById('liveStatusBadge');if(badge)badge.textContent=event.detail.message;}if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'recognition_mode',mode:event.detail.active||event.detail.loading?'desktop-local':'current'}));});
   let vuAnimId = null;
 
@@ -541,6 +542,8 @@ document.addEventListener('DOMContentLoaded', () => {
       socket.binaryType = 'arraybuffer';
 
       socket.onopen = () => {
+        desktopAdpcmPredictor=0;desktopAdpcmStepIndex=0;
+        window.stageSources?.connect(socket);
         if(window.localSpeech?.selected)socket.send(JSON.stringify({type:'recognition_mode',mode:'desktop-local'}));
         // Server authorizes the host during the handshake using its session cookie.
         broadcastAudioMeta();
@@ -551,6 +554,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof event.data === 'string') {
           try {
             const msg = JSON.parse(event.data);
+            if(window.stageSources?.handle(msg))return;
             handleServerWsMessage(msg);
           } catch {}
         }
@@ -617,7 +621,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
         list.slice(-30).reverse().forEach(item => {
           const timeStr = item.created_at ? new Date(item.created_at).toLocaleTimeString('pt-BR') : '--:--:--';
-          const original = item.source_text || item.text || '';
+          const original = (item.source_name?item.source_name+': ':'')+(item.source_text || item.text || '');
           const trans = item.translations?.en || item.translations?.es || '—';
           const tr = document.createElement('tr');
           tr.innerHTML = `<td>${timeStr}</td><td>${escapeStageText(original)}</td><td>${escapeStageText(trans)}</td>`;
@@ -778,6 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
       };
 
       isBroadcasting = true;
+      window.stageSources?.live(true);
       await window.localSpeech?.begin(event=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'speech_transcript',...event}));},'pt-BR');
 
       const btn = document.getElementById('btnToggleBroadcast');
@@ -804,6 +809,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function stopBroadcastCleanly() {
     window.localSpeech?.end();
     isBroadcasting = false;
+    window.stageSources?.live(false);
 
     if (scriptProcessor) {
       try { scriptProcessor.disconnect(); } catch {}

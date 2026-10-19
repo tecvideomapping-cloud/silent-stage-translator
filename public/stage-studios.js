@@ -263,7 +263,7 @@ const escapeStageText=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp
         const tr = document.createElement('tr');
         tr.className = 'border-b border-slate-800/80 hover:bg-slate-900/50 transition-colors text-xs';
         const timeStr = item.created_at ? new Date(item.created_at).toLocaleTimeString('pt-BR') : `Trecho ${idx + 1}`;
-        const sourceText = item.source_text || '';
+        const sourceText = (item.source_name?item.source_name+': ':'')+(item.source_text || '');
         const enText = item.translations?.['en'] || item.translations?.['en-US'] || '—';
         const esText = item.translations?.['es'] || item.translations?.['es-ES'] || '—';
 

@@ -148,6 +148,10 @@ const roomBus=new (require('./room-bus').RoomBus)({rooms:roomsClients,sync:clien
 }});
 
 
+function broadcastSourceRoster(roomId){const clients=roomsClients.get(roomId);if(!clients)return;const sources=[...clients].filter(c=>c.role==='host'&&c.readyState===WebSocket.OPEN).map(require('./multi-source').sourceView);const payload=JSON.stringify({type:'source_roster',sources,maxSources:require('./multi-source').MAX_SOURCES});for(const c of clients)if(c.role==='host'&&c.readyState===WebSocket.OPEN)c.send(JSON.stringify({...JSON.parse(payload),selfId:c.clientId}));}
+roomBus.onChange=broadcastSourceRoster;
+roomBus.onControl=source=>{if((source.sourceMuted||!source.sourceActive)&&aiPipeline.sttSockets.has(source.speechStreamKey))aiPipeline.closeSession(source.speechStreamKey);const payload=JSON.stringify({type:'audio_source_state',sourceId:source.clientId,muted:!!source.sourceMuted,active:!!source.sourceActive});for(const c of roomsClients.get(source.roomId)||[])if(c.readyState===WebSocket.OPEN)c.send(payload);};
+
 function getRoomClients(roomId) {
   if (!roomsClients.has(roomId)) {
     roomsClients.set(roomId, new Set());
@@ -634,7 +638,8 @@ app.get('/api/rooms/:id/export', async (req, res) => {
       let srtContent = '';
       transcripts.forEach((t, i) => {
         const rawText = (lang && t.translations?.[lang]) ? t.translations[lang] : t.source_text;
-      const text=(Number.isInteger(t.speaker_id)?'Locutor '+(t.speaker_id+1)+': ':'')+rawText;
+      const label=[t.source_name,Number.isInteger(t.speaker_id)?'Locutor '+(t.speaker_id+1):''].filter(Boolean).join(' · ');
+      const text=(label?label+': ':'')+rawText;
         const origin=Date.parse(transcripts[0]?.created_at)||0;
         const startSec=Math.max(0,((Date.parse(t.created_at)||origin)-origin)/1000);
         const next=transcripts[i+1];const endSec=next?Math.max(startSec+0.5,((Date.parse(next.created_at)||origin)-origin)/1000):startSec+3;
@@ -654,7 +659,8 @@ app.get('/api/rooms/:id/export', async (req, res) => {
     let txtContent = `TRANSCRIÇÃO DO EVENTO: ${req.params.id}\nData: ${new Date().toLocaleString()}\n\n`;
     transcripts.forEach(t => {
       const rawText = (lang && t.translations?.[lang]) ? t.translations[lang] : t.source_text;
-      const text=(Number.isInteger(t.speaker_id)?'Locutor '+(t.speaker_id+1)+': ':'')+rawText;
+      const label=[t.source_name,Number.isInteger(t.speaker_id)?'Locutor '+(t.speaker_id+1):''].filter(Boolean).join(' · ');
+      const text=(label?label+': ':'')+rawText;
       txtContent += `[${new Date(t.created_at).toLocaleTimeString()}] ${text}\n`;
     });
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -1074,13 +1080,14 @@ function appendToCatchupHistory(roomId, entry) {
 
 // Keep final text, translation, speaker identity and timing on the same segment.
 async function processRecognizedSpeech(roomId,ws,event){
+ if(ws.sourceMuted)return;
  const text=String(event.text||'').trim().slice(0,4000);if(!text)return;
  const clients=getRoomClients(roomId),now=Date.now();
- const meta={speakerId:Number.isInteger(event.speakerId)?event.speakerId:null,turnId:event.turnId||require('crypto').randomUUID(),segmentId:event.segmentId||require('crypto').randomUUID(),recognizedAt:now};
+ const meta={sourceId:ws.clientId,sourceName:ws.sourceName,sourceVoice:ws.speakerVoiceProfile, speakerId:Number.isInteger(event.speakerId)?event.speakerId:null,turnId:ws.clientId+':'+(event.turnId||require('crypto').randomUUID()),segmentId:ws.clientId+':'+(event.segmentId||require('crypto').randomUUID()),recognizedAt:now};
  const final=event.isFinal===true;
  const originalSeqId=final?globalCatchupSeqId:undefined;
  if(final){const last=roomLastInterimTranslate.get(roomId);roomLastInterimTranslate.set(roomId,{text:'',time:now,seq:(last?.seq||0)+1});}
- if(final){const previous=roomLastFinalTranscript.get(roomId);if(!event.segmentId&&previous?.text===text&&now-previous.time<400)return;roomLastFinalTranscript.set(roomId,{text,time:now});appendToCatchupHistory(roomId,{...meta,lang:'original',text});}
+ if(final){const previous=roomLastFinalTranscript.get(roomId);if(!event.segmentId&&previous?.text===text&&previous?.sourceId===ws.clientId&&now-previous.time<400)return;roomLastFinalTranscript.set(roomId,{text,time:now,sourceId:ws.clientId});appendToCatchupHistory(roomId,{...meta,lang:'original',text});}
  const payload=JSON.stringify({type:'subtitle',text,isFinal:final,seqId:originalSeqId,sourceLang:event.sourceLang||ws.speechRoom?.source_language||'pt-BR',...meta,timestamp:now});
  for(const client of clients)if(client.readyState===WebSocket.OPEN)client.send(payload);
  if(final){
@@ -1089,9 +1096,10 @@ async function processRecognizedSpeech(roomId,ws,event){
    const room=await getRoom(roomId);if(!room)return;
    const lookupMs=Date.now()-now;
    const task=orderedTranslations.translate(roomId,text,room.target_languages||['en','es'],room.glossary||{},aiPipeline,(lang,translatedText,timing)=>{
+    if(ws.sourceMuted)return;
     const readyAt=Date.now(),seqId=globalCatchupSeqId;translationWarnings.delete(roomId+':'+lang);
     appendToCatchupHistory(roomId,{...meta,lang,text:translatedText,sourceText:text});
-    const profile=roomSpeakerProfile.get(roomId)||{};
+    const profile=ws.speakerVoiceProfile||roomSpeakerProfile.get(roomId)||{};
     if([...clients].some(client=>client.role==='listener'&&client.channel===lang&&client.readyState===WebSocket.OPEN))getOrGenerateTts(lang,translatedText,profile.voice||'male_deep',profile.speed||1.05,profile.pitch||0).catch(()=>{});
     const translated=JSON.stringify({type:'subtitle_translated',text:translatedText,sourceText:text,lang,isFinal:true,seqId,...meta,translationReadyAt:readyAt,translationMs:readyAt-now,translationLookupMs:lookupMs,translationProviderMs:timing.providerMs,translationOrderingMs:timing.orderingWaitMs,timestamp:readyAt});
     for(const client of clients)if(client.readyState===WebSocket.OPEN)client.send(translated);
@@ -1110,7 +1118,7 @@ async function processRecognizedSpeech(roomId,ws,event){
  }
 }
 
-aiPipeline.onRecognitionStatus=(roomId,status)=>{for(const client of roomsClients.get(roomId)||[])if(client.role==='host'&&client.readyState===WebSocket.OPEN)client.send(JSON.stringify({type:'speech_recognition',...status}));};
+aiPipeline.onRecognitionStatus=(streamKey,status)=>{const roomId=streamKey.split(':')[0];for(const client of roomsClients.get(roomId)||[])if(client.role==='host'&&(!streamKey.includes(':')||client.speechStreamKey===streamKey)&&client.readyState===WebSocket.OPEN)client.send(JSON.stringify({type:'speech_recognition',...status}));};
 
 // Codificador G.711 μ-law stateless para Degrade Quality individual por ouvinte no servidor
 function encodeMuLawServerSample(sample) {
@@ -1198,7 +1206,7 @@ async function handleConnection(ws,req){
       const room=await getRoom(roomId),key=parsedUrl.searchParams.get('hostKey');
       if(!admin&&!await commerce.isLegacyOwner(req,room)&&(!room||!key||key!==room.host_key))throw Object.assign(new Error('Acesso de operador obrigatório.'),{status:403});
     }
-    if(!managed){const room=await getRoom(roomId);if(!room)throw new Error('Evento não encontrado.');if(role!=='host'&&room.status!=='active')throw new Error('Evento indisponível.');if(role!=='host'&&!channelAllowed(room,channel))throw new Error('Canal indisponível.');if(role==='host'&&Array.from(roomsClients.get(roomId)||[]).some(c=>c.role==='host'&&c.readyState===WebSocket.OPEN))throw Object.assign(new Error('Já existe um transmissor conectado. Aguarde a reconexão.'),{status:409});}
+    if(!managed){const room=await getRoom(roomId);if(!room)throw new Error('Evento não encontrado.');if(role!=='host'&&room.status!=='active')throw new Error('Evento indisponível.');if(role!=='host'&&!channelAllowed(room,channel))throw new Error('Canal indisponível.');if(role==='host'&&Array.from(roomsClients.get(roomId)||[]).filter(c=>c.role==='host'&&c.readyState===WebSocket.OPEN).length>=require('./multi-source').MAX_SOURCES)throw Object.assign(new Error('O evento atingiu o limite de transmissores simultâneos.'),{status:409});}
     if(!managed){const room=await getRoom(roomId);await validateLegacyRoom(room);if(role==='listener'&&room.client_id){const client=await getClient(room.client_id),ids=new Set((await listRooms()).filter(r=>Number(r.client_id)===Number(room.client_id)).map(r=>r.id));let count=0;for(const id of ids)count+=[...(roomsClients.get(id)||[])].filter(c=>c.role==='listener'&&c.readyState===WebSocket.OPEN).length;if(count>=client.max_listeners)throw Object.assign(new Error('O cliente atingiu o limite de participantes simultâneos.'),{status:403});}}
     if(ws.readyState!==WebSocket.OPEN){await commerce.releaseSocket(managed);return;}
   }catch(e){ws.close(e.status===409?1013:1008,String(e.message||'Acesso indisponível').slice(0,115));return;}
@@ -1218,6 +1226,9 @@ async function handleConnection(ws,req){
   ws.roomId = roomId;
   ws.role = role;
   ws.channel = channel;
+  ws.multiAudio=parsedUrl.searchParams.get('multiAudio')==='1';
+  ws.sourceName='Dispositivo '+clientId.slice(-4);ws.sourceMuted=false;ws.sourceActive=false;
+  ws.speechStreamKey=roomId+':'+clientId;
   ws.speechRoom=await getRoom(roomId);
   ws.isAlive=true;ws.on('pong',()=>{ws.isAlive=true});
   ws.on('error',()=>{});
@@ -1278,29 +1289,39 @@ async function handleConnection(ws,req){
 
   // Notifica imediatamente anfitrião e telões sobre métricas de ouvintes online
   ws.on('message', async (data, isBinary) => {
-    try{if(managed&&role==='host'&&isBinary&&!await commerce.consumeSocket(managed)){ws.close(1008,'As horas de transmissão foram utilizadas.');return;}}catch{ws.close(1011,'Verificação de saldo indisponível.');return;}
+    if(isBinary&&(ws.role!=='host'||data.length<6||data.length>65536||data[0]!==0xaa||data[1]>2||data.readUInt16LE(2)<8000||data.readUInt16LE(2)>48000||data[1]===0&&(data.length-4)%2))return;
+    if(isBinary&&ws.sourceMuted){if(data[1]===2){try{ws.sttDecoder??={};require('./audio-codec').decodeForStt(data,ws.sttDecoder);}catch{}}return;}
+    try{if(managed&&role==='host'&&isBinary&&!ws.sourceMuted&&!await commerce.consumeSocket(managed)){ws.close(1008,'As horas de transmissão foram utilizadas.');return;}}catch{ws.close(1011,'Verificação de saldo indisponível.');return;}
     // 1. Mensagens Binárias: Chunks de Áudio
     if (isBinary) {
-      if (ws.role !== 'host'||data.length>65536) return;
+      if (ws.role !== 'host'||data.length>65536||ws.sourceMuted) return;
+      ws.lastAudioAt=Date.now();
+      if(!ws.sourceActive){ws.sourceActive=true;roomBus.changed(roomId);}
+      let decodedPcm=null,legacyAudio=data;
+      if(data[0]!==0xaa||data.length<6||data[1]>2||data.readUInt16LE(2)<8000||data.readUInt16LE(2)>48000)return;
+      if(data[1]===2){try{ws.sttDecoder??={};const rate=data.readUInt16LE(2),header=Buffer.from(data.subarray(0,4));header[1]=0;const nativePcm=require('./audio-codec').decodeForStt(data,ws.sttDecoder,rate);legacyAudio=Buffer.concat([header,nativePcm]);decodedPcm=rate===16000?nativePcm:require('./audio-codec').decodeForStt(legacyAudio);}catch{return;}}
+      const routedAudio=require('./multi-source').wrapAudio(ws.clientId,legacyAudio);
+      const primary=[...roomClients].filter(c=>c.role==='host'&&c.readyState===WebSocket.OPEN&&!c.sourceMuted&&c.sourceActive).sort((a,b)=>a.clientId.localeCompare(b.clientId))[0];
 
       // Broadcast direto do Áudio Original limpo em alta fidelidade (100% puro, sem degradação ou decimação com ruído)
       for (const client of roomClients) {
-        if (client !== ws && client.readyState === WebSocket.OPEN && client.channel === 'original') {
+        if (client !== ws && client.readyState === WebSocket.OPEN && client.channel === 'original' && client.role==='listener' && (client.multiAudio||primary?.clientId===ws.clientId)) {
           try {
             if(client.bufferedAmount>192*1024){client.close(1013,'Conexão lenta. Reconecte para continuar.');continue;}
-            client.send(data, { binary: true });
+            if(!client.multiAudio&&!client.multiWarningSent&&[...roomClients].filter(c=>c.role==='host'&&c.sourceActive).length>1){client.multiWarningSent=true;client.send(JSON.stringify({type:'service_warning',lang:'original',message:'Atualize a página do participante para ouvir todos os dispositivos simultaneamente.'}));}
+            client.send(client.multiAudio?routedAudio:legacyAudio, { binary: true });
           } catch {}
         }
       }
 
       // Se o Host já estiver transcrevendo nativamente pelo navegador, ignora STT secundário
-      if (ws.localRecognition || (ws.hasHostSpeechSTT&&!aiPipeline.useStreaming(roomId))) {
+      if (ws.localRecognition || (ws.hasHostSpeechSTT&&!aiPipeline.useStreaming(ws.speechStreamKey))) {
         return;
       }
 
       // Feed frames synchronously in arrival order; translation reads room settings separately.
-      let pcm;try{ws.sttDecoder??={};pcm=require('./audio-codec').decodeForStt(data,ws.sttDecoder)}catch{return;}
-      aiPipeline.feedAudio(roomId,pcm,ws.speechRoom?.source_language||'pt-BR',event=>ws.localRecognition?undefined:processRecognizedSpeech(roomId,ws,event));
+      let pcm;try{ws.sttDecoder??={};pcm=decodedPcm||require('./audio-codec').decodeForStt(data,ws.sttDecoder)}catch{return;}
+      aiPipeline.feedAudio(ws.speechStreamKey,pcm,ws.speechRoom?.source_language||'pt-BR',event=>ws.localRecognition?undefined:processRecognizedSpeech(roomId,ws,event));
 
       return;
     }
@@ -1308,13 +1329,23 @@ async function handleConnection(ws,req){
     // 2. Mensagens JSON
     try {
       const msg = JSON.parse(data.toString());
-      const hostMessages=['audio_meta','speech_transcript','set_screen_lang','speaker_voice_profile','recognition_mode'];
+      const hostMessages=['audio_meta','speech_transcript','set_screen_lang','speaker_voice_profile','recognition_mode','source_hello','source_live','source_mute'];
       if(hostMessages.includes(msg.type)&&ws.role!=='host')return;
       if(msg.type==='speech_transcript'&&(typeof msg.text!=='string'||msg.text.length>4000))return;
+      if(msg.type==='speech_transcript'&&ws.sourceMuted)return;
       if(managed&&msg.type==='speech_transcript'&&!await commerce.consumeSocket(managed)){ws.close(1008,'As horas de transmissão foram utilizadas.');return;}
       if(managed&&msg.type==='switch_channel'){
         const event=await commerce.managedEvent(roomId);
         if(!['original','text',...event.target_languages].includes(msg.channel))return;
+      }
+      if(msg.type==='source_hello'){
+        const name=typeof msg.name==='string'?msg.name.trim().replace(/[\u0000-\u001f]/g,'').slice(0,48):'';
+        if(name)roomBus.controlSource(ws.clientId,roomId,{sourceName:name});return;
+      }
+      if(msg.type==='source_live'){if(msg.active===true)ws.lastAudioAt=Date.now();roomBus.controlSource(ws.clientId,roomId,{sourceActive:msg.active===true});return;}
+      if(msg.type==='source_mute'){
+        const target=[...roomClients].find(c=>c.role==='host'&&c.clientId===msg.sourceId);
+        if(target&&typeof msg.muted==='boolean')roomBus.controlSource(target.clientId,roomId,{sourceMuted:msg.muted});return;
       }
       if (msg.type === 'switch_channel') {
         const currentRoom=await getRoom(roomId);if(!currentRoom||!channelAllowed(currentRoom,msg.channel))return;
@@ -1332,9 +1363,9 @@ async function handleConnection(ws,req){
         }
       } else if (msg.type === 'recognition_mode') {
         ws.localRecognition=msg.mode==='desktop-local';
-        if(ws.localRecognition)aiPipeline.closeSession(roomId);
+        if(ws.localRecognition)aiPipeline.closeSession(ws.speechStreamKey);
       } else if (msg.type === 'speech_transcript') {
-        if(aiPipeline.useStreaming(roomId)&&!ws.localRecognition)return;
+        if(aiPipeline.useStreaming(ws.speechStreamKey)&&!ws.localRecognition)return;
         ws.hasHostSpeechSTT=true;
         const local=msg.source==='desktop-local';
         const safeId=value=>typeof value==='string'&&/^[a-zA-Z0-9:_-]{1,160}$/.test(value)?value:null;
@@ -1368,10 +1399,10 @@ async function handleConnection(ws,req){
         }
       } else if (msg.type === 'speaker_voice_profile') {
         // Calibração de timbre do palestrante transmitida pelo host
-          const previous=roomSpeakerProfile.get(roomId);
+          const previous=ws.speakerVoiceProfile;
           const requested=['male_deep','male_natural','female_warm','female_clear','alloy','echo','fable','onyx','nova','shimmer'].includes(msg.voice)?msg.voice:'male_deep';
           const profile={voice:previous&&msg.manual!==true?previous.voice:requested,pitch:Math.max(-8,Math.min(8,Number(msg.pitch)||0)),speed:Math.max(.75,Math.min(1.45,Number(msg.speed)||1.05))};
-          roomSpeakerProfile.set(roomId,profile);
+          ws.speakerVoiceProfile=profile;roomSpeakerProfile.set(roomId,profile);
           for (const client of roomClients)if(client!==ws&&client.readyState===WebSocket.OPEN&&client.roomId===roomId)client.send(JSON.stringify({type:'speaker_voice_profile',...profile}));
       } else if (msg.type === 'p2p_find_peers') {
         // Retorna candidatos a pares na mesma sala e canal para mesh P2P
@@ -1444,14 +1475,16 @@ async function handleConnection(ws,req){
       roomCatchupHistory.delete(roomId);
     }
     if (ws.role === 'host') {
-      aiPipeline.closeSession(roomId);
+      aiPipeline.closeSession(ws.speechStreamKey);
+      for(const c of roomClients)if(c.readyState===WebSocket.OPEN)c.send(JSON.stringify({type:'audio_source_end',sourceId:ws.clientId}));
     }
   });
 }
 
 function channelAllowed(room,channel){return channel==='original'?room.allow_original_audio!==false:channel==='text'?room.allow_subtitles!==false:room.allow_translation!==false&&Array.isArray(room.target_languages)&&room.target_languages.includes(channel)}
 const heartbeat=setInterval(()=>{for(const ws of wss.clients){if(!ws.isAlive){ws.terminate();continue;}ws.isAlive=false;ws.ping();}},30000);heartbeat.unref();
-wss.on('close',()=>{clearInterval(heartbeat);roomBus.close().catch(()=>{})});
+const sourceActivityTimer=setInterval(()=>{for(const ws of wss.clients)if(ws.role==='host'&&ws.sourceActive&&Date.now()-(ws.lastAudioAt||0)>5000)roomBus.controlSource(ws.clientId,ws.roomId,{sourceActive:false});},1000);sourceActivityTimer.unref();
+wss.on('close',()=>{clearInterval(sourceActivityTimer);clearInterval(heartbeat);roomBus.close().catch(()=>{})});
 
 function startServer(port = PORT) {
   return new Promise((resolve, reject) => {

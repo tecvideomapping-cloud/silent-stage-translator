@@ -96,7 +96,7 @@ class Commerce {
    const effective=await this.entitlement(current,tx);
    const leases=await tx.list('connection',{eventId:id});const active=leases.filter(l=>l.expiresAt>Date.now());
    if(role==='listener'&&current.fundingType==='account'){const ids=new Set((await tx.list('event',{customerId:current.customerId})).filter(e=>e.fundingType==='account'&&e.fundingClientId===current.fundingClientId).map(e=>e.id));const count=(await tx.list('connection')).filter(l=>ids.has(l.eventId)&&l.role==='listener'&&l.expiresAt>Date.now()).length;if(count>=effective.maxParticipants)throw fail(403,'A conta atingiu o limite de participantes simultâneos.');}
-   if(role==='host'&&active.some(l=>l.role==='host'))throw fail(409,'Já existe um transmissor conectado a este evento.');
+   if(role==='host'&&active.filter(l=>l.role==='host').length>=require('./multi-source').MAX_SOURCES)throw fail(409,'O evento atingiu o limite de transmissores simultâneos.');
    if(role==='listener'&&effective.maxParticipants&&active.filter(l=>l.role==='listener').length>=effective.maxParticipants)throw fail(403,'O evento atingiu o limite de participantes simultâneos.');
    for(const lease of leases)if(lease.expiresAt<Date.now())await tx.remove('connection',lease.id);
    await tx.put('connection',leaseId,{id:leaseId,eventId:id,role,expiresAt:Date.now()+75000});
@@ -116,10 +116,11 @@ class Commerce {
   if(context.charging)return context.charging;
   context.charging=this.store.transaction(async tx=>{const event=await tx.get('event',context.eventId);const order=event&&await this.funding(event,tx);const lease=await tx.get('connection',context.leaseId);
    if(!event||!lease||lease.expiresAt<Date.now()||order?.status!=='paid'||event.revoked)return false;
-   if(lease.budgetUntil>Date.now())return lease.budgetUntil;
+   const sharedUntil=Math.max(event.broadcastBudgetUntil||0,...(await tx.list('connection',{eventId:event.id})).filter(l=>l.role==='host'&&l.expiresAt>Date.now()).map(l=>l.budgetUntil||0));
+   if(sharedUntil>Date.now()){event.broadcastBudgetUntil=sharedUntil;await tx.put('event',event.id,event);lease.budgetUntil=sharedUntil;await tx.put('connection',lease.id,lease);return sharedUntil;}
    const seconds=Math.min(5,await this.remaining(event,tx));if(seconds<=0)return false;
    if(event.fundingType==='account'&&!await accountEvents.charge(this,event,seconds,tx))return false;
-   event.usedSeconds+=seconds;await tx.put('event',event.id,event);lease.budgetUntil=Date.now()+seconds*1000;await tx.put('connection',lease.id,lease);return lease.budgetUntil;
+   event.usedSeconds+=seconds;event.broadcastBudgetUntil=Date.now()+seconds*1000;await tx.put('event',event.id,event);lease.budgetUntil=event.broadcastBudgetUntil;await tx.put('connection',lease.id,lease);return lease.budgetUntil;
   }).then(budgetUntil=>{if(budgetUntil)context.budgetUntil=budgetUntil;return !!budgetUntil;}).finally(()=>{context.charging=null;});return context.charging;
  }
  async processPayment(payment){

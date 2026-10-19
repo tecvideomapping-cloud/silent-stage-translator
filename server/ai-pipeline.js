@@ -318,6 +318,7 @@ class AIPipeline {
   }
 
   closeSession(roomId) {
+    this.streamingUnavailable.delete(roomId);
     const dg = this.sttSockets.get(roomId);
     this.roomContextMemory.delete(roomId);
     if (dg) {
