@@ -1230,6 +1230,7 @@ async function handleConnection(ws,req){
   ws.sourceName='Dispositivo '+clientId.slice(-4);ws.sourceMuted=false;ws.sourceActive=false;
   ws.speechStreamKey=roomId+':'+clientId;
   ws.speechRoom=await getRoom(roomId);
+  if(ws.readyState!==WebSocket.OPEN){clearInterval(entitlementTimer);await commerce.releaseSocket(managed);return;}
   ws.isAlive=true;ws.on('pong',()=>{ws.isAlive=true});
   ws.on('error',()=>{});
   ws.abrMode = 'auto'; // 'auto' | 'high' | 'saver'
@@ -1238,17 +1239,27 @@ async function handleConnection(ws,req){
 
   const roomClients = getRoomClients(roomId);
   roomClients.add(ws);
+  ws.on('close', () => {
+    clearInterval(entitlementTimer);
+    commerce.releaseSocket(managed).catch(()=>{});
+    roomClients.delete(ws);
+    roomBus.detach(ws);
+    broadcastRoomStats(roomId);
+    if (roomClients.size === 0) {
+      roomsClients.delete(roomId);
+      roomAudioMeta.delete(roomId);
+      roomSpeakerProfile.delete(roomId);
+      roomLastFinalTranscript.delete(roomId);
+      roomCatchupHistory.delete(roomId);
+    }
+    if (ws.role === 'host') {
+      aiPipeline.closeSession(ws.speechStreamKey);
+      for(const c of roomClients)if(c.readyState===WebSocket.OPEN)c.send(JSON.stringify({type:'audio_source_end',sourceId:ws.clientId}));
+    }
+  });
   roomBus.attach(ws);
 
-  ws.send(JSON.stringify({
-    type: 'connected',
-    clientId,
-    roomId,
-    role,
-    channel,
-    speechRecognition:{provider:aiPipeline.useStreaming(roomId)?'deepgram':'browser',diarization:aiPipeline.useStreaming(roomId)},
-    timestamp: Date.now()
-  }));
+
 
   const sharedMeta=await roomBus.getRoomState(roomId,'audio_meta');
   if(sharedMeta)roomAudioMeta.set(roomId,sharedMeta);
@@ -1461,24 +1472,18 @@ async function handleConnection(ws,req){
     } catch (e) {}
   });
 
-  ws.on('close', () => {
-    clearInterval(entitlementTimer);
-    commerce.releaseSocket(managed).catch(()=>{});
-    roomClients.delete(ws);
-    roomBus.detach(ws);
-    broadcastRoomStats(roomId);
-    if (roomClients.size === 0) {
-      roomsClients.delete(roomId);
-      roomAudioMeta.delete(roomId);
-      roomSpeakerProfile.delete(roomId);
-      roomLastFinalTranscript.delete(roomId);
-      roomCatchupHistory.delete(roomId);
-    }
-    if (ws.role === 'host') {
-      aiPipeline.closeSession(ws.speechStreamKey);
-      for(const c of roomClients)if(c.readyState===WebSocket.OPEN)c.send(JSON.stringify({type:'audio_source_end',sourceId:ws.clientId}));
-    }
-  });
+
+  if(ws.readyState===WebSocket.OPEN){
+  ws.send(JSON.stringify({
+    type: 'connected',
+    clientId,
+    roomId,
+    role,
+    channel,
+    speechRecognition:{provider:aiPipeline.useStreaming(ws.speechStreamKey)?'deepgram':'browser',diarization:aiPipeline.useStreaming(ws.speechStreamKey)},
+    timestamp: Date.now()
+  }));
+  }
 }
 
 function channelAllowed(room,channel){return channel==='original'?room.allow_original_audio!==false:channel==='text'?room.allow_subtitles!==false:room.allow_translation!==false&&Array.isArray(room.target_languages)&&room.target_languages.includes(channel)}

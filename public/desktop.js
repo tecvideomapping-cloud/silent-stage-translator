@@ -571,7 +571,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function handleServerWsMessage(msg) {
-    if(msg.type==='connected'){if(socket)socket.__authorized=msg.role==='host';
+    if(msg.type==='connected'){if(socket)socket.__authorized=msg.role==='host';if(window.localSpeech?.selected)socket.send(JSON.stringify({type:'recognition_mode',mode:'desktop-local'}));
     } else if (msg.type === 'room_online_stats') {
       const elListeners = document.getElementById('metricListeners');
       if (elListeners) elListeners.innerText = msg.stats?.listeners || 0;

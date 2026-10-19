@@ -1748,7 +1748,7 @@
           if(data.type==='subtitle_translated'&&data.isFinal!==false)document.getElementById('hostTranslationStatus').hidden=true;
           if(data.type==='service_warning'){const status=document.getElementById('connStatus');if(status)status.textContent=data.message;return;}
           if (data.type === 'speech_recognition') { applyRecognitionStatus(data); }
-          else if (data.type === 'connected') { applyRecognitionStatus(data.speechRecognition); broadcastAudioMeta(); broadcastSpeakerVoiceProfile(); fetchRoomStats(); }
+          else if (data.type === 'connected') { if(window.localSpeech?.selected)socket.send(JSON.stringify({type:'recognition_mode',mode:'desktop-local'})); applyRecognitionStatus(data.speechRecognition); broadcastAudioMeta(); broadcastSpeakerVoiceProfile(); fetchRoomStats(); }
           else if (data.type === 'room_online_stats' && data.stats) {
             updateHostOnlineStats(data.stats);
           } else if (data.type === 'subtitle_translated') {

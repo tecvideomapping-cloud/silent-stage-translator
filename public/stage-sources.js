@@ -24,7 +24,7 @@
     get muted(){return sources.find(s=>s.id===ownId)?.muted===true;},
     connect(ws){socket=ws;send({type:'source_hello',name:input.value});},
     live(active){send({type:'source_live',active});},
-    handle(message){if(message.type==='connected'){ownId=message.clientId;render();return false;}if(message.type==='source_roster'){if(message.selfId)ownId=message.selfId;sources=Array.isArray(message.sources)?message.sources:[];limit=message.maxSources||8;render();return true;}if(message.type==='audio_source_state'){const source=sources.find(s=>s.id===message.sourceId);if(source){source.muted=message.muted;source.active=message.active;render();}return true;}return false;}
+    handle(message){if(message.type==='connected'){ownId=message.clientId;send({type:'source_hello',name:input.value});render();return false;}if(message.type==='source_roster'){if(message.selfId)ownId=message.selfId;sources=Array.isArray(message.sources)?message.sources:[];limit=message.maxSources||8;render();return true;}if(message.type==='audio_source_state'){const source=sources.find(s=>s.id===message.sourceId);if(source){source.muted=message.muted;source.active=message.active;render();}return true;}return false;}
   };
   const currentSocket=window.getStageSourceSocket?.();if(currentSocket?.readyState===WebSocket.OPEN)window.stageSources.connect(currentSocket);
 })();
