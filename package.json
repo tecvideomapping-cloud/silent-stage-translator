@@ -1,6 +1,6 @@
 {
   "name": "videomappingtech-silent-translator",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Silent Stage — Áudio ao vivo e tradução simultânea",
   "main": "desktop/main.js",
   "scripts": {
@@ -23,7 +23,8 @@
       "desktop/speech/worker.py",
       "desktop/speech/runtime_info.py",
       "desktop/speech/ensure-engine.ps1",
-      "desktop/speech/install.ps1"
+      "desktop/speech/install.ps1",
+      "desktop/speech/word_commit.py"
     ],
     "directories": {
       "output": "dist"

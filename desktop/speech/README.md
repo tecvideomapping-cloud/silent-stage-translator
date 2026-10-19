@@ -2,6 +2,10 @@
 
 O aplicativo Electron captura a fonte selecionada na mesa (microfone, saída do PC ou arquivo), converte uma cópia para PCM mono de 16 kHz e envia essa cópia ao processo Python pelo IPC nativo. O áudio dos participantes continua no caminho existente. O motor local não abre portas HTTP e não grava áudio ou transcrições em arquivos.
 
+## Fidelidade a partir de 1.0.10
+
+Durante o carregamento, até 30 segundos de áudio ficam em memória e são processados em ordem quando o modelo está pronto; ultrapassar esse limite produz um erro visível. Parar a captura limpa o buffer. As janelas forçadas mantêm 800 ms de contexto; as palavras da borda aguardam a janela seguinte e são publicadas uma única vez. O áudio já segmentado não passa por uma segunda remoção VAD. A busca usa cinco hipóteses. Perfis existentes de GPU com Base passam uma vez para Small; a seleção manual continua disponível e CPU permanece Base. O modelo Small é baixado na primeira utilização se não estiver em cache. Essa configuração melhora a fidelidade, mas não elimina erros em nomes próprios.
+
 ## Windows
 
 A partir do instalador 1.0.7, o assistente **Preparar motor local** verifica Python e bibliotecas e instala os componentes ausentes. Ele também fica disponível no menu Iniciar. A instalação usa internet; CUDA e Pyannote são opcionais. Os modelos são baixados na primeira ativação, e o token do Hugging Face não é incluído no instalador.

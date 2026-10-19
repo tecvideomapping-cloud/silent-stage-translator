@@ -14,7 +14,7 @@ class LocalSpeech extends EventEmitter {
     this.python=options.python||process.env.VMT_SPEECH_PYTHON||(fs.existsSync(installed)?installed:'python');
     this.state='stopped';this.child=null;this.generation=0;this.metrics={};this.runtime=null;
   }
-  status(){return {state:this.state,diarization:!!this.diarization,model:this.model||'base',config:this.config||require('./speech-config').normalize(),runtime:this.runtime,metrics:this.metrics,message:this.message||''};}
+  status(){return {state:this.state,diarization:!!this.diarization,model:this.model||'base',config:this.config||require('./speech-config').normalize(),runtime:this.runtime,metrics:{...this.metrics,pending:this.pending||0,bufferedAudioSeconds:(this.rawBytes||0)/32000},message:this.message||''};}
   workerPath(){return path.join(__dirname.replace(/app\.asar(?=[\\/])/,'app.asar.unpacked'),'speech','worker.py');}
   capabilities(refresh=false){
     if(!refresh&&this.capabilityCache&&this.capabilityCache.until>Date.now())return Promise.resolve(this.capabilityCache.value);
@@ -29,7 +29,7 @@ class LocalSpeech extends EventEmitter {
   start(config={}) {
     if(this.child)throw Error('Interrompa o motor antes de alterar a configuração.');
     this.config=require('./speech-config').normalize(config);Object.assign(this,this.config);this.runtime=null;this.metrics={};
-    this.session=crypto.randomUUID();this.generation++;this.parts=[];this.samples=0;this.silence=0;this.speaking=false;this.preroll=[];this.prerollSamples=0;this.pending=0;this.jobs=new Map();this.sequence=0;this.inputSeconds=0;
+    this.session=crypto.randomUUID();this.generation++;this.parts=[];this.samples=0;this.silence=0;this.speaking=false;this.preroll=[];this.prerollSamples=0;this.pending=0;this.jobs=new Map();this.sequence=0;this.inputSeconds=0;this.rawQueue=[];this.rawBytes=0;this.replaying=false;
     const generation=this.generation;
     this.report('loading','Carregando os modelos locais…');
     const token=this.diarization?require('./speech-credentials').loadToken():'';
@@ -46,7 +46,7 @@ class LocalSpeech extends EventEmitter {
     readline.createInterface({input:child.stdout}).on('line',line=>{
       if(this.child!==child||this.generation!==generation||line.length>262144)return;
       let event;try{event=JSON.parse(line);}catch{return;}
-      if(event.type==='ready'){clearTimeout(this.timer);this.runtime=event.runtime||null;this.report('ready','Motor local pronto.');}
+      if(event.type==='ready'){clearTimeout(this.timer);this.runtime=event.runtime||null;this.report('ready','Motor local pronto.');this.drainAudio();}
       else if(event.type==='telemetry'){this.metrics={...this.metrics,cpuPercent:Number.isFinite(event.cpuPercent)?event.cpuPercent:null,memoryMb:Number.isFinite(event.memoryMb)?event.memoryMb:null,memoryKind:event.memoryKind,pending:this.pending};this.emit('metrics',this.metrics);}
       else if(event.type==='result'){
         if(!this.jobs.has(event.id))return;
@@ -58,37 +58,52 @@ class LocalSpeech extends EventEmitter {
           if(typeof segment.text!=='string'||!segment.text.trim())continue;
           this.emit('transcript',{text:segment.text.trim().slice(0,4000),isFinal:true,sourceLang:this.language,source:'desktop-local',speakerId:Number.isInteger(segment.speakerId)&&segment.speakerId>=0?segment.speakerId:null,turnId:this.session+':'+event.id+':'+index,segmentId:crypto.randomUUID(),processingMs:Number(event.processingMs)||0});
         }
-        this.metrics={...this.metrics,processingMs:Number(event.processingMs)||0,audioSeconds:Number(event.audioSeconds)||0,rtf:Number.isFinite(event.rtf)?event.rtf:null,queueWaitMs:Number(event.queueWaitMs)||0,pending:this.pending};this.emit('metrics',this.metrics);
+        this.drainAudio();
+        this.metrics={...this.metrics,processingMs:Number(event.processingMs)||0,audioSeconds:Number(event.audioSeconds)||0,rtf:Number.isFinite(event.rtf)?event.rtf:null,queueWaitMs:Number(event.queueWaitMs)||0,pending:this.pending,bufferedAudioSeconds:this.rawBytes/32000};this.emit('metrics',this.metrics);
       }else if(event.type==='error'){const errors={CUDA_RUNTIME_UNAVAILABLE:'As bibliotecas CUDA/cuDNN necessárias não estão disponíveis. Instale o runtime compatível ou selecione CPU.',DEVICE_CONFIGURATION_UNAVAILABLE:'A GPU ou a precisão selecionada não está disponível no motor local.',DIARIZATION_CUDA_UNAVAILABLE:'O PyTorch instalado não oferece a GPU selecionada para o Pyannote. Selecione CPU para os locutores.'};fail(errors[event.code]||(this.diarization?'Não foi possível carregar ou executar os modelos. Confira a instalação, o token e o aceite do Pyannote.':'Não foi possível carregar ou executar o Faster-Whisper. Confira a instalação do motor local.'));}
     });
     return this.status();
   }
   feed(frame) {
-    if(this.state!=='ready')return false;
+    if(!['loading','ready'].includes(this.state))return false;
     if(!(frame instanceof ArrayBuffer)&&!ArrayBuffer.isView(frame))throw Error('Áudio inválido.');
     const pcm=Buffer.from(frame instanceof ArrayBuffer?frame:frame.buffer,frame instanceof ArrayBuffer?0:frame.byteOffset,frame.byteLength);
     if(!pcm.length||pcm.length%2||pcm.length>32000)throw Error('Bloco de áudio inválido.');
+    if(this.state==='loading'||this.replaying){
+      if(this.rawBytes+pcm.length>960000){this.stop('O carregamento excedeu o limite de 30 segundos de áudio em memória. Aguarde o modelo ficar pronto antes de retomar a captura.');return false;}
+      this.rawQueue.push(Buffer.from(pcm));this.rawBytes+=pcm.length;this.replaying=true;this.drainAudio();return true;
+    }
+    return this.processFrame(pcm);
+  }
+  drainAudio(){
+    if(this.state!=='ready')return;
+    while(this.rawQueue.length&&this.pending<2&&this.state==='ready'){const pcm=this.rawQueue.shift();this.rawBytes-=pcm.length;this.processFrame(pcm);}
+    if(!this.rawQueue.length)this.replaying=false;
+  }
+  processFrame(pcm){
     let energy=0;for(let i=0;i<pcm.length;i+=2)energy+=(pcm.readInt16LE(i)/32768)**2;
-    const count=pcm.length/2,voiced=Math.sqrt(energy/count)>.009;
+    const count=pcm.length/2,voiced=Math.sqrt(energy/count)>.004;
     this.inputSeconds+=count/16000;
     if(!this.speaking){
-      if(!voiced){this.preroll.push(Buffer.from(pcm));this.prerollSamples+=count;while(this.prerollSamples>4800&&this.preroll.length>1)this.prerollSamples-=this.preroll.shift().length/2;return true;}
+      if(!voiced){this.preroll.push(Buffer.from(pcm));this.prerollSamples+=count;while(this.prerollSamples>9600&&this.preroll.length>1)this.prerollSamples-=this.preroll.shift().length/2;return true;}
       this.parts=this.preroll;this.samples=this.prerollSamples;this.preroll=[];this.prerollSamples=0;this.speaking=true;
     }
     this.parts.push(Buffer.from(pcm));this.samples+=count;this.silence=voiced?0:this.silence+count;
-    if((this.silence>=8000&&this.samples>=9600)||this.samples>=96000)this.flush();
+    if(this.silence>=8000&&this.samples>=9600)this.flush(true);
+    else if(this.samples>=96000)this.flush(false);
     return true;
   }
-  flush(){
+  flush(final=true){
     if(!this.samples||!this.child||this.state!=='ready')return;
     const queuedSeconds=[...this.jobs.values()].reduce((sum,seconds)=>sum+seconds,0)+this.samples/16000;
     if(this.pending>=6||queuedSeconds>18){this.stop('A fila de reconhecimento excedeu o limite de segurança. Selecione GPU ou um modelo menor e reinicie o motor.');return;}
     const audio=Buffer.concat(this.parts);const start=this.inputSeconds-this.samples/16000;
-    this.parts=[];this.samples=0;this.speaking=false;this.silence=0;
+    const overlap=final?Buffer.alloc(0):Buffer.from(audio.subarray(-25600));
+    this.parts=overlap.length?[overlap]:[];this.samples=overlap.length/2;this.speaking=!!overlap.length;this.silence=0;
     this.pending++;
     if(!this.jobTimer)this.jobTimer=setTimeout(()=>this.stop('O processamento local excedeu 45 segundos. Use um modelo menor.'),45000);
     const id=++this.sequence;this.jobs.set(id,audio.length/32000);
-    this.child.stdin.write(JSON.stringify({id,start,queuedAt:Date.now(),pcm:audio.toString('base64')})+'\n');
+    this.child.stdin.write(JSON.stringify({id,start,final,queuedAt:Date.now(),pcm:audio.toString('base64')})+'\n');
   }
   reset(){
     // Resetting also terminates pending inference: no result from the old event
@@ -97,7 +112,7 @@ class LocalSpeech extends EventEmitter {
   }
   stop(message=''){
     this.generation++;clearTimeout(this.timer);clearTimeout(this.jobTimer);this.jobTimer=null;
-    const child=this.child;this.child=null;child?.kill();this.runtime=null;this.metrics={};this.parts=[];this.preroll=[];this.samples=0;this.pending=0;this.jobs=new Map();
+    const child=this.child;this.child=null;child?.kill();this.runtime=null;this.metrics={};this.parts=[];this.preroll=[];this.samples=0;this.pending=0;this.jobs=new Map();this.rawQueue=[];this.rawBytes=0;this.replaying=false;
     this.report(message?'error':'stopped',message);return this.status();
   }
 }

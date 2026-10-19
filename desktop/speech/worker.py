@@ -8,6 +8,7 @@ import sys
 import time
 import threading
 from runtime_info import Sampler, capabilities, configure_cuda_libraries
+from word_commit import WordCommitter
 
 
 class SpeakerTimeline:
@@ -99,6 +100,7 @@ def run(args, emit):
     history = np.empty(0, dtype=np.float32)
     history_start, history_end = 0.0, 0.0
     timeline = SpeakerTimeline()
+    committer = WordCommitter()
     for line in sys.stdin:
         started = time.monotonic()
         packet = json.loads(line)
@@ -115,21 +117,21 @@ def run(args, emit):
                 history = np.empty(0, dtype=np.float32)
             if not len(history):
                 history_start = offset
+                history_end = offset
             else:
                 history = np.concatenate((history, np.zeros(min(480000, round(gap * 16000)), dtype=np.float32)))
-            history = np.concatenate((history, audio))
-            history_end = offset + len(audio) / 16000
+            skip = max(0, round((history_end - offset) * 16000))
+            history = np.concatenate((history, audio[skip:]))
+            history_end = max(history_end, offset + len(audio) / 16000)
             if len(history) > 480000:
                 history = history[-480000:]
                 history_start = history_end - len(history) / 16000
             output = diarizer({"waveform": torch.from_numpy(history.copy()).unsqueeze(0), "sample_rate": 16000})
             turns = timeline.assign([(history_start + turn.start, history_start + turn.end, label) for turn, _, label in output.speaker_diarization.itertracks(yield_label=True)])
-        segments, info = model.transcribe(audio, language=args.language, word_timestamps=True, beam_size=1, vad_filter=True, condition_on_previous_text=False)
+        segments, info = model.transcribe(audio, language=args.language, word_timestamps=True, beam_size=5, vad_filter=False, condition_on_previous_text=False)
         result = []
         for segment in segments:
-            if segment.no_speech_prob > .65:
-                continue
-            for word in segment.words or []:
+            for word in committer.accept(segment.words or [], offset, len(audio) / 16000, packet.get('final', True)):
                 identity = speaker_at(offset + word.start, offset + word.end, turns)
                 if result and result[-1]["speakerId"] == identity:
                     result[-1]["text"] += word.word
