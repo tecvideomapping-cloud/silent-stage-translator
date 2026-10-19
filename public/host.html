@@ -1911,13 +1911,14 @@
         analyser.smoothingTimeConstant = 0.3;
         dspProcessedSource.connect(analyser);
 
+        const meterContext = audioContext;
         const floatTimeData = new Float32Array(analyser.fftSize);
         let lastPitchCalcTime = 0;
         const recentPitchReadings = [];
         let currentRmsLevel = 0;
 
         function updateVU() {
-          if (!isBroadcasting) return;
+          if (!isBroadcasting || audioContext !== meterContext) return;
           analyser.getFloatTimeDomainData(floatTimeData);
           let sum = 0;
           for (let i = 0; i < floatTimeData.length; i++) {
@@ -1959,7 +1960,6 @@
 
           requestAnimationFrame(updateVU);
         }
-        requestAnimationFrame(updateVU);
 
         // Buffer de 2048 amostras (~42ms em 48kHz) com nó de ganho zero para eliminar vazamento acústico e micro-cortes de CPU
         scriptProcessor = await window.createStageAudioCapture(audioContext);
@@ -2090,6 +2090,7 @@
 
         window.lockedAutoSpeakerVoice=window.autoDetectedSpeakerVoice||'male_deep';
         isBroadcasting = true;
+        requestAnimationFrame(updateVU);
         document.getElementById('broadcastBtn').className = 'bg-rose-600 hover:bg-rose-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-2';
         document.getElementById('btnIcon').innerText = '⏹️';
         document.getElementById('btnText').innerText = 'Parar Transmissão';
